@@ -12,6 +12,14 @@ PY3V := $(shell py3versions -vr)
 %:
 	dh $@ --with autoreconf,bash-completion,python3,systemd
 
+override_dh_autoreconf:
+	dh_autoreconf
+	# autoreconf updates the timestamps on the Makefiles,
+	# update them on the pre-generated man pages to make
+	# sure they are newer and the build system doesn't try
+	# to re-generate them.
+	touch doc/man/*.1 doc/man/*.3 doc/man/*.8
+
 override_dh_auto_build:
 	dh_auto_build -- V=1
 
