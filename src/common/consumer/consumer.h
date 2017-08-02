@@ -61,6 +61,7 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_DISCARDED_EVENTS,
 	LTTNG_CONSUMER_LOST_PACKETS,
 	LTTNG_CONSUMER_CLEAR_QUIESCENT_CHANNEL,
+	LTTNG_CONSUMER_SET_CHANNEL_MONITOR_PIPE,
 };
 
 /* State of each fd in consumer */
@@ -160,6 +161,7 @@ struct lttng_consumer_channel {
 
 	/* Metadata cache is metadata channel */
 	struct consumer_metadata_cache *metadata_cache;
+
 	/* For UST metadata periodical flush */
 	int switch_timer_enabled;
 	timer_t switch_timer;
@@ -169,6 +171,10 @@ struct lttng_consumer_channel {
 	int live_timer_enabled;
 	timer_t live_timer;
 	int live_timer_error;
+
+	/* For channel monitoring timer. */
+	int monitor_timer_enabled;
+	timer_t monitor_timer;
 
 	/* On-disk circular buffer */
 	uint64_t tracefile_size;
@@ -541,6 +547,11 @@ struct lttng_consumer_local_data {
 	int consumer_should_quit[2];
 	/* Metadata poll thread pipe. Transfer metadata stream to it */
 	struct lttng_pipe *consumer_metadata_pipe;
+	/*
+	 * Pipe used by the channel monitoring timers to provide state samples
+	 * to the session daemon (write-only).
+	 */
+	int channel_monitor_pipe;
 };
 
 /*
@@ -592,6 +603,15 @@ struct lttng_consumer_global_data {
 	 */
 	struct lttng_ht *stream_per_chan_id_ht;
 };
+
+/*
+ * Set to nonzero when the consumer is exiting. Updated by signal
+ * handler and thread exit, read by threads.
+ */
+extern int consumer_quit;
+
+/* Flag used to temporarily pause data consumption from testpoints. */
+extern int data_consumption_paused;
 
 /*
  * Init consumer data structures.
@@ -712,7 +732,7 @@ int lttng_consumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 ssize_t lttng_consumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		struct lttng_consumer_local_data *ctx);
 int lttng_consumer_on_recv_stream(struct lttng_consumer_stream *stream);
-int consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
+void consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
 		struct lttng_consumer_local_data *ctx, int sock,
 		struct pollfd *consumer_sockpoll, struct lttcomm_relayd_sock *relayd_sock,
 		uint64_t sessiond_id, uint64_t relayd_session_id);

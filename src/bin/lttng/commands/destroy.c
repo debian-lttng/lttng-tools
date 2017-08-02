@@ -35,6 +35,12 @@ static char *opt_session_name;
 static int opt_destroy_all;
 static int opt_no_wait;
 
+#ifdef LTTNG_EMBED_HELP
+static const char help_msg[] =
+#include <lttng-destroy.1.h>
+;
+#endif
+
 /* Mi writer */
 static struct mi_writer *writer;
 
@@ -226,7 +232,8 @@ int cmd_destroy(int argc, const char **argv)
 	/* Recuperate all sessions for further operation */
 	count = lttng_list_sessions(&sessions);
 	if (count < 0) {
-		command_ret = count;
+		ERR("%s", lttng_strerror(count));
+		command_ret = CMD_ERROR;
 		success = 0;
 		goto mi_closing;
 	}

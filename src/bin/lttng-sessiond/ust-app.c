@@ -41,6 +41,8 @@
 #include "ust-ctl.h"
 #include "utils.h"
 #include "session.h"
+#include "lttng-sessiond.h"
+#include "notification-thread-commands.h"
 
 static
 int ust_app_flush_app_session(struct ust_app *app, struct ust_app_session *ua_sess);
@@ -90,6 +92,7 @@ static void copy_channel_attr_to_ustctl(
 	attr->switch_timer_interval = uattr->switch_timer_interval;
 	attr->read_timer_interval = uattr->read_timer_interval;
 	attr->output = uattr->output;
+	attr->blocking_timeout = uattr->u.s.blocking_timeout;
 }
 
 /*
@@ -482,7 +485,8 @@ void delete_ust_app_channel(int sock, struct ust_app_channel *ua_chan,
 		/* Wipe and free registry from session registry. */
 		registry = get_session_registry(ua_chan->session);
 		if (registry) {
-			ust_registry_channel_del_free(registry, ua_chan->key);
+			ust_registry_channel_del_free(registry, ua_chan->key,
+				true);
 		}
 		save_per_pid_lost_discarded_counters(ua_chan);
 	}
@@ -1037,6 +1041,7 @@ struct ust_app_channel *alloc_ust_app_channel(char *name,
 		ua_chan->attr.switch_timer_interval = attr->switch_timer_interval;
 		ua_chan->attr.read_timer_interval = attr->read_timer_interval;
 		ua_chan->attr.output = attr->output;
+		ua_chan->attr.blocking_timeout = attr->u.s.blocking_timeout;
 	}
 	/* By default, the channel is a per cpu channel. */
 	ua_chan->attr.type = LTTNG_UST_CHAN_PER_CPU;
@@ -1798,7 +1803,10 @@ static void shadow_copy_channel(struct ust_app_channel *ua_chan,
 	ua_chan->attr.overwrite = uchan->attr.overwrite;
 	ua_chan->attr.switch_timer_interval = uchan->attr.switch_timer_interval;
 	ua_chan->attr.read_timer_interval = uchan->attr.read_timer_interval;
+	ua_chan->monitor_timer_interval = uchan->monitor_timer_interval;
 	ua_chan->attr.output = uchan->attr.output;
+	ua_chan->attr.blocking_timeout = uchan->attr.u.s.blocking_timeout;
+
 	/*
 	 * Note that the attribute channel type is not set since the channel on the
 	 * tracing registry side does not have this information.
@@ -2846,6 +2854,7 @@ static int create_channel_per_uid(struct ust_app *app,
 	int ret;
 	struct buffer_reg_uid *reg_uid;
 	struct buffer_reg_channel *reg_chan;
+	bool created = false;
 
 	assert(app);
 	assert(usess);
@@ -2889,7 +2898,7 @@ static int create_channel_per_uid(struct ust_app *app,
 			 * it's not visible anymore in the session registry.
 			 */
 			ust_registry_channel_del_free(reg_uid->registry->reg.ust,
-					ua_chan->tracing_channel_id);
+					ua_chan->tracing_channel_id, false);
 			buffer_reg_channel_remove(reg_uid->registry, reg_chan);
 			buffer_reg_channel_destroy(reg_chan, LTTNG_DOMAIN_UST);
 			goto error;
@@ -2905,7 +2914,7 @@ static int create_channel_per_uid(struct ust_app *app,
 				ua_chan->name);
 			goto error;
 		}
-
+		created = true;
 	}
 
 	/* Send buffers to the application. */
@@ -2915,6 +2924,41 @@ static int create_channel_per_uid(struct ust_app *app,
 			ERR("Error sending channel to application");
 		}
 		goto error;
+	}
+
+	if (created) {
+		enum lttng_error_code cmd_ret;
+		struct ltt_session *session;
+		uint64_t chan_reg_key;
+		struct ust_registry_channel *chan_reg;
+
+		rcu_read_lock();
+		chan_reg_key = ua_chan->tracing_channel_id;
+
+		pthread_mutex_lock(&reg_uid->registry->reg.ust->lock);
+		chan_reg = ust_registry_channel_find(reg_uid->registry->reg.ust,
+				chan_reg_key);
+		assert(chan_reg);
+		chan_reg->consumer_key = ua_chan->key;
+		chan_reg = NULL;
+		pthread_mutex_unlock(&reg_uid->registry->reg.ust->lock);
+
+		session = session_find_by_id(ua_sess->tracing_id);
+		assert(session);
+
+		cmd_ret = notification_thread_command_add_channel(
+				notification_thread_handle, session->name,
+				ua_sess->euid, ua_sess->egid,
+				ua_chan->name,
+				ua_chan->key,
+				LTTNG_DOMAIN_UST,
+				ua_chan->attr.subbuf_size * ua_chan->attr.num_subbuf);
+		rcu_read_unlock();
+		if (cmd_ret != LTTNG_OK) {
+			ret = - (int) cmd_ret;
+			ERR("Failed to add channel to notification thread");
+			goto error;
+		}
 	}
 
 error:
@@ -2934,6 +2978,10 @@ static int create_channel_per_pid(struct ust_app *app,
 {
 	int ret;
 	struct ust_registry_session *registry;
+	enum lttng_error_code cmd_ret;
+	struct ltt_session *session;
+	uint64_t chan_reg_key;
+	struct ust_registry_channel *chan_reg;
 
 	assert(app);
 	assert(usess);
@@ -2970,6 +3018,29 @@ static int create_channel_per_pid(struct ust_app *app,
 		if (ret != -ENOTCONN) {
 			ERR("Error sending channel to application");
 		}
+		goto error;
+	}
+
+	session = session_find_by_id(ua_sess->tracing_id);
+	assert(session);
+
+	chan_reg_key = ua_chan->key;
+	pthread_mutex_lock(&registry->lock);
+	chan_reg = ust_registry_channel_find(registry, chan_reg_key);
+	assert(chan_reg);
+	chan_reg->consumer_key = ua_chan->key;
+	pthread_mutex_unlock(&registry->lock);
+
+	cmd_ret = notification_thread_command_add_channel(
+			notification_thread_handle, session->name,
+			ua_sess->euid, ua_sess->egid,
+			ua_chan->name,
+			ua_chan->key,
+			LTTNG_DOMAIN_UST,
+			ua_chan->attr.subbuf_size * ua_chan->attr.num_subbuf);
+	if (cmd_ret != LTTNG_OK) {
+		ret = - (int) cmd_ret;
+		ERR("Failed to add channel to notification thread");
 		goto error;
 	}
 
@@ -3087,7 +3158,6 @@ static int create_ust_app_channel(struct ust_app_session *ua_sess,
 
 	/* Only add the channel if successful on the tracer side. */
 	lttng_ht_add_unique_str(ua_sess->channels, &ua_chan->node);
-
 end:
 	if (ua_chanp) {
 		*ua_chanp = ua_chan;
