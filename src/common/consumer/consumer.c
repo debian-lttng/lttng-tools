@@ -67,13 +67,16 @@ struct consumer_channel_msg {
 	uint64_t key;				/* del */
 };
 
+/* Flag used to temporarily pause data consumption from testpoints. */
+int data_consumption_paused;
+
 /*
  * Flag to inform the polling thread to quit when all fd hung up. Updated by
  * the consumer_thread_receive_fds when it notices that all fds has hung up.
  * Also updated by the signal handler (consumer_should_exit()). Read by the
  * polling threads.
  */
-volatile int consumer_quit;
+int consumer_quit;
 
 /*
  * Global hash table containing respectively metadata and data streams. The
@@ -367,6 +370,9 @@ void consumer_del_channel(struct lttng_consumer_channel *channel)
 
 	if (channel->live_timer_enabled == 1) {
 		consumer_timer_live_stop(channel);
+	}
+	if (channel->monitor_timer_enabled == 1) {
+		consumer_timer_monitor_stop(channel);
 	}
 
 	switch (consumer_data.type) {
@@ -1221,7 +1227,7 @@ void lttng_consumer_should_exit(struct lttng_consumer_local_data *ctx)
 {
 	ssize_t ret;
 
-	consumer_quit = 1;
+	CMM_STORE_SHARED(consumer_quit, 1);
 	ret = lttng_write(ctx->consumer_should_quit[1], "4", 1);
 	if (ret < 1) {
 		PERROR("write consumer quit");
@@ -1347,6 +1353,8 @@ struct lttng_consumer_local_data *lttng_consumer_create(
 	if (!ctx->consumer_metadata_pipe) {
 		goto error_metadata_pipe;
 	}
+
+	ctx->channel_monitor_pipe = -1;
 
 	return ctx;
 
@@ -2518,13 +2526,16 @@ void *consumer_thread_data_poll(void *data)
 		pthread_mutex_unlock(&consumer_data.lock);
 
 		/* No FDs and consumer_quit, consumer_cleanup the thread */
-		if (nb_fd == 0 && consumer_quit == 1) {
+		if (nb_fd == 0 && CMM_LOAD_SHARED(consumer_quit) == 1) {
 			err = 0;	/* All is OK */
 			goto end;
 		}
 		/* poll on the array of fds */
 	restart:
 		DBG("polling on %d fd", nb_fd + 2);
+		if (testpoint(consumerd_thread_data_poll)) {
+			goto end;
+		}
 		health_poll_entry();
 		num_rdy = poll(pollfd, nb_fd + 2, -1);
 		health_poll_exit();
@@ -2542,6 +2553,12 @@ void *consumer_thread_data_poll(void *data)
 		} else if (num_rdy == 0) {
 			DBG("Polling thread timed out");
 			goto end;
+		}
+
+		if (caa_unlikely(data_consumption_paused)) {
+			DBG("Data consumption paused, sleeping...");
+			sleep(1);
+			goto restart;
 		}
 
 		/*
@@ -3186,7 +3203,7 @@ void *consumer_thread_sessiond_poll(void *data)
 			err = 0;
 			goto end;
 		}
-		if (consumer_quit) {
+		if (CMM_LOAD_SHARED(consumer_quit)) {
 			DBG("consumer_thread_receive_fds received quit from signal");
 			err = 0;	/* All is OK */
 			goto end;
@@ -3211,7 +3228,7 @@ end:
 	 * when all fds have hung up, the polling thread
 	 * can exit cleanly
 	 */
-	consumer_quit = 1;
+	CMM_STORE_SHARED(consumer_quit, 1);
 
 	/*
 	 * Notify the data poll thread to poll back again and test the
@@ -3343,7 +3360,7 @@ error:
  * This will create a relayd socket pair and add it to the relayd hash table.
  * The caller MUST acquire a RCU read side lock before calling it.
  */
-int consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
+ void consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
 		struct lttng_consumer_local_data *ctx, int sock,
 		struct pollfd *consumer_sockpoll,
 		struct lttcomm_relayd_sock *relayd_sock, uint64_t sessiond_id,
@@ -3365,7 +3382,6 @@ int consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
 		/* Not found. Allocate one. */
 		relayd = consumer_allocate_relayd_sock_pair(net_seq_idx);
 		if (relayd == NULL) {
-			ret = -ENOMEM;
 			ret_code = LTTCOMM_CONSUMERD_ENOMEM;
 			goto error;
 		} else {
@@ -3398,14 +3414,12 @@ int consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
 	if (ret) {
 		/* Needing to exit in the middle of a command: error. */
 		lttng_consumer_send_error(ctx, LTTCOMM_CONSUMERD_POLL_ERROR);
-		ret = -EINTR;
 		goto error_nosignal;
 	}
 
 	/* Get relayd socket from session daemon */
 	ret = lttcomm_recv_fds_unix_sock(sock, &fd, 1);
 	if (ret != sizeof(fd)) {
-		ret = -1;
 		fd = -1;	/* Just in case it gets set with an invalid value. */
 
 		/*
@@ -3479,7 +3493,6 @@ int consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
 		break;
 	default:
 		ERR("Unknown relayd socket type (%d)", sock_type);
-		ret = -1;
 		ret_code = LTTCOMM_CONSUMERD_FATAL;
 		goto error;
 	}
@@ -3503,7 +3516,7 @@ int consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
 	add_relayd(relayd);
 
 	/* All good! */
-	return 0;
+	return;
 
 error:
 	if (consumer_send_status_msg(sock, ret_code) < 0) {
@@ -3521,8 +3534,6 @@ error_nosignal:
 	if (relayd_created) {
 		free(relayd);
 	}
-
-	return ret;
 }
 
 /*

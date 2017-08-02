@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2011 - Julien Desfossez <julien.desfossez@polymtl.ca>
  *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2017 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 only,
@@ -47,7 +48,6 @@
 
 extern struct lttng_consumer_global_data consumer_data;
 extern int consumer_poll_timeout;
-extern volatile int consumer_quit;
 
 /*
  * Take a snapshot for a specific fd
@@ -65,6 +65,19 @@ int lttng_kconsumer_take_snapshot(struct lttng_consumer_stream *stream)
 	}
 
 	return ret;
+}
+
+/*
+ * Sample consumed and produced positions for a specific fd.
+ *
+ * Returns 0 on success, < 0 on error.
+ */
+int lttng_kconsumer_sample_snapshot_positions(
+		struct lttng_consumer_stream *stream)
+{
+	assert(stream);
+
+	return kernctl_snapshot_sample_positions(stream->wait_fd);
 }
 
 /*
@@ -137,8 +150,6 @@ int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
 	}
 
 	cds_list_for_each_entry(stream, &channel->streams.head, send_node) {
-		/* Are we at a position _before_ the first available packet ? */
-		bool before_first_packet = true;
 		unsigned long consumed_pos, produced_pos;
 
 		health_code_update();
@@ -236,7 +247,6 @@ int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
 		while (consumed_pos < produced_pos) {
 			ssize_t read_len;
 			unsigned long len, padded_len;
-			int lost_packet = 0;
 
 			health_code_update();
 
@@ -250,15 +260,7 @@ int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
 				}
 				DBG("Kernel consumer get subbuf failed. Skipping it.");
 				consumed_pos += stream->max_sb_size;
-
-				/*
-				 * Start accounting lost packets only when we
-				 * already have extracted packets (to match the
-				 * content of the final snapshot).
-				 */
-				if (!before_first_packet) {
-					lost_packet = 1;
-				}
+				stream->chan->lost_packets++;
 				continue;
 			}
 
@@ -299,16 +301,6 @@ int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
 				goto end_unlock;
 			}
 			consumed_pos += stream->max_sb_size;
-
-			/*
-			 * Only account lost packets located between
-			 * succesfully extracted packets (do not account before
-			 * and after since they are not visible in the
-			 * resulting snapshot).
-			 */
-			stream->chan->lost_packets += lost_packet;
-			lost_packet = 0;
-			before_first_packet = false;
 		}
 
 		if (relayd_id == (uint64_t) -1ULL) {
@@ -473,10 +465,10 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 	case LTTNG_CONSUMER_ADD_RELAYD_SOCKET:
 	{
 		/* Session daemon status message are handled in the following call. */
-		ret = consumer_add_relayd_socket(msg.u.relayd_sock.net_index,
+		consumer_add_relayd_socket(msg.u.relayd_sock.net_index,
 				msg.u.relayd_sock.type, ctx, sock, consumer_sockpoll,
 				&msg.u.relayd_sock.sock, msg.u.relayd_sock.session_id,
-				 msg.u.relayd_sock.relayd_session_id);
+				msg.u.relayd_sock.relayd_session_id);
 		goto end_nosignal;
 	}
 	case LTTNG_CONSUMER_ADD_CHANNEL:
@@ -545,9 +537,20 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		} else {
 			ret = consumer_add_channel(new_channel, ctx);
 		}
-		if (CONSUMER_CHANNEL_TYPE_DATA) {
+		if (msg.u.channel.type == CONSUMER_CHANNEL_TYPE_DATA && !ret) {
+			int monitor_start_ret;
+
+			DBG("Consumer starting monitor timer");
 			consumer_timer_live_start(new_channel,
 					msg.u.channel.live_timer_interval);
+			monitor_start_ret = consumer_timer_monitor_start(
+					new_channel,
+					msg.u.channel.monitor_timer_interval);
+			if (monitor_start_ret < 0) {
+				ERR("Starting channel monitoring timer failed");
+				goto end_nosignal;
+			}
+
 		}
 
 		health_code_update();
@@ -1038,6 +1041,55 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		break;
 	}
+	case LTTNG_CONSUMER_SET_CHANNEL_MONITOR_PIPE:
+	{
+		int channel_monitor_pipe;
+
+		ret_code = LTTCOMM_CONSUMERD_SUCCESS;
+		/* Successfully received the command's type. */
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			goto error_fatal;
+		}
+
+		ret = lttcomm_recv_fds_unix_sock(sock, &channel_monitor_pipe,
+				1);
+		if (ret != sizeof(channel_monitor_pipe)) {
+			ERR("Failed to receive channel monitor pipe");
+			goto error_fatal;
+		}
+
+		DBG("Received channel monitor pipe (%d)", channel_monitor_pipe);
+		ret = consumer_timer_thread_set_channel_monitor_pipe(
+				channel_monitor_pipe);
+		if (!ret) {
+			int flags;
+
+			ret_code = LTTCOMM_CONSUMERD_SUCCESS;
+			/* Set the pipe as non-blocking. */
+			ret = fcntl(channel_monitor_pipe, F_GETFL, 0);
+			if (ret == -1) {
+				PERROR("fcntl get flags of the channel monitoring pipe");
+				goto error_fatal;
+			}
+			flags = ret;
+
+			ret = fcntl(channel_monitor_pipe, F_SETFL,
+					flags | O_NONBLOCK);
+			if (ret == -1) {
+				PERROR("fcntl set O_NONBLOCK flag of the channel monitoring pipe");
+				goto error_fatal;
+			}
+			DBG("Channel monitor pipe set as non-blocking");
+		} else {
+			ret_code = LTTCOMM_CONSUMERD_ALREADY_SET;
+		}
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			goto error_fatal;
+		}
+		break;
+	}
 	default:
 		goto end_nosignal;
 	}
@@ -1114,7 +1166,6 @@ static int get_index_values(struct ctf_packet_index *index, int infd)
 		if (ret == -ENOTTY) {
 			/* Command not implemented by lttng-modules. */
 			index->stream_instance_id = -1ULL;
-			ret = 0;
 		} else {
 			PERROR("kernctl_get_instance_id");
 			goto error;
@@ -1186,7 +1237,6 @@ int update_stream_stats(struct lttng_consumer_stream *stream)
 		if (ret == -ENOTTY) {
 			/* Command not implemented by lttng-modules. */
 			seq = -1ULL;
-			ret = 0;
 		} else {
 			PERROR("kernctl_get_sequence_number");
 			goto end;
@@ -1533,6 +1583,7 @@ int lttng_kconsumer_on_recv_stream(struct lttng_consumer_stream *stream)
 			if (!index_file) {
 				goto error;
 			}
+			assert(!stream->index_file);
 			stream->index_file = index_file;
 		}
 	}

@@ -64,6 +64,7 @@ struct ltt_kernel_channel {
 	int enabled;
 	unsigned int stream_count;
 	unsigned int event_count;
+	bool published_to_notification_thread;
 	struct cds_list_head ctx_list;
 	struct lttng_channel *channel;
 	struct ltt_kernel_event_list events_list;
@@ -142,6 +143,8 @@ struct ltt_kernel_stream *trace_kernel_create_stream(const char *name,
 		unsigned int count);
 struct ltt_kernel_context *trace_kernel_create_context(
 		struct lttng_kernel_context *ctx);
+struct ltt_kernel_context *trace_kernel_copy_context(
+		struct ltt_kernel_context *ctx);
 
 /*
  * Destroy functions free() the data structure and remove from linked list if
