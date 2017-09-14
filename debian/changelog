@@ -1,3 +1,20 @@
+ltt-control (2.10.1-1) unstable; urgency=medium
+
+  [ Michael Jeanson ]
+  * [a77574d] Move to DEP-14 branch naming
+  * [c29550e] Rename source package to lttng-tools
+  * [9f76201] New upstream version 2.10.0
+  * [d4cd4d8] Bump dependency on ust for 2.10.0
+  * [2a1d403] Remove TODO from docs
+  * [fad7c82] Update symbols for 2.10.0
+  * [2bcf185] Add strict version dependency to python3-lttng
+  * [24e8bc2] Fix init systems configuration
+  * [7e5d2f3] Fix man page rebuild
+  * [09ac7d1] Revert source package rename
+  * [4d20b47] New upstream version 2.10.1
+
+ -- Jon Bernard <jbernard@debian.org>  Thu, 14 Sep 2017 13:13:43 -0400
+
 ltt-control (2.9.5-1) unstable; urgency=medium
 
   * [adcb145] New upstream version 2.9.5
