@@ -10,7 +10,7 @@ Build-Depends: debhelper (>= 9.20160709),
   liburcu-dev (>= 0.8.4),
   liblttng-ust-dev (>= 2.10.0~),
   liblttng-ust-dev (<< 2.11.0~)
-Standards-Version: 4.0.0
+Standards-Version: 4.1.1
 Vcs-Git: https://anonscm.debian.org/git/collab-maint/lttng-tools.git
 Vcs-Browser: https://anonscm.debian.org/git/collab-maint/lttng-tools.git
 Homepage: http://lttng.org/
