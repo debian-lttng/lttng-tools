@@ -1,4 +1,5 @@
 liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
+ (arch=m68k)__tls_access_error_log_time@Base 2.10.1
  _lttng_create_session_ext@Base 2.3.0
  config_buffer_type_global@Base 2.5.0
  config_buffer_type_per_pid@Base 2.5.0
@@ -107,7 +108,7 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  default_metadata_subbuf_size@Base 2.3.0
  default_ust_pid_channel_subbuf_size@Base 2.3.0
  default_ust_uid_channel_subbuf_size@Base 2.3.0
- error_log_time@Base 2.5.0
+ (arch=!m68k)error_log_time@Base 2.5.0
  lttcomm_inet_tcp_timeout@Base 2.3.0
  lttng_action_destroy@Base 2.10.0
  lttng_action_get_type@Base 2.10.0
