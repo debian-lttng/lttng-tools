@@ -1,3 +1,15 @@
+ltt-control (2.10.1-2) unstable; urgency=medium
+
+  * [2ad2163] Symbols fix on m68k
+  * [3e5278e] Changed deprecated extra priority to optional
+  * [8d812b3] Set python section for python3-lttng
+  * [dd9c840] Remove builddep on obsolete dh-systemd
+  * [ca53e85] Bump standards version to 4.1.1
+  * [c13da29] Add lintian override for upstart config
+  * [3156765] Use https url in watch file
+
+ -- Michael Jeanson <mjeanson@ubuntu.com>  Wed, 18 Oct 2017 16:34:10 -0400
+
 ltt-control (2.10.1-1) unstable; urgency=medium
 
   [ Michael Jeanson ]
