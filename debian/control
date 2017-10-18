@@ -1,6 +1,6 @@
 Source: ltt-control
 Section: libs
-Priority: extra
+Priority: optional
 Maintainer: Jon Bernard <jbernard@debian.org>
 Uploaders: Michael Jeanson <mjeanson@ubuntu.com>
 Build-Depends: debhelper (>= 9), dh-systemd (>= 1.5),
