@@ -1,3 +1,9 @@
+ltt-control (2.10.1-2~xenial1) xenial; urgency=medium
+
+  * Source backport to xenial
+
+ -- Michael Jeanson <mjeanson@ubuntu.com>  Thu, 26 Oct 2017 14:11:54 -0400
+
 ltt-control (2.10.1-2) unstable; urgency=medium
 
   * [2ad2163] Symbols fix on m68k
