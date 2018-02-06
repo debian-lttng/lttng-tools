@@ -11,8 +11,8 @@ Build-Depends: debhelper (>= 9), dh-systemd (>= 1.5),
   liblttng-ust-dev (>= 2.10.0~),
   liblttng-ust-dev (<< 2.11.0~)
 Standards-Version: 4.1.1
-Vcs-Git: https://anonscm.debian.org/git/collab-maint/lttng-tools.git
-Vcs-Browser: https://anonscm.debian.org/git/collab-maint/lttng-tools.git
+Vcs-Git: https://salsa.debian.org/debian/ltt-control.git
+Vcs-Browser: https://salsa.debian.org/debian/ltt-control.git
 Homepage: http://lttng.org/
 X-Python3-Version: >= 3.0
 
