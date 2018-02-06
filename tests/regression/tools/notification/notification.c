@@ -35,6 +35,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <signal.h>
+#include <errno.h>
+#include <poll.h>
 
 #include <lttng/action/action.h>
 #include <lttng/action/notify.h>
@@ -51,8 +54,37 @@
 #include <tap/tap.h>
 
 #define NUM_TESTS 104
+
 int nb_args = 0;
 int named_pipe_args_start = 0;
+pid_t app_pid = -1;
+const char *app_state_file = NULL;
+
+static
+void wait_on_file(const char *path, bool file_exist)
+{
+	if (!path) {
+		return;
+	}
+	for (;;) {
+		int ret;
+		struct stat buf;
+
+		ret = stat(path, &buf);
+		if (ret == -1 && errno == ENOENT) {
+			if (file_exist) {
+				(void) poll(NULL, 0, 10);	/* 10 ms delay */
+				continue;			/* retry */
+			}
+			break; /* File does not exist */
+		}
+		if (ret) {
+			perror("stat");
+			exit(EXIT_FAILURE);
+		}
+		break;	/* found */
+	}
+}
 
 int write_pipe(const char *path, uint8_t data)
 {
@@ -102,6 +134,64 @@ int resume_consumer(const char **argv)
 	}
 	return ret;
 }
+
+int suspend_application()
+{
+	int ret;
+	struct stat buf;
+
+	if (!stat(app_state_file, &buf)) {
+		fail("App is already in a suspended state.");
+		ret = -1;
+		goto error;
+	}
+
+	/*
+	 * Send SIGUSR1 to application instructing it to bypass tracepoint.
+	 */
+	ret = kill(app_pid, SIGUSR1);
+	if (ret) {
+		fail("SIGUSR1 failed. errno %d", errno);
+		ret = -1;
+		goto error;
+	}
+
+	wait_on_file(app_state_file, true);
+
+error:
+	return ret;
+
+}
+
+int resume_application()
+{
+	int ret;
+	struct stat buf;
+
+	ret = stat(app_state_file, &buf);
+	if (ret == -1 && errno == ENOENT) {
+		fail("State file does not exist");
+		goto error;
+	}
+	if (ret) {
+		perror("stat");
+		goto error;
+	}
+
+	ret = kill(app_pid, SIGUSR1);
+	if (ret) {
+		fail("SIGUSR1 failed. errno %d", errno);
+		ret = -1;
+		goto error;
+	}
+
+	wait_on_file(app_state_file, false);
+
+error:
+	return ret;
+
+}
+
 
 void test_triggers_buffer_usage_condition(const char *session_name,
 		const char *channel_name,
@@ -284,7 +374,18 @@ end:
 	lttng_action_destroy(action);
 }
 
-void test_notification_channel(const char *session_name, const char *channel_name, enum lttng_domain_type domain_type, const char **argv)
+static
+void wait_data_pending(const char *session_name)
+{
+	int ret;
+
+	do {
+		ret = lttng_data_pending(session_name);
+		assert(ret >= 0);
+	} while (ret != 0);
+}
+
+void test_notification_channel(const char *session_name, const char *channel_name, const enum lttng_domain_type domain_type, const char **argv)
 {
 	int ret = 0;
 	enum lttng_condition_status condition_status;
@@ -485,8 +586,8 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_ALREADY_SUBSCRIBED, "Subscribe to a condition for which subscription was already done");
 
 	/* Wait for notification to happen */
-	lttng_start_tracing(session_name);
 	stop_consumer(argv);
+	lttng_start_tracing(session_name);
 
 	/* Wait for high notification */
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
@@ -497,8 +598,10 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	lttng_notification_destroy(notification);
 	notification = NULL;
 
+	suspend_application();
+	lttng_stop_tracing_no_wait(session_name);
 	resume_consumer(argv);
-	lttng_stop_tracing(session_name);
+	wait_data_pending(session_name);
 
 	/*
 	 * Test that communication still work even if there is notification
@@ -520,8 +623,9 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	notification = NULL;
 
 	/* Stop consumer to force a high notification */
-	lttng_start_tracing(session_name);
 	stop_consumer(argv);
+	resume_application();
+	lttng_start_tracing(session_name);
 
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK && notification &&
@@ -530,9 +634,10 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	lttng_notification_destroy(notification);
 	notification = NULL;
 
-	/* Resume consumer to allow event consumption */
+	suspend_application();
+	lttng_stop_tracing_no_wait(session_name);
 	resume_consumer(argv);
-	lttng_stop_tracing(session_name);
+	wait_data_pending(session_name);
 
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK && notification &&
@@ -541,9 +646,10 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	lttng_notification_destroy(notification);
 	notification = NULL;
 
+	stop_consumer(argv);
+	resume_application();
 	/* Stop consumer to force a high notification */
 	lttng_start_tracing(session_name);
-	stop_consumer(argv);
 
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK && notification &&
@@ -553,8 +659,10 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	notification = NULL;
 
 	/* Resume consumer to allow event consumption */
+	suspend_application();
+	lttng_stop_tracing_no_wait(session_name);
 	resume_consumer(argv);
-	lttng_stop_tracing(session_name);
+	wait_data_pending(session_name);
 
 	nc_status = lttng_notification_channel_unsubscribe(notification_channel, low_condition);
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK, "Unsubscribe low condition with pending notification");
@@ -580,19 +688,21 @@ int main(int argc, const char *argv[])
 
 	plan_tests(NUM_TESTS);
 
-	/* Argument 4 and upward are named pipe location for consumerd control */
-	named_pipe_args_start = 4;
+	/* Argument 6 and upward are named pipe location for consumerd control */
+	named_pipe_args_start = 6;
 
-	if (argc < 5) {
+	if (argc < 7) {
 		fail("Missing parameter for tests to run %d", argc);
 		goto error;
 	}
 
 	nb_args = argc;
 
-	session_name = argv[1];
-	channel_name = argv[2];
-	domain_type_string= argv[3];
+	domain_type_string = argv[1];
+	session_name = argv[2];
+	channel_name = argv[3];
+	app_pid = (pid_t) atoi(argv[4]);
+	app_state_file = argv[5];
 
 	if (!strcmp("LTTNG_DOMAIN_UST", domain_type_string)) {
 		domain_type = LTTNG_DOMAIN_UST;
