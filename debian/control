@@ -13,7 +13,7 @@ Build-Depends: debhelper (>= 9.20160709),
 Standards-Version: 4.1.1
 Vcs-Git: https://salsa.debian.org/debian/ltt-control.git
 Vcs-Browser: https://salsa.debian.org/debian/ltt-control.git
-Homepage: http://lttng.org/
+Homepage: https://lttng.org/
 X-Python3-Version: >= 3.0
 
 Package: lttng-tools
