@@ -528,6 +528,7 @@ EXEEXT = @EXEEXT@
 FGREP = @FGREP@
 FLEX_VERSION = @FLEX_VERSION@
 GREP = @GREP@
+HAVE_DLMOPEN = @HAVE_DLMOPEN@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -704,7 +705,8 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/save-load/test_load tools/mi/test_mi \
 	tools/wildcard/test_event_wildcard tools/crash/test_crash \
 	tools/regen-metadata/test_ust tools/regen-statedump/test_ust \
-	tools/notification/test_notification \
+	tools/notification/test_notification_ust \
+	tools/notification/test_notification_kernel \
 	tools/notification/test_notification_multi_app $(am__append_2) \
 	$(am__append_3)
 all: all-recursive
@@ -1127,9 +1129,16 @@ tools/regen-statedump/test_ust.log: tools/regen-statedump/test_ust
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
 	"$$tst" $(AM_TESTS_FD_REDIRECT)
-tools/notification/test_notification.log: tools/notification/test_notification
-	@p='tools/notification/test_notification'; \
-	b='tools/notification/test_notification'; \
+tools/notification/test_notification_ust.log: tools/notification/test_notification_ust
+	@p='tools/notification/test_notification_ust'; \
+	b='tools/notification/test_notification_ust'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/notification/test_notification_kernel.log: tools/notification/test_notification_kernel
+	@p='tools/notification/test_notification_kernel'; \
+	b='tools/notification/test_notification_kernel'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \

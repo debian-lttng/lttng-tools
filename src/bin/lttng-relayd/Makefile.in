@@ -130,7 +130,8 @@ am_lttng_relayd_OBJECTS = main.$(OBJEXT) utils.$(OBJEXT) \
 	cmd-2-4.$(OBJEXT) health-relayd.$(OBJEXT) \
 	viewer-stream.$(OBJEXT) session.$(OBJEXT) stream.$(OBJEXT) \
 	stream-fd.$(OBJEXT) connection.$(OBJEXT) \
-	viewer-session.$(OBJEXT) tracefile-array.$(OBJEXT)
+	viewer-session.$(OBJEXT) tracefile-array.$(OBJEXT) \
+	tcp_keep_alive.$(OBJEXT)
 lttng_relayd_OBJECTS = $(am_lttng_relayd_OBJECTS)
 lttng_relayd_DEPENDENCIES =  \
 	$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
@@ -309,6 +310,7 @@ EXEEXT = @EXEEXT@
 FGREP = @FGREP@
 FLEX_VERSION = @FLEX_VERSION@
 GREP = @GREP@
+HAVE_DLMOPEN = @HAVE_DLMOPEN@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -482,7 +484,8 @@ lttng_relayd_SOURCES = main.c lttng-relayd.h utils.h utils.c cmd.h \
                        stream-fd.c stream-fd.h \
                        connection.c connection.h \
                        viewer-session.c viewer-session.h \
-                       tracefile-array.c tracefile-array.h
+                       tracefile-array.c tracefile-array.h \
+                       tcp_keep_alive.c tcp_keep_alive.h
 
 
 # link on liblttngctl for check if relayd is already alive.
@@ -603,6 +606,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/stream-fd.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/stream.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tcp_keep_alive.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tracefile-array.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/viewer-session.Po@am__quote@
