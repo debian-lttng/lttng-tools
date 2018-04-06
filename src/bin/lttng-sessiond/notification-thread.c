@@ -96,7 +96,7 @@ struct notification_thread_handle *notification_thread_handle_create(
 		goto end;
 	}
 
-	event_pipe = lttng_pipe_open(O_CLOEXEC);
+	event_pipe = lttng_pipe_open(FD_CLOEXEC);
 	if (!event_pipe) {
 		ERR("event_pipe creation");
 		goto error;
@@ -236,7 +236,7 @@ int notification_channel_socket_create(void)
 
 	if (getuid() == 0) {
 		ret = chown(sock_path, 0,
-				utils_get_group_id(tracing_group_name));
+				utils_get_group_id(config.tracing_group_name.value));
 		if (ret) {
 			ERR("Failed to set the notification channel socket's group");
 			ret = -1;

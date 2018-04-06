@@ -301,6 +301,7 @@ EXEEXT = @EXEEXT@
 FGREP = @FGREP@
 FLEX_VERSION = @FLEX_VERSION@
 GREP = @GREP@
+HAVE_DLMOPEN = @HAVE_DLMOPEN@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -900,7 +901,7 @@ version.h:
 	@(version_h_tmpl="$(top_srcdir)/include/version.h.tmpl"; \
 	if [ -f "$${version_h_tmpl}" ]; then \
 		version_h="$(top_builddir)/include/version.h"; \
-		git_describe="$$($(GIT_DESCRIBE_CMD) 2>/dev/null)"; \
+		git_describe="`$(GIT_DESCRIBE_CMD) 2>/dev/null`"; \
 		if [ $$? -eq 0 ]; then \
 			git_version="$${git_describe}"; \
 		else \

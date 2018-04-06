@@ -2,12 +2,12 @@
 .\"     Title: lttng-enable-event
 .\"    Author: [see the "AUTHORS" section]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 08/03/2017
+.\"      Date: 03/26/2018
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.10.1
+.\"    Source: LTTng 2.10.3
 .\"  Language: English
 .\"
-.TH "LTTNG\-ENABLE\-EVENT" "1" "08/03/2017" "LTTng 2\&.10\&.1" "LTTng Manual"
+.TH "LTTNG\-ENABLE\-EVENT" "1" "03/26/2018" "LTTng 2\&.10\&.3" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -242,7 +242,7 @@ When using \fBlttng enable-event\fR with a set of conditions that does not curre
 The \fB--all\fR option can be used alongside the \fB--tracepoint\fR or \fB--syscall\fR options\&. When this option is used, no \fIEVENT\fR argument must be specified\&. This option defines a single event rule matching \fIall\fR the possible events of a given tracing domain for the chosen channel and tracing session\&. It is the equivalent of an \fIEVENT\fR argument named \fB*\fR (wildcard)\&.
 .SS "Filter expression syntax"
 .sp
-Filter expressions can be specified with the \fB--filter\fR option when creating a new event rule\&. If the filter expression evaluates to true when executed against the dynamic values of an event\(cqs fields when tracing, the filtering condition passes\&.
+A filter expression can be specified with the \fB--filter\fR option when creating a new event rule\&. If the filter expression evaluates to true when executed against the dynamic values of an event\(cqs fields when tracing, the filtering condition passes\&.
 .if n \{\
 .sp
 .\}
@@ -366,7 +366,7 @@ The precedence table of the operators above is the same as the one of the C lang
 .sp
 The dynamic value of an event field is read by using its name as a C identifier\&.
 .sp
-The dynamic value of a statically\-known context field is read by prefixing its name with \fB$ctx.\fR\&. Statically\-known context fields are context fields added to channels without the \fB$app.\fR prefix using the \fBlttng-add-context\fR(1) command\&.
+The dynamic value of a statically\-known context field is read by prefixing its name with \fB$ctx.\fR\&. Statically\-known context fields are context fields added to channels without the \fB$app.\fR prefix using the \fBlttng-add-context\fR(1) command\&. \fB$ctx.cpu_id\fR is also available as the ID of the CPU which emits the event\&.
 .sp
 The dynamic value of an application\-specific context field is read by prefixing its name with \fB$app.\fR (follows the format used to add such a context field with the \fBlttng-add-context\fR(1) command)\&.
 .sp
@@ -428,7 +428,7 @@ $app\&.my_provider:my_context == 17\&.34e9 || some_enum >= 14
 .RS 4
 .\}
 .nf
-filename != "*\&.log"
+$ctx\&.cpu_id == 2 && filename != "*\&.log"
 .fi
 .if n \{\
 .RE
