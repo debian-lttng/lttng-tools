@@ -1,3 +1,13 @@
+ltt-control (2.10.3-1~ubuntu16.04.1) xenial; urgency=medium
+
+  * [e284efc] New upstream version 2.10.2
+  * [685fb83] New upstream version 2.10.3
+  * [23f1f0c] Switched my uploader email to @debian.org
+  * [7821227] Moved VCS to salsa.debian.org
+  * [6ddf084] Use https in homepage url
+
+ -- Michael Jeanson <mjeanson@debian.org>  Fri, 06 Apr 2018 15:03:15 -0400
+
 ltt-control (2.10.1-2~xenial1) xenial; urgency=medium
 
   * Source backport to xenial
