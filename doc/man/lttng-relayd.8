@@ -2,12 +2,12 @@
 .\"     Title: lttng-relayd
 .\"    Author: [see the "AUTHORS" section]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 08/03/2017
+.\"      Date: 03/26/2018
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.10.1
+.\"    Source: LTTng 2.10.3
 .\"  Language: English
 .\"
-.TH "LTTNG\-RELAYD" "8" "08/03/2017" "LTTng 2\&.10\&.1" "LTTng Manual"
+.TH "LTTNG\-RELAYD" "8" "03/26/2018" "LTTng 2\&.10\&.3" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -212,6 +212,85 @@ Socket connection, receive and send timeout (milliseconds)\&. A value of 0 or \-
 \fBLTTNG_RELAYD_HEALTH\fR
 .RS 4
 Path to relay daemon health\(cqs socket\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_TCP_KEEP_ALIVE\fR
+.RS 4
+Set to 1 to enable TCP keep\-alive\&.
+.sp
+The TCP keep\-alive mechanism allows the detection of dead peers (\fBlttng-sessiond\fR(8)) in cases of unclean termination (for example, a hard reset) of a peer\&.
+.sp
+Supported on Linux and Solaris only\&. The default behaviour of the TCP keep\-alive mechanism is OS\-specific\&.
+.sp
+Search for
+\fBtcp_keepalive\fR
+in
+\fBtcp\fR(7)
+for more information\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_ABORT_THRESHOLD\fR
+.RS 4
+The time threshold in seconds to abort a TCP connection after the keep\-alive probing mechanism has failed\&.
+.sp
+Set to 0 or \-1 to use the value chosen by the operating system (default)\&.
+.sp
+Supported on Solaris 11 only\&.
+.sp
+Search for
+\fBtcp_keepalive_abort_threshold\fR
+in
+\fBtcp\fR(7)
+for more information\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_IDLE_TIME\fR
+.RS 4
+Number of seconds a connection needs to be idle before TCP begins sending out keep\-alive probes\&.
+.sp
+Set to 0 or \-1 to use the value chosen by the operating system (default)\&.
+.sp
+Supported on Linux and Solaris 11 only\&.
+.sp
+On Solaris\ \&11, the accepted values are \-1, 0, and 10 to 864000\&.
+.sp
+Search for
+\fBtcp_keepalive_time\fR
+and
+\fBtcp_keepalive_interval\fR
+in
+\fBtcp\fR(7)
+on Solaris 11 for more information\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_MAX_PROBE_COUNT\fR
+.RS 4
+Maximum number of TCP keep\-alive probes to send before giving up and killing the connection if no response is obtained from the other end\&.
+.sp
+Set to 0 or \-1 to use the value chosen by the operating system (default)\&.
+.sp
+Supported on Linux only\&.
+.sp
+Search for
+\fBtcp_keepalive_probes\fR
+in
+\fBtcp\fR(7)
+for more information\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_PROBE_INTERVAL\fR
+.RS 4
+Number of seconds between TCP keep\-alive probes\&.
+.sp
+Set to 0 or \-1 to use the value chosen by the operating system (default)\&.
+.sp
+Supported on Linux only\&.
+.sp
+Search for
+\fBtcp_keepalive_intvl\fR
+in
+\fBtcp\fR(7)
+for more information\&.
 .RE
 .SH "FILES"
 .PP

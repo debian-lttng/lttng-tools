@@ -316,6 +316,7 @@ EXEEXT = @EXEEXT@
 FGREP = @FGREP@
 FLEX_VERSION = @FLEX_VERSION@
 GREP = @GREP@
+HAVE_DLMOPEN = @HAVE_DLMOPEN@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -479,8 +480,8 @@ AM_LDFLAGS =
 LIBTAP = $(top_builddir)/tests/utils/tap/libtap.la
 LIB_LTTNG_CTL = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la
 @NO_SHARED_TRUE@CLEANFILES = libpause_consumer.so libpause_consumer.so.debug
-@NO_SHARED_FALSE@EXTRA_DIST = test_notification test_notification_multi_app
-@NO_SHARED_TRUE@EXTRA_DIST = test_notification test_notification_multi_app base_client.c notification.c consumer_testpoints.c
+@NO_SHARED_FALSE@EXTRA_DIST = test_notification_ust test_notification_kernel test_notification_multi_app
+@NO_SHARED_TRUE@EXTRA_DIST = test_notification_ust test_notification_kernel test_notification_multi_app base_client.c notification.c consumer_testpoints.c
 
 # In order to test the health check feature, the helper library
 # must be built as .so to be able to LD_PRELOAD it.
@@ -495,7 +496,7 @@ LIB_LTTNG_CTL = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la
 @NO_SHARED_FALSE@base_client_LDADD = $(LIB_LTTNG_CTL)
 @NO_SHARED_FALSE@notification_SOURCES = notification.c
 @NO_SHARED_FALSE@notification_LDADD = $(LIB_LTTNG_CTL) $(LIBTAP) -lm
-@NO_SHARED_FALSE@noinst_SCRIPTS = test_notification test_notification_multi_app
+@NO_SHARED_FALSE@noinst_SCRIPTS = test_notification_ust test_notification_ust test_notification_multi_app
 all: all-am
 
 .SUFFIXES:

@@ -143,9 +143,10 @@ am__lttng_sessiond_SOURCES_DIST = utils.c utils.h trace-kernel.c \
 	syscall.c notification-thread.h notification-thread.c \
 	notification-thread-commands.h notification-thread-commands.c \
 	notification-thread-events.h notification-thread-events.c \
-	trace-ust.c ust-registry.c ust-app.c ust-consumer.c \
-	ust-consumer.h ust-thread.c ust-metadata.c ust-clock.h \
-	agent-thread.c agent-thread.h lttng-sessiond.h main.c
+	sessiond-config.h sessiond-config.c trace-ust.c ust-registry.c \
+	ust-app.c ust-consumer.c ust-consumer.h ust-thread.c \
+	ust-metadata.c ust-clock.h agent-thread.c agent-thread.h \
+	lttng-sessiond.h main.c
 @HAVE_LIBLTTNG_UST_CTL_TRUE@am__objects_1 = trace-ust.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-registry.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-app.$(OBJEXT) \
@@ -163,8 +164,8 @@ am_lttng_sessiond_OBJECTS = utils.$(OBJEXT) trace-kernel.$(OBJEXT) \
 	load-session-thread.$(OBJEXT) syscall.$(OBJEXT) \
 	notification-thread.$(OBJEXT) \
 	notification-thread-commands.$(OBJEXT) \
-	notification-thread-events.$(OBJEXT) $(am__objects_1) \
-	main.$(OBJEXT)
+	notification-thread-events.$(OBJEXT) sessiond-config.$(OBJEXT) \
+	$(am__objects_1) main.$(OBJEXT)
 lttng_sessiond_OBJECTS = $(am_lttng_sessiond_OBJECTS)
 am__DEPENDENCIES_1 =
 lttng_sessiond_DEPENDENCIES = $(am__DEPENDENCIES_1) \
@@ -347,6 +348,7 @@ EXEEXT = @EXEEXT@
 FGREP = @FGREP@
 FLEX_VERSION = @FLEX_VERSION@
 GREP = @GREP@
+HAVE_DLMOPEN = @HAVE_DLMOPEN@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -522,7 +524,8 @@ lttng_sessiond_SOURCES = utils.c utils.h trace-kernel.c trace-kernel.h \
 	syscall.c notification-thread.h notification-thread.c \
 	notification-thread-commands.h notification-thread-commands.c \
 	notification-thread-events.h notification-thread-events.c \
-	$(am__append_2) lttng-sessiond.h main.c
+	sessiond-config.h sessiond-config.c $(am__append_2) \
+	lttng-sessiond.h main.c
 
 # link on liblttngctl for check if sessiond is already alive.
 lttng_sessiond_LDADD = -lurcu-common -lurcu $(KMOD_LIBS) \
@@ -651,6 +654,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notification-thread.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/save.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sessiond-config.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/shm.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/snapshot.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/syscall.Po@am__quote@

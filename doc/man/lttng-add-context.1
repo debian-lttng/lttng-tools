@@ -2,12 +2,12 @@
 .\"     Title: lttng-add-context
 .\"    Author: [see the "AUTHORS" section]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 08/03/2017
+.\"      Date: 03/26/2018
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.10.1
+.\"    Source: LTTng 2.10.3
 .\"  Language: English
 .\"
-.TH "LTTNG\-ADD\-CONTEXT" "1" "08/03/2017" "LTTng 2\&.10\&.1" "LTTng Manual"
+.TH "LTTNG\-ADD\-CONTEXT" "1" "03/26/2018" "LTTng 2\&.10\&.3" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -113,6 +113,8 @@ Make sure to \fBsingle\-quote\fR the type when running the command from a shell,
 .RE
 .sp
 Use the \fB--list\fR option without other arguments to list the available context field names\&.
+.sp
+See the \fILIMITATIONS\fR section below for a list of limitations to consider\&.
 .SH "OPTIONS"
 .sp
 General options are described in \fBlttng\fR(1)\&.
@@ -186,6 +188,9 @@ environment variable\&.
 .RS 4
 List available command options\&.
 .RE
+.SH "LIMITATIONS"
+.sp
+As of this version of LTTng, it is not possible to add context fields to a channel once its tracing session has been started (see \fBlttng-start\fR(1)) at least once\&.
 .SH "ENVIRONMENT VARIABLES"
 .PP
 \fBLTTNG_ABORT_ON_ERROR\fR
