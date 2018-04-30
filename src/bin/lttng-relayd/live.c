@@ -452,10 +452,11 @@ struct lttcomm_sock *init_socket(struct lttng_uri *uri)
 	if (ret < 0) {
 		goto error;
 	}
-	DBG("Listening on sock %d for live", sock->fd);
+	DBG("Listening on sock %d for lttng-live", sock->fd);
 
 	ret = sock->ops->bind(sock);
 	if (ret < 0) {
+		PERROR("Failed to bind lttng-live socket");
 		goto error;
 	}
 
@@ -1483,6 +1484,7 @@ static
 int viewer_get_packet(struct relay_connection *conn)
 {
 	int ret;
+	off_t lseek_ret;
 	char *reply = NULL;
 	struct lttng_viewer_get_packet get_packet_info;
 	struct lttng_viewer_trace_packet reply_header;
@@ -1524,9 +1526,9 @@ int viewer_get_packet(struct relay_connection *conn)
 	}
 
 	pthread_mutex_lock(&vstream->stream->lock);
-	ret = lseek(vstream->stream_fd->fd, be64toh(get_packet_info.offset),
+	lseek_ret = lseek(vstream->stream_fd->fd, be64toh(get_packet_info.offset),
 			SEEK_SET);
-	if (ret < 0) {
+	if (lseek_ret < 0) {
 		PERROR("lseek fd %d to offset %" PRIu64, vstream->stream_fd->fd,
 			be64toh(get_packet_info.offset));
 		goto error;

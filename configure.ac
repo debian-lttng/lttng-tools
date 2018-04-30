@@ -1,5 +1,5 @@
 AC_PREREQ([2.64])
-AC_INIT([lttng-tools],[2.10.3],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
+AC_INIT([lttng-tools],[2.10.4],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
 
 AC_CONFIG_HEADERS([include/config.h])
 AC_CONFIG_AUX_DIR([config])
@@ -39,6 +39,11 @@ AM_CONDITIONAL([HAVE_OBJCOPY], [test "x$OBJCOPY" != xno])
 # check for pgrep
 AC_PATH_PROG([PGREP], [pgrep], [no])
 AM_CONDITIONAL([HAVE_PGREP], [test "x$PGREP" != "xno"])
+
+# set $IN_GIT_REPO if we're in the Git repository; the `bootstrap` file
+# is not distributed in tarballs
+AS_IF([test -f "$srcdir/bootstrap"], [in_git_repo=yes], [in_git_repo=no])
+AM_CONDITIONAL([IN_GIT_REPO], [test "x$in_git_repo" = "xyes"])
 
 # check for bison
 AC_PROG_YACC
@@ -326,7 +331,8 @@ m4_define([_DEFAULT_CHANNEL_LIVE_TIMER], [0])
 m4_define([_DEFAULT_CHANNEL_READ_TIMER], [200000])
 m4_define([_DEFAULT_CHANNEL_MONITOR_TIMER], [1000000])
 m4_define([_DEFAULT_CHANNEL_BLOCKING_TIMEOUT], [0])
-_AC_DEFINE_AND_SUBST([DEFAULT_AGENT_TCP_PORT], [5345])
+_AC_DEFINE_AND_SUBST([DEFAULT_AGENT_TCP_PORT_RANGE_BEGIN], [5345])
+_AC_DEFINE_AND_SUBST([DEFAULT_AGENT_TCP_PORT_RANGE_END], [5354])
 _AC_DEFINE_AND_SUBST([DEFAULT_APP_SOCKET_RW_TIMEOUT], [5])
 _AC_DEFINE_AND_SUBST([DEFAULT_CHANNEL_SUBBUF_SIZE], [_DEFAULT_CHANNEL_SUBBUF_SIZE])
 _AC_DEFINE_AND_SUBST([DEFAULT_CHANNEL_TRACEFILE_COUNT], [0])
@@ -674,11 +680,6 @@ if test "x$test_java_agent_jul" = "xyes" || test "x$test_java_agent_log4j" = "xy
 		fi
 	fi
 fi
-
-# set $IN_GIT_REPO if we're in the Git repository; the `bootstrap` file
-# is not distributed in tarballs
-AS_IF([test -f "$srcdir/bootstrap"], [in_git_repo=yes], [in_git_repo=no])
-AM_CONDITIONAL([IN_GIT_REPO], [test "x$in_git_repo" = "xyes"])
 
 # enable building man pages (user's intention)
 AC_ARG_ENABLE(
