@@ -59,7 +59,7 @@ const char *log_add_time(void)
 
 	/* Format time in the TLS variable. */
 	ret = snprintf(URCU_TLS(error_log_time).str, sizeof(URCU_TLS(error_log_time).str),
-			"%02d:%02d:%02d.%06ld",
+			"%02d:%02d:%02d.%09ld",
 			tm.tm_hour, tm.tm_min, tm.tm_sec, tp.tv_nsec);
 	if (ret < 0) {
 		goto error;
@@ -190,6 +190,7 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_TRIGGER_EXISTS) ] = "Trigger already registered",
 	[ ERROR_INDEX(LTTNG_ERR_TRIGGER_NOT_FOUND) ] = "Trigger not found",
 	[ ERROR_INDEX(LTTNG_ERR_COMMAND_CANCELLED) ] = "Command cancelled",
+	[ ERROR_INDEX(LTTNG_ERR_AGENT_TRACING_DISABLED) ] = "Session daemon agent tracing is disabled",
 
 	/* Last element */
 	[ ERROR_INDEX(LTTNG_ERR_NR) ] = "Unknown error code"
