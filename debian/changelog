@@ -1,3 +1,11 @@
+ltt-control (2.10.4-1) unstable; urgency=medium
+
+  * [4d4f049] New upstream version 2.10.4
+  * [d8b6008] Use salsa canonical uri in VCS-Browser
+  * [6ef519b] Bump standard to 4.1.4, no changes necessary
+
+ -- Michael Jeanson <mjeanson@debian.org>  Mon, 30 Apr 2018 16:14:58 -0400
+
 ltt-control (2.10.3-1) unstable; urgency=medium
 
   * [685fb83] New upstream version 2.10.3
