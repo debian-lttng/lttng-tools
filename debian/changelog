@@ -1,3 +1,9 @@
+ltt-control (2.10.4-1~ubuntu18.04.1) bionic; urgency=medium
+
+  * [518e335] Set gbp config for bionic
+
+ -- Michael Jeanson <mjeanson@debian.org>  Mon, 30 Apr 2018 16:39:20 -0400
+
 ltt-control (2.10.4-1) unstable; urgency=medium
 
   * [4d4f049] New upstream version 2.10.4
