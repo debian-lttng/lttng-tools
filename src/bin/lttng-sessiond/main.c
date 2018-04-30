@@ -291,7 +291,7 @@ struct lttng_ht *agent_apps_ht_by_sock = NULL;
  * NR_LTTNG_SESSIOND_READY must match the number of calls to
  * sessiond_notify_ready().
  */
-#define NR_LTTNG_SESSIOND_READY		4
+#define NR_LTTNG_SESSIOND_READY		5
 int lttng_sessiond_ready = NR_LTTNG_SESSIOND_READY;
 
 int sessiond_check_thread_quit_pipe(int fd, uint32_t events)
@@ -597,21 +597,6 @@ static void sessiond_cleanup(void)
 	if (load_info) {
 		load_session_destroy_data(load_info);
 		free(load_info);
-	}
-
-	/*
-	 * Cleanup lock file by deleting it and finaly closing it which will
-	 * release the file system lock.
-	 */
-	if (lockfile_fd >= 0) {
-		ret = remove(config.lock_file_path.value);
-		if (ret < 0) {
-			PERROR("remove lock file");
-		}
-		ret = close(lockfile_fd);
-		if (ret < 0) {
-			PERROR("close lock file");
-		}
 	}
 
 	/*
@@ -4302,10 +4287,39 @@ static void *thread_manage_clients(void *data)
 	}
 
 	sessiond_notify_ready();
+
 	ret = sem_post(&load_info->message_thread_ready);
 	if (ret) {
 		PERROR("sem_post message_thread_ready");
 		goto error;
+	}
+
+	/*
+	 * Wait until all support threads are initialized before accepting
+	 * commands.
+	 */
+	while (uatomic_read(&lttng_sessiond_ready) != 0) {
+		fd_set read_fds;
+		struct timeval timeout;
+
+		FD_ZERO(&read_fds);
+		FD_SET(thread_quit_pipe[0], &read_fds);
+		memset(&timeout, 0, sizeof(timeout));
+		timeout.tv_usec = 1000;
+
+		/*
+		 * If a support thread failed to launch, it may signal that
+		 * we must exit and the sessiond would never be marked as
+		 * "ready".
+		 *
+		 * The timeout is set to 1ms, which serves as a way to
+		 * pace down this check.
+		 */
+		ret = select(thread_quit_pipe[0] + 1, &read_fds, NULL, NULL,
+				&timeout);
+		if (ret > 0 || (ret < 0 && errno != EINTR)) {
+			goto exit;
+		}
 	}
 
 	/* This testpoint is after we signal readiness to the parent. */
@@ -4720,7 +4734,7 @@ static int set_option(int opt, const char *arg, const char *optname)
 	} else if (string_match(optname, "no-kernel")) {
 		config.no_kernel = true;
 	} else if (string_match(optname, "quiet") || opt == 'q') {
-		lttng_opt_quiet = true;
+		config.quiet = true;
 	} else if (string_match(optname, "verbose") || opt == 'v') {
 		/* Verbose level can increase using multiple -v */
 		if (arg) {
@@ -4839,8 +4853,8 @@ static int set_option(int opt, const char *arg, const char *optname)
 				ERR("Port overflow in --agent-tcp-port parameter: %s", arg);
 				return -1;
 			}
-			config.agent_tcp_port = (uint32_t) v;
-			DBG3("Agent TCP port set to non default: %u", config.agent_tcp_port);
+			config.agent_tcp_port.begin = config.agent_tcp_port.end = (int) v;
+			DBG3("Agent TCP port set to non default: %i", (int) v);
 		}
 	} else if (string_match(optname, "load") || opt == 'l') {
 		if (!arg || *arg == '\0') {
@@ -5124,17 +5138,56 @@ end:
 }
 
 /*
+ * Create lockfile using the rundir and return its fd.
+ */
+static int create_lockfile(void)
+{
+        return utils_create_lock_file(config.lock_file_path.value);
+}
+
+/*
  * Check if the global socket is available, and if a daemon is answering at the
  * other side. If yes, error is returned.
+ *
+ * Also attempts to create and hold the lock file.
  */
 static int check_existing_daemon(void)
 {
+	int ret = 0;
+
 	/* Is there anybody out there ? */
 	if (lttng_session_daemon_alive()) {
-		return -EEXIST;
+		ret = -EEXIST;
+		goto end;
 	}
 
-	return 0;
+	lockfile_fd = create_lockfile();
+	if (lockfile_fd < 0) {
+		ret = -EEXIST;
+		goto end;
+	}
+end:
+	return ret;
+}
+
+static void sessiond_cleanup_lock_file(void)
+{
+	int ret;
+
+	/*
+	 * Cleanup lock file by deleting it and finaly closing it which will
+	 * release the file system lock.
+	 */
+	if (lockfile_fd >= 0) {
+		ret = remove(config.lock_file_path.value);
+		if (ret < 0) {
+			PERROR("remove lock file");
+		}
+		ret = close(lockfile_fd);
+		if (ret < 0) {
+			PERROR("close lock file");
+		}
+	}
 }
 
 /*
@@ -5393,23 +5446,6 @@ static int write_pidfile(void)
         return utils_create_pid_file(getpid(), config.pid_file_path.value);
 }
 
-/*
- * Create lockfile using the rundir and return its fd.
- */
-static int create_lockfile(void)
-{
-        return utils_create_lock_file(config.lock_file_path.value);
-}
-
-/*
- * Write agent TCP port using the rundir.
- */
-static int write_agent_port(void)
-{
-	return utils_create_pid_file(config.agent_tcp_port,
-			config.agent_port_file_path.value);
-}
-
 static int set_clock_plugin_env(void)
 {
 	int ret = 0;
@@ -5521,6 +5557,18 @@ int main(int argc, char **argv)
 
 	sessiond_config_log(&config);
 
+	if (create_lttng_rundir()) {
+		retval = -1;
+		goto exit_options;
+	}
+
+	/* Abort launch if a session daemon is already running. */
+	if (check_existing_daemon()) {
+		ERR("A session daemon is already running.");
+		retval = -1;
+		goto exit_options;
+	}
+
 	/* Daemonize */
 	if (config.daemonize || config.background) {
 		int i;
@@ -5535,9 +5583,12 @@ int main(int argc, char **argv)
 		/*
 		 * We are in the child. Make sure all other file descriptors are
 		 * closed, in case we are called with more opened file
-		 * descriptors than the standard ones.
+		 * descriptors than the standard ones and the lock file.
 		 */
 		for (i = 3; i < sysconf(_SC_OPEN_MAX); i++) {
+			if (i == lockfile_fd) {
+				continue;
+			}
 			(void) close(i);
 		}
 	}
@@ -5576,12 +5627,6 @@ int main(int argc, char **argv)
 
 	/* Check if daemon is UID = 0 */
 	is_root = !getuid();
-
-	if (create_lttng_rundir()) {
-		retval = -1;
-		goto exit_init_data;
-	}
-
 	if (is_root) {
 		/* Create global run dir with root access */
 
@@ -5598,12 +5643,6 @@ int main(int argc, char **argv)
 			retval = -1;
 			goto exit_init_data;
 		}
-	}
-
-	lockfile_fd = create_lockfile();
-	if (lockfile_fd < 0) {
-		retval = -1;
-		goto exit_init_data;
 	}
 
 	/* Set consumer initial state */
@@ -5632,19 +5671,6 @@ int main(int argc, char **argv)
 	ustconsumer64_data.channel_monitor_pipe = lttng_pipe_release_writefd(
 			ust64_channel_monitor_pipe);
 	if (ustconsumer64_data.channel_monitor_pipe < 0) {
-		retval = -1;
-		goto exit_init_data;
-	}
-
-	/*
-	 * See if daemon already exist.
-	 */
-	if (check_existing_daemon()) {
-		ERR("Already running daemon.\n");
-		/*
-		 * We do not goto exit because we must not cleanup()
-		 * because a daemon is already running.
-		 */
 		retval = -1;
 		goto exit_init_data;
 	}
@@ -5773,12 +5799,6 @@ int main(int argc, char **argv)
 	ret = write_pidfile();
 	if (ret) {
 		ERR("Error in write_pidfile");
-		retval = -1;
-		goto exit_init_data;
-	}
-	ret = write_agent_port();
-	if (ret) {
-		ERR("Error in write_agent_port");
 		retval = -1;
 		goto exit_init_data;
 	}
@@ -6060,6 +6080,7 @@ exit_health_sessiond_cleanup:
 exit_create_run_as_worker_cleanup:
 
 exit_options:
+	sessiond_cleanup_lock_file();
 	sessiond_cleanup_options();
 
 exit_set_signal_handler:
