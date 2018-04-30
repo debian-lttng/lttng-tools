@@ -1,3 +1,11 @@
+ltt-control (2.10.4-1~ubuntu16.04.1) xenial; urgency=medium
+
+  * [4d4f049] New upstream version 2.10.4
+  * [b1671d8] Use salsa canonical uri in VCS-Browser
+  * [e16bec6] Bump standard to 4.1.4, no changes necessary
+
+ -- Michael Jeanson <mjeanson@debian.org>  Mon, 30 Apr 2018 16:35:33 -0400
+
 ltt-control (2.10.3-1~ubuntu16.04.1) xenial; urgency=medium
 
   * [e284efc] New upstream version 2.10.2
