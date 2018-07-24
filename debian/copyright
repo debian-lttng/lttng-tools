@@ -862,7 +862,7 @@ Files: tests/regression/ust/ust-dl/*
 Copyright: 2012, David Goulet <dgoulet@efficios.com>
 License: LGPL-2.1
 
-Files: tests/regression/ust/ust-dl/test_ust-dl
+Files: tests/regression/ust/ust-dl/test_ust-dl.in
 Copyright: - 2013, Jérémie Galarneau <jeremie.galarneau@efficios.com>
 License: GPL-2
 
