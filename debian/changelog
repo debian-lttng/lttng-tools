@@ -1,3 +1,12 @@
+ltt-control (2.10.5-1) unstable; urgency=medium
+
+  * [d413c5a] New upstream version 2.10.5
+  * [73bbc13] Update renamed file in debian/copyright
+  * [71a61f0] Drop x-python3-version
+  * [d29169f] Bump standard to 4.1.5, no changes necessary
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 24 Jul 2018 13:49:04 -0400
+
 ltt-control (2.10.4-1) unstable; urgency=medium
 
   * [4d4f049] New upstream version 2.10.4
