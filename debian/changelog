@@ -1,3 +1,12 @@
+ltt-control (2.10.5-1~ubuntu18.04.1) bionic; urgency=medium
+
+  * [d413c5a] New upstream version 2.10.5
+  * [dda0c98] Update renamed file in debian/copyright
+  * [95646c6] Drop x-python3-version
+  * [fc4b57a] Bump standard to 4.1.5, no changes necessary
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 24 Jul 2018 14:29:02 -0400
+
 ltt-control (2.10.4-1~ubuntu18.04.1) bionic; urgency=medium
 
   * [518e335] Set gbp config for bionic
