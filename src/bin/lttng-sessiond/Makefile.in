@@ -93,7 +93,8 @@ target_triplet = @target@
 bin_PROGRAMS = lttng-sessiond$(EXEEXT)
 @HAVE_LIBLTTNG_UST_CTL_TRUE@am__append_2 = trace-ust.c ust-registry.c ust-app.c \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@			ust-consumer.c ust-consumer.h ust-thread.c \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@			ust-metadata.c ust-clock.h agent-thread.c agent-thread.h
+@HAVE_LIBLTTNG_UST_CTL_TRUE@			ust-metadata.c ust-clock.h agent-thread.c agent-thread.h \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@			ust-field-utils.h ust-field-utils.c
 
 @HAVE_LIBLTTNG_UST_CTL_TRUE@am__append_3 = -llttng-ust-ctl
 subdir = src/bin/lttng-sessiond
@@ -146,14 +147,15 @@ am__lttng_sessiond_SOURCES_DIST = utils.c utils.h trace-kernel.c \
 	sessiond-config.h sessiond-config.c trace-ust.c ust-registry.c \
 	ust-app.c ust-consumer.c ust-consumer.h ust-thread.c \
 	ust-metadata.c ust-clock.h agent-thread.c agent-thread.h \
-	lttng-sessiond.h main.c
+	ust-field-utils.h ust-field-utils.c lttng-sessiond.h main.c
 @HAVE_LIBLTTNG_UST_CTL_TRUE@am__objects_1 = trace-ust.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-registry.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-app.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-consumer.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-thread.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-metadata.$(OBJEXT) \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	agent-thread.$(OBJEXT)
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	agent-thread.$(OBJEXT) \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-field-utils.$(OBJEXT)
 am_lttng_sessiond_OBJECTS = utils.$(OBJEXT) trace-kernel.$(OBJEXT) \
 	kernel.$(OBJEXT) context.$(OBJEXT) channel.$(OBJEXT) \
 	event.$(OBJEXT) shm.$(OBJEXT) consumer.$(OBJEXT) \
@@ -663,6 +665,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trace-ust.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-app.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-consumer.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-field-utils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-metadata.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-registry.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-thread.Po@am__quote@
