@@ -797,6 +797,7 @@ test_session_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBRELAYD) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	       $(top_builddir)/src/bin/lttng-sessiond/utils.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@		   $(top_builddir)/src/bin/lttng-sessiond/buffer-registry.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@		   $(top_builddir)/src/bin/lttng-sessiond/ust-registry.$(OBJEXT) \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@		   $(top_builddir)/src/bin/lttng-sessiond/ust-field-utils.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@		   $(top_builddir)/src/bin/lttng-sessiond/ust-metadata.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@		   $(top_builddir)/src/bin/lttng-sessiond/ust-app.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@		   $(top_builddir)/src/bin/lttng-sessiond/ust-consumer.$(OBJEXT) \
