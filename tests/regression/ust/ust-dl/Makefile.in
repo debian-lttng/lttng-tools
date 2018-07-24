@@ -503,7 +503,7 @@ top_srcdir = @top_srcdir@
 @NO_SHARED_TRUE@CLEANFILES = libbar.so libbar.so.debug libfoo.so libfoo.so.debug \
 @NO_SHARED_TRUE@	libzzz.so libzzz.so.debug prog libtp.so
 
-@NO_SHARED_FALSE@EXTRA_DIST = test_ust-dl test_ust-dl.py
+@NO_SHARED_FALSE@EXTRA_DIST = test_ust-dl.py
 @NO_SHARED_TRUE@EXTRA_DIST = test_ust-dl test_ust-dl.py libbar.c libbar.h libbar-tp.h \
 @NO_SHARED_TRUE@	libbar-tp.c libfoo.c libfoo.h libfoo-tp.h libfoo-tp.c \
 @NO_SHARED_TRUE@	libzzz.c libzzz.h libzzz-tp.h libzzz-tp.c prog.c libtp.c

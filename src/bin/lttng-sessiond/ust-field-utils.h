@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2018 - Francis Deslauriers francis.deslauriers@efficios.com>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License, version 2 only, as
@@ -15,30 +15,16 @@
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include <stdbool.h>
+#ifndef LTTNG_UST_FIELD_UTILS_H
+#define LTTNG_UST_FIELD_UTILS_H
 
-#ifndef LTTNG_SESSIOND_AGENT_THREAD_H
-#define LTTNG_SESSIOND_AGENT_THREAD_H
+#include "ust-ctl.h"
 
-#ifdef HAVE_LIBLTTNG_UST_CTL
+/*
+ * Compare two UST fields.
+ * Return 1 if both fields have identical definition, 0 otherwise.
+ */
+int match_ustctl_field(const struct ustctl_field *first,
+		const struct ustctl_field *second);
 
-void *agent_thread_manage_registration(void *data);
-bool agent_tracing_is_enabled(void);
-
-#else /* HAVE_LIBLTTNG_UST_CTL */
-
-static inline
-void *agent_thread_manage_registration(void *data)
-{
-	sessiond_notify_ready();
-	return NULL;
-}
-static inline
-bool agent_tracing_is_enabled(void)
-{
-	return false;
-}
-
-#endif /* HAVE_LIBLTTNG_UST_CTL */
-
-#endif /* LTTNG_SESSIOND_AGENT_THREAD_H */
+#endif /* LTTNG_UST_FIELD_UTILS_H */
