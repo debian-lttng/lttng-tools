@@ -1,3 +1,12 @@
+ltt-control (2.10.5-1~ubuntu16.04.1) xenial; urgency=medium
+
+  * [d413c5a] New upstream version 2.10.5
+  * [30d0eaf] Update renamed file in debian/copyright
+  * [8dfea87] Drop x-python3-version
+  * [b3754a9] Bump standard to 4.1.5, no changes necessary
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 24 Jul 2018 14:15:41 -0400
+
 ltt-control (2.10.4-1~ubuntu16.04.1) xenial; urgency=medium
 
   * [4d4f049] New upstream version 2.10.4
