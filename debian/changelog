@@ -1,3 +1,10 @@
+ltt-control (2.10.5-2) unstable; urgency=medium
+
+  * [ab61509] Symbols fix on riscv64
+  * [eb04626] Bump standard to 4.2.0, no changes necessary
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 21 Aug 2018 15:43:46 -0400
+
 ltt-control (2.10.5-1) unstable; urgency=medium
 
   * [d413c5a] New upstream version 2.10.5
