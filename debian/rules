@@ -20,9 +20,6 @@ override_dh_autoreconf:
 	# to re-generate them.
 	touch doc/man/*.1 doc/man/*.3 doc/man/*.8
 
-override_dh_auto_build:
-	dh_auto_build -- V=1
-
 override_dh_auto_test:
 
 override_dh_auto_install:
