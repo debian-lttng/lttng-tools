@@ -215,13 +215,13 @@ const char *get_kernel_instrumentation_string(
 		instrumentation_string = config_event_type_tracepoint;
 		break;
 	case LTTNG_KERNEL_KPROBE:
-		instrumentation_string = config_event_type_kprobe;
+		instrumentation_string = config_event_type_probe;
 		break;
 	case LTTNG_KERNEL_FUNCTION:
-		instrumentation_string = config_event_type_function;
+		instrumentation_string = config_event_type_function_entry;
 		break;
 	case LTTNG_KERNEL_KRETPROBE:
-		instrumentation_string = config_event_type_kretprobe;
+		instrumentation_string = config_event_type_function;
 		break;
 	case LTTNG_KERNEL_NOOP:
 		instrumentation_string = config_event_type_noop;
@@ -1890,8 +1890,7 @@ static
 int save_session(struct ltt_session *session,
 	struct lttng_save_session_attr *attr, lttng_sock_cred *creds)
 {
-	int ret, fd;
-	unsigned int file_opened = 0;	/* Indicate if the file has been opened */
+	int ret, fd = -1;
 	char config_file_path[PATH_MAX];
 	size_t len;
 	struct config_writer *writer = NULL;
@@ -1984,7 +1983,6 @@ int save_session(struct ltt_session *session,
 		ret = LTTNG_ERR_SAVE_IO_FAIL;
 		goto end;
 	}
-	file_opened = 1;
 
 	writer = config_writer_create(fd, 1);
 	if (!writer) {
@@ -2089,12 +2087,12 @@ end:
 	}
 	if (ret) {
 		/* Delete file in case of error */
-		if (file_opened && unlink(config_file_path)) {
+		if ((fd >= 0) && unlink(config_file_path)) {
 			PERROR("Unlinking XML session configuration.");
 		}
 	}
 
-	if (file_opened) {
+	if (fd >= 0) {
 		ret = close(fd);
 		if (ret) {
 			PERROR("Closing XML session configuration");
