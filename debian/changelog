@@ -1,3 +1,13 @@
+ltt-control (2.10.6-1) unstable; urgency=medium
+
+  * [cb28f0c] New upstream version 2.10.6
+  * [c90a38e] Bump debhelper compat to 10
+  * [ad0f696] Remove signatures from upstream key
+  * [5119696] Add Build-Depends-Package to symbols file
+  * [090514b] Bump standards version to 4.3.0
+
+ -- Michael Jeanson <mjeanson@debian.org>  Fri, 25 Jan 2019 14:55:27 -0500
+
 ltt-control (2.10.5-2) unstable; urgency=medium
 
   * [ab61509] Symbols fix on riscv64
