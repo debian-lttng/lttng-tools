@@ -835,6 +835,11 @@ int viewer_list_sessions(struct relay_connection *conn)
 
 		health_code_update();
 
+		if (session->connection_closed) {
+			/* Skip closed session */
+			continue;
+		}
+
 		if (count >= buf_count) {
 			struct lttng_viewer_session *newbuf;
 			uint32_t new_buf_count = buf_count << 1;
@@ -1089,7 +1094,7 @@ int viewer_attach_session(struct relay_connection *conn)
 	if (closed) {
 		send_streams = 0;
 		response.streams_count = 0;
-		response.status = htobe32(LTTNG_VIEWER_NEW_STREAMS_HUP);
+		response.status = htobe32(LTTNG_VIEWER_ATTACH_UNK);
 		goto send_reply;
 	}
 

@@ -565,6 +565,7 @@ int notification_thread_client_subscribe(struct notification_client *client,
 			client, state)) {
 		WARN("[notification-thread] Evaluation of a condition on client subscription failed, aborting.");
 		ret = -1;
+		free(client_list_element);
 		goto end_unlock;
 	}
 
@@ -1118,6 +1119,7 @@ int handle_notification_thread_command_register_trigger(
 			channels_ht_node) {
 		struct lttng_trigger_list_element *trigger_list_element;
 		struct lttng_channel_trigger_list *trigger_list;
+		struct cds_lfht_iter lookup_iter;
 
 		if (!trigger_applies_to_channel(trigger, channel)) {
 			continue;
@@ -1127,8 +1129,8 @@ int handle_notification_thread_command_register_trigger(
 				hash_channel_key(&channel->key),
 				match_channel_trigger_list,
 				&channel->key,
-				&iter);
-		node = cds_lfht_iter_get_node(&iter);
+				&lookup_iter);
+		node = cds_lfht_iter_get_node(&lookup_iter);
 		assert(node);
 		trigger_list = caa_container_of(node,
 				struct lttng_channel_trigger_list,
