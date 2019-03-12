@@ -1,3 +1,9 @@
+ltt-control (2.10.6-1~ubuntu14.04.1) trusty; urgency=medium
+
+  * [099b926] New upstream version 2.10.6
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 12 Mar 2019 16:39:25 -0400
+
 ltt-control (2.10.5-1~ubuntu14.04.1) trusty; urgency=medium
 
   * [d413c5a] New upstream version 2.10.5
