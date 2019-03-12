@@ -547,15 +547,9 @@ static void sessiond_cleanup(void)
 	 */
 	utils_close_pipe(thread_quit_pipe);
 
-	/*
-	 * If config.pid_file_path.value is undefined, the default file will be
-	 * wiped when removing the rundir.
-	 */
-	if (config.pid_file_path.value) {
-		ret = remove(config.pid_file_path.value);
-		if (ret < 0) {
-			PERROR("remove pidfile %s", config.pid_file_path.value);
-		}
+	ret = remove(config.pid_file_path.value);
+	if (ret < 0) {
+		PERROR("remove pidfile %s", config.pid_file_path.value);
 	}
 
 	DBG("Removing sessiond and consumerd content of directory %s",
@@ -2442,7 +2436,8 @@ static pid_t spawn_consumerd(struct consumer_data *consumer_data)
 			} else if (stat(INSTALL_BIN_PATH "/" DEFAULT_CONSUMERD_FILE, &st) == 0) {
 				DBG3("Found location #2");
 				consumer_to_use = INSTALL_BIN_PATH "/" DEFAULT_CONSUMERD_FILE;
-			} else if (stat(config.consumerd32_bin_path.value, &st) == 0) {
+			} else if (config.consumerd32_bin_path.value &&
+					stat(config.consumerd32_bin_path.value, &st) == 0) {
 				DBG3("Found location #3");
 				consumer_to_use = config.consumerd32_bin_path.value;
 			} else {

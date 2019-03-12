@@ -486,9 +486,11 @@ void delete_ust_app_channel(int sock, struct ust_app_channel *ua_chan,
 		registry = get_session_registry(ua_chan->session);
 		if (registry) {
 			ust_registry_channel_del_free(registry, ua_chan->key,
-				true);
+				sock >= 0);
 		}
-		save_per_pid_lost_discarded_counters(ua_chan);
+		if (sock >= 0) {
+			save_per_pid_lost_discarded_counters(ua_chan);
+		}
 	}
 
 	if (ua_chan->obj != NULL) {
@@ -3010,7 +3012,7 @@ static int create_channel_per_pid(struct ust_app *app,
 	if (ret < 0) {
 		ERR("Error creating UST channel \"%s\" on the consumer daemon",
 			ua_chan->name);
-		goto error;
+		goto error_remove_from_registry;
 	}
 
 	ret = send_channel_pid_to_ust(app, ua_sess, ua_chan);
@@ -3018,7 +3020,7 @@ static int create_channel_per_pid(struct ust_app *app,
 		if (ret != -ENOTCONN) {
 			ERR("Error sending channel to application");
 		}
-		goto error;
+		goto error_remove_from_registry;
 	}
 
 	session = session_find_by_id(ua_sess->tracing_id);
@@ -3041,9 +3043,13 @@ static int create_channel_per_pid(struct ust_app *app,
 	if (cmd_ret != LTTNG_OK) {
 		ret = - (int) cmd_ret;
 		ERR("Failed to add channel to notification thread");
-		goto error;
+		goto error_remove_from_registry;
 	}
 
+error_remove_from_registry:
+	if (ret) {
+		ust_registry_channel_del_free(registry, ua_chan->key, false);
+	}
 error:
 	rcu_read_unlock();
 	return ret;
@@ -5394,7 +5400,7 @@ static int reply_ust_register_channel(int sock, int sobjd, int cobjd,
 		size_t nr_fields, struct ustctl_field *fields)
 {
 	int ret, ret_code = 0;
-	uint32_t chan_id, reg_count;
+	uint32_t chan_id;
 	uint64_t chan_reg_key;
 	enum ustctl_channel_header type;
 	struct ust_app *app;
@@ -5446,13 +5452,12 @@ static int reply_ust_register_channel(int sock, int sobjd, int cobjd,
 	assert(chan_reg);
 
 	if (!chan_reg->register_done) {
-		reg_count = ust_registry_get_event_count(chan_reg);
-		if (reg_count < 31) {
-			type = USTCTL_CHANNEL_HEADER_COMPACT;
-		} else {
-			type = USTCTL_CHANNEL_HEADER_LARGE;
-		}
-
+		/*
+		 * TODO: eventually use the registry event count for
+		 * this channel to better guess header type for per-pid
+		 * buffers.
+		 */
+		type = USTCTL_CHANNEL_HEADER_LARGE;
 		chan_reg->nr_ctx_fields = nr_fields;
 		chan_reg->ctx_fields = fields;
 		fields = NULL;
@@ -5931,6 +5936,11 @@ int ust_app_snapshot_record(struct ltt_ust_session *usess,
 		cds_list_for_each_entry(reg, &usess->buffer_reg_uid_list, lnode) {
 			struct buffer_reg_channel *reg_chan;
 			struct consumer_socket *socket;
+
+			if (!reg->registry->reg.ust->metadata_key) {
+				/* Skip since no metadata is present */
+				continue;
+			}
 
 			/* Get consumer socket to use to push the metadata.*/
 			socket = consumer_find_socket_by_bitness(reg->bits_per_long,
