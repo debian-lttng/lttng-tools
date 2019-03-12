@@ -703,9 +703,10 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/tracefile-limits/test_tracefile_size \
 	tools/exclusion/test_exclusion tools/snapshots/test_ust_fast \
 	tools/snapshots/test_ust_streaming tools/save-load/test_save \
-	tools/save-load/test_load tools/mi/test_mi \
-	tools/wildcard/test_event_wildcard tools/crash/test_crash \
-	tools/regen-metadata/test_ust tools/regen-statedump/test_ust \
+	tools/save-load/test_load tools/save-load/test_autoload \
+	tools/mi/test_mi tools/wildcard/test_event_wildcard \
+	tools/crash/test_crash tools/regen-metadata/test_ust \
+	tools/regen-statedump/test_ust \
 	tools/notification/test_notification_ust \
 	tools/notification/test_notification_kernel \
 	tools/notification/test_notification_multi_app $(am__append_2) \
@@ -1091,6 +1092,13 @@ tools/save-load/test_save.log: tools/save-load/test_save
 tools/save-load/test_load.log: tools/save-load/test_load
 	@p='tools/save-load/test_load'; \
 	b='tools/save-load/test_load'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/save-load/test_autoload.log: tools/save-load/test_autoload
+	@p='tools/save-load/test_autoload'; \
+	b='tools/save-load/test_autoload'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
