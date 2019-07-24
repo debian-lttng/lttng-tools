@@ -1,9 +1,12 @@
-ltt-control (2.10.6-2) UNRELEASED; urgency=medium
+ltt-control (2.10.7-1) unstable; urgency=medium
 
   * [486b665] Add Salsa CI configuration
   * [8247b91] Disable Salsa CI blhc test
+  * [d6f5d90] New upstream version 2.10.7
+  * [526da96] Add patch to fix typo
+  * [cd1d9e7] Move dpkg-maintscript-helper to maintscript file
 
- -- Michael Jeanson <mjeanson@debian.org>  Thu, 04 Apr 2019 16:04:39 -0400
+ -- Michael Jeanson <mjeanson@debian.org>  Wed, 24 Jul 2019 15:57:48 -0400
 
 ltt-control (2.10.6-1) unstable; urgency=medium
 
