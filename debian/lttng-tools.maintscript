@@ -1,0 +1,2 @@
+# Remove obsolete conffile (Closes: #841088)
+rm_conffile /etc/bash_completion.d/lttng 2.8.2-1~ lttng-tools
