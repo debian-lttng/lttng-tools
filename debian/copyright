@@ -277,10 +277,6 @@ Files: src/common/align.h
 Copyright: 2010-2011, - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 License: Expat
 
-Files: src/common/bitfield.h
-Copyright: 2010, - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
-License: Expat
-
 Files: src/common/compat/*
 Copyright: 2011, - David Goulet <dgoulet@efficios.com>
 License: GPL-2
