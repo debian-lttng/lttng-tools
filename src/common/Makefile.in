@@ -527,7 +527,7 @@ DIST_SUBDIRS = compat health hashtable kernel-ctl sessiond-comm relayd \
 
 noinst_HEADERS = lttng-kernel.h defaults.h macros.h error.h futex.h \
 				 uri.h utils.h lttng-kernel-old.h \
-				 align.h bitfield.h bug.h time.h
+				 align.h bug.h time.h
 
 
 # Common library
