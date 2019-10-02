@@ -768,10 +768,19 @@ static int flush_channel(uint64_t chan_key)
 		health_code_update();
 
 		pthread_mutex_lock(&stream->lock);
+
+		/*
+		 * Protect against concurrent teardown of a stream.
+		 */
+		if (cds_lfht_is_node_deleted(&stream->node.node)) {
+			goto next;
+		}
+
 		if (!stream->quiescent) {
 			ustctl_flush_buffer(stream->ustream, 0);
 			stream->quiescent = true;
 		}
+next:
 		pthread_mutex_unlock(&stream->lock);
 	}
 error:
@@ -2189,62 +2198,69 @@ static int get_index_values(struct ctf_packet_index *index,
 		struct ustctl_consumer_stream *ustream)
 {
 	int ret;
+	uint64_t packet_size, content_size, timestamp_begin, timestamp_end,
+			events_discarded, stream_id, stream_instance_id,
+			packet_seq_num;
 
-	ret = ustctl_get_timestamp_begin(ustream, &index->timestamp_begin);
+	ret = ustctl_get_timestamp_begin(ustream, &timestamp_begin);
 	if (ret < 0) {
 		PERROR("ustctl_get_timestamp_begin");
 		goto error;
 	}
-	index->timestamp_begin = htobe64(index->timestamp_begin);
 
-	ret = ustctl_get_timestamp_end(ustream, &index->timestamp_end);
+	ret = ustctl_get_timestamp_end(ustream, &timestamp_end);
 	if (ret < 0) {
 		PERROR("ustctl_get_timestamp_end");
 		goto error;
 	}
-	index->timestamp_end = htobe64(index->timestamp_end);
 
-	ret = ustctl_get_events_discarded(ustream, &index->events_discarded);
+	ret = ustctl_get_events_discarded(ustream, &events_discarded);
 	if (ret < 0) {
 		PERROR("ustctl_get_events_discarded");
 		goto error;
 	}
-	index->events_discarded = htobe64(index->events_discarded);
 
-	ret = ustctl_get_content_size(ustream, &index->content_size);
+	ret = ustctl_get_content_size(ustream, &content_size);
 	if (ret < 0) {
 		PERROR("ustctl_get_content_size");
 		goto error;
 	}
-	index->content_size = htobe64(index->content_size);
 
-	ret = ustctl_get_packet_size(ustream, &index->packet_size);
+	ret = ustctl_get_packet_size(ustream, &packet_size);
 	if (ret < 0) {
 		PERROR("ustctl_get_packet_size");
 		goto error;
 	}
-	index->packet_size = htobe64(index->packet_size);
 
-	ret = ustctl_get_stream_id(ustream, &index->stream_id);
+	ret = ustctl_get_stream_id(ustream, &stream_id);
 	if (ret < 0) {
 		PERROR("ustctl_get_stream_id");
 		goto error;
 	}
-	index->stream_id = htobe64(index->stream_id);
 
-	ret = ustctl_get_instance_id(ustream, &index->stream_instance_id);
+	ret = ustctl_get_instance_id(ustream, &stream_instance_id);
 	if (ret < 0) {
 		PERROR("ustctl_get_instance_id");
 		goto error;
 	}
-	index->stream_instance_id = htobe64(index->stream_instance_id);
 
-	ret = ustctl_get_sequence_number(ustream, &index->packet_seq_num);
+	ret = ustctl_get_sequence_number(ustream, &packet_seq_num);
 	if (ret < 0) {
 		PERROR("ustctl_get_sequence_number");
 		goto error;
 	}
-	index->packet_seq_num = htobe64(index->packet_seq_num);
+
+	*index = (typeof(*index)) {
+		.offset = index->offset,
+		.packet_size = htobe64(packet_size),
+		.content_size = htobe64(content_size),
+		.timestamp_begin = htobe64(timestamp_begin),
+		.timestamp_end = htobe64(timestamp_end),
+		.events_discarded = htobe64(events_discarded),
+		.stream_id = htobe64(stream_id),
+		.stream_instance_id = htobe64(stream_instance_id),
+		.packet_seq_num = htobe64(packet_seq_num),
+	};
 
 error:
 	return ret;
@@ -2321,6 +2337,13 @@ int commit_one_metadata_packet(struct lttng_consumer_stream *stream)
 			stream->ust_metadata_pushed);
 	ret = write_len;
 
+	/*
+	 * Switch packet (but don't open the next one) on every commit of
+	 * a metadata packet. Since the subbuffer is fully filled (with padding,
+	 * if needed), the stream is "quiescent" after this commit.
+	 */
+	ustctl_flush_buffer(stream->ustream, 1);
+	stream->quiescent = true;
 end:
 	pthread_mutex_unlock(&stream->chan->metadata_cache->lock);
 	return ret;
@@ -2365,7 +2388,6 @@ int lttng_ustconsumer_sync_metadata(struct lttng_consumer_local_data *ctx,
 		retry = 1;
 	}
 
-	ustctl_flush_buffer(metadata->ustream, 1);
 	ret = ustctl_snapshot(metadata->ustream);
 	if (ret < 0) {
 		if (errno != EAGAIN) {
@@ -2555,7 +2577,6 @@ retry:
 			if (ret <= 0) {
 				goto end;
 			}
-			ustctl_flush_buffer(stream->ustream, 1);
 			goto retry;
 		}
 
