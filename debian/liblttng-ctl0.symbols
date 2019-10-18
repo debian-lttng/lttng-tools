@@ -139,18 +139,36 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_condition_buffer_usage_set_threshold_ratio@Base 2.10.0
  lttng_condition_destroy@Base 2.10.0
  lttng_condition_get_type@Base 2.10.0
+ lttng_condition_session_consumed_size_create@Base 2.11.0
+ lttng_condition_session_consumed_size_get_session_name@Base 2.11.0
+ lttng_condition_session_consumed_size_get_threshold@Base 2.11.0
+ lttng_condition_session_consumed_size_set_session_name@Base 2.11.0
+ lttng_condition_session_consumed_size_set_threshold@Base 2.11.0
+ lttng_condition_session_rotation_completed_create@Base 2.11.0
+ lttng_condition_session_rotation_get_session_name@Base 2.11.0
+ lttng_condition_session_rotation_ongoing_create@Base 2.11.0
+ lttng_condition_session_rotation_set_session_name@Base 2.11.0
  lttng_create_handle@Base 2.3.0
  lttng_create_session@Base 2.3.0
+ lttng_create_session_ext@Base 2.11.0
  lttng_create_session_live@Base 2.4.0~rc4
  lttng_create_session_snapshot@Base 2.3.0
  lttng_data_pending@Base 2.3.0
  lttng_destroy_handle@Base 2.3.0
  lttng_destroy_session@Base 2.3.0
+ lttng_destroy_session_ext@Base 2.11.0
  lttng_destroy_session_no_wait@Base 2.8.0
+ lttng_destruction_handle_destroy@Base 2.11.0
+ lttng_destruction_handle_get_archive_location@Base 2.11.0
+ lttng_destruction_handle_get_result@Base 2.11.0
+ lttng_destruction_handle_get_rotation_state@Base 2.11.0
+ lttng_destruction_handle_wait_for_completion@Base 2.11.0
  lttng_disable_channel@Base 2.3.0
  lttng_disable_consumer@Base 2.3.0
  lttng_disable_event@Base 2.3.0
  lttng_disable_event_ext@Base 2.6.0
+ lttng_elf_get_sdt_probe_offsets@Base 2.11.0
+ lttng_elf_get_symbol_offset@Base 2.11.0
  lttng_enable_channel@Base 2.3.0
  lttng_enable_consumer@Base 2.3.0
  lttng_enable_event@Base 2.3.0
@@ -160,9 +178,16 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_evaluation_buffer_usage_get_usage_ratio@Base 2.10.0
  lttng_evaluation_destroy@Base 2.10.0
  lttng_evaluation_get_type@Base 2.10.0
+ lttng_evaluation_session_consumed_size_get_consumed_size@Base 2.11.0
+ lttng_evaluation_session_rotation_completed_get_location@Base 2.11.0
+ lttng_evaluation_session_rotation_get_id@Base 2.11.0
+ lttng_event_create@Base 2.11.0
+ lttng_event_destroy@Base 2.11.0
  lttng_event_get_exclusion_name@Base 2.8.0
  lttng_event_get_exclusion_name_count@Base 2.8.0
  lttng_event_get_filter_expression@Base 2.8.0
+ lttng_event_get_userspace_probe_location@Base 2.11.0
+ lttng_event_set_userspace_probe_location@Base 2.11.0
  lttng_health_create_consumerd@Base 2.4.0~rc4
  lttng_health_create_relayd@Base 2.4.0~rc4
  lttng_health_create_sessiond@Base 2.4.0~rc4
@@ -203,6 +228,7 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_notification_channel_create@Base 2.10.0
  lttng_notification_channel_destroy@Base 2.10.0
  lttng_notification_channel_get_next_notification@Base 2.10.0
+ lttng_notification_channel_has_pending_notification@Base 2.11.0
  lttng_notification_channel_subscribe@Base 2.10.0
  lttng_notification_channel_unsubscribe@Base 2.10.0
  lttng_notification_destroy@Base 2.10.0
@@ -215,6 +241,21 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_regenerate_statedump@Base 2.9.0
  lttng_register_consumer@Base 2.3.0
  lttng_register_trigger@Base 2.10.0
+ lttng_rotate_session@Base 2.11.0
+ lttng_rotation_handle_destroy@Base 2.11.0
+ lttng_rotation_handle_get_archive_location@Base 2.11.0
+ lttng_rotation_handle_get_state@Base 2.11.0
+ lttng_rotation_schedule_destroy@Base 2.11.0
+ lttng_rotation_schedule_get_type@Base 2.11.0
+ lttng_rotation_schedule_periodic_create@Base 2.11.0
+ lttng_rotation_schedule_periodic_get_period@Base 2.11.0
+ lttng_rotation_schedule_periodic_set_period@Base 2.11.0
+ lttng_rotation_schedule_size_threshold_create@Base 2.11.0
+ lttng_rotation_schedule_size_threshold_get_threshold@Base 2.11.0
+ lttng_rotation_schedule_size_threshold_set_threshold@Base 2.11.0
+ lttng_rotation_schedules_destroy@Base 2.11.0
+ lttng_rotation_schedules_get_at_index@Base 2.11.0
+ lttng_rotation_schedules_get_count@Base 2.11.0
  lttng_save_session@Base 2.5.0
  lttng_save_session_attr_create@Base 2.5.0
  lttng_save_session_attr_destroy@Base 2.5.0
@@ -228,8 +269,21 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_save_session_attr_set_output_url@Base 2.5.0
  lttng_save_session_attr_set_overwrite@Base 2.5.0
  lttng_save_session_attr_set_session_name@Base 2.5.0
+ lttng_session_add_rotation_schedule@Base 2.11.0
  lttng_session_daemon_alive@Base 2.3.0
  lttng_session_daemon_notification_endpoint@Base 2.10.0
+ lttng_session_descriptor_create@Base 2.11.0
+ lttng_session_descriptor_destroy@Base 2.11.0
+ lttng_session_descriptor_live_create@Base 2.11.0
+ lttng_session_descriptor_live_network_create@Base 2.11.0
+ lttng_session_descriptor_local_create@Base 2.11.0
+ lttng_session_descriptor_network_create@Base 2.11.0
+ lttng_session_descriptor_snapshot_create@Base 2.11.0
+ lttng_session_descriptor_snapshot_local_create@Base 2.11.0
+ lttng_session_descriptor_snapshot_network_create@Base 2.11.0
+ lttng_session_get_creation_time@Base 2.11.0
+ lttng_session_list_rotation_schedules@Base 2.11.0
+ lttng_session_remove_rotation_schedule@Base 2.11.0
  lttng_set_consumer_url@Base 2.3.0
  lttng_set_session_shm_path@Base 2.7.0
  lttng_set_tracing_group@Base 2.3.0
@@ -255,6 +309,13 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_stop_tracing@Base 2.3.0
  lttng_stop_tracing_no_wait@Base 2.3.0
  lttng_strerror@Base 2.3.0
+ lttng_trace_archive_location_get_type@Base 2.11.0
+ lttng_trace_archive_location_local_get_absolute_path@Base 2.11.0
+ lttng_trace_archive_location_relay_get_control_port@Base 2.11.0
+ lttng_trace_archive_location_relay_get_data_port@Base 2.11.0
+ lttng_trace_archive_location_relay_get_host@Base 2.11.0
+ lttng_trace_archive_location_relay_get_protocol_type@Base 2.11.0
+ lttng_trace_archive_location_relay_get_relative_path@Base 2.11.0
  lttng_track_pid@Base 2.7.0
  lttng_trigger_create@Base 2.10.0
  lttng_trigger_destroy@Base 2.10.0
@@ -262,6 +323,24 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_trigger_get_condition@Base 2.10.0
  lttng_unregister_trigger@Base 2.10.0
  lttng_untrack_pid@Base 2.7.0
+ lttng_userspace_probe_location_destroy@Base 2.11.0
+ lttng_userspace_probe_location_function_create@Base 2.11.0
+ lttng_userspace_probe_location_function_get_binary_fd@Base 2.11.0
+ lttng_userspace_probe_location_function_get_binary_path@Base 2.11.0
+ lttng_userspace_probe_location_function_get_function_name@Base 2.11.0
+ lttng_userspace_probe_location_function_get_instrumentation_type@Base 2.11.0
+ lttng_userspace_probe_location_function_set_instrumentation_type@Base 2.11.0
+ lttng_userspace_probe_location_get_lookup_method@Base 2.11.0
+ lttng_userspace_probe_location_get_type@Base 2.11.0
+ lttng_userspace_probe_location_lookup_method_destroy@Base 2.11.0
+ lttng_userspace_probe_location_lookup_method_function_elf_create@Base 2.11.0
+ lttng_userspace_probe_location_lookup_method_get_type@Base 2.11.0
+ lttng_userspace_probe_location_lookup_method_tracepoint_sdt_create@Base 2.11.0
+ lttng_userspace_probe_location_tracepoint_create@Base 2.11.0
+ lttng_userspace_probe_location_tracepoint_get_binary_fd@Base 2.11.0
+ lttng_userspace_probe_location_tracepoint_get_binary_path@Base 2.11.0
+ lttng_userspace_probe_location_tracepoint_get_probe_name@Base 2.11.0
+ lttng_userspace_probe_location_tracepoint_get_provider_name@Base 2.11.0
  lttng_yy_create_buffer@Base 2.3.0
  lttng_yy_delete_buffer@Base 2.3.0
  lttng_yy_flush_buffer@Base 2.3.0
