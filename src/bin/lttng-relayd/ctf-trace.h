@@ -30,12 +30,11 @@
 #include "viewer-stream.h"
 
 struct ctf_trace {
-	/*
-	 * The ctf_trace reflock nests inside the stream reflock.
-	 */
-	pthread_mutex_t reflock;	/* Protects refcounting */
 	struct urcu_ref ref;		/* Every stream has a ref on the trace. */
 	struct relay_session *session;	/* Back ref to trace session */
+
+	/* Trace sub-folder relative to the session output path. */
+	char *path;
 
 	/*
 	 * The ctf_trace lock nests inside the session lock.
@@ -61,7 +60,7 @@ struct ctf_trace {
 };
 
 struct ctf_trace *ctf_trace_get_by_path_or_create(struct relay_session *session,
-		char *path_name);
+		const char *subpath);
 bool ctf_trace_get(struct ctf_trace *trace);
 void ctf_trace_put(struct ctf_trace *trace);
 

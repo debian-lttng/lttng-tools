@@ -32,6 +32,7 @@
 #include <common/utils.h>
 
 #include "command.h"
+#include "version.h"
 
 static const char *help_msg =
 #ifdef LTTNG_EMBED_HELP
@@ -85,6 +86,9 @@ static struct cmd_struct commands[] =  {
 	{ "load", cmd_load},
 	{ "metadata", cmd_metadata},
 	{ "regenerate", cmd_regenerate},
+	{ "rotate", cmd_rotate},
+	{ "enable-rotation", cmd_enable_rotation},
+	{ "disable-rotation", cmd_disable_rotation},
 	{ "save", cmd_save},
 	{ "set-session", cmd_set_session},
 	{ "snapshot", cmd_snapshot},
@@ -249,6 +253,23 @@ end:
 	return ret;
 }
 
+static bool command_exists(const char *command)
+{
+	const struct cmd_struct *cmd = commands;
+	bool exists = false;
+
+	while (cmd->name != NULL) {
+		if (!strcmp(command, cmd->name)) {
+			exists = true;
+			goto end;
+		}
+		cmd++;
+	}
+
+end:
+	return exists;
+}
+
 static void show_basic_help(void)
 {
 	puts("Usage: lttng [--group=GROUP] [--mi=TYPE] [--no-sessiond | --sessiond-path=PATH]");
@@ -281,6 +302,11 @@ static void show_basic_help(void)
 	puts("  snapshot          " CONFIG_CMD_DESCR_SNAPSHOT);
 	puts("  start             " CONFIG_CMD_DESCR_START);
 	puts("  stop              " CONFIG_CMD_DESCR_STOP);
+	puts("");
+	puts("Tracing session rotation:");
+	puts("  disable-rotation  " CONFIG_CMD_DESCR_DISABLE_ROTATION);
+	puts("  enable-rotation   " CONFIG_CMD_DESCR_ENABLE_ROTATION);
+	puts("  rotate            " CONFIG_CMD_DESCR_ROTATE);
 	puts("");
 	puts("Resource tracking:");
 	puts("  track             " CONFIG_CMD_DESCR_TRACK);
@@ -399,19 +425,19 @@ static int parse_args(int argc, char **argv)
 	ret = handle_command(argc - optind, argv + optind);
 	switch (ret) {
 	case CMD_WARNING:
-		WARN("Some command(s) went wrong");
-		break;
 	case CMD_ERROR:
-		ERR("Command error");
 		break;
 	case CMD_UNDEFINED:
-		ERR("Undefined command or invalid arguments");
+		if (!command_exists(*(argv + optind))) {
+			MSG("lttng: %s is not an lttng command. See 'lttng --help'.",
+					*(argv + optind));
+		} else {
+			ERR("Unrecognized argument used with \'%s\' command",
+					*(argv + optind));
+		}
 		break;
 	case CMD_FATAL:
-		ERR("Fatal error");
-		break;
 	case CMD_UNSUPPORTED:
-		ERR("Unsupported command");
 		break;
 	case -1:
 		ret = 1;

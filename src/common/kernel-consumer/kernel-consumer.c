@@ -43,6 +43,7 @@
 #include <common/consumer/consumer-stream.h>
 #include <common/index/index.h>
 #include <common/consumer/consumer-timer.h>
+#include <common/optional.h>
 
 #include "kernel-consumer.h"
 
@@ -124,31 +125,28 @@ int lttng_kconsumer_get_consumed_snapshot(struct lttng_consumer_stream *stream,
 
 /*
  * Take a snapshot of all the stream of a channel
+ * RCU read-side lock must be held across this function to ensure existence of
+ * channel. The channel lock must be held by the caller.
  *
  * Returns 0 on success, < 0 on error
  */
-int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
-		uint64_t relayd_id, uint64_t nb_packets_per_stream,
+static int lttng_kconsumer_snapshot_channel(
+		struct lttng_consumer_channel *channel,
+		uint64_t key, char *path, uint64_t relayd_id,
+		uint64_t nb_packets_per_stream,
 		struct lttng_consumer_local_data *ctx)
 {
 	int ret;
-	struct lttng_consumer_channel *channel;
 	struct lttng_consumer_stream *stream;
 
 	DBG("Kernel consumer snapshot channel %" PRIu64, key);
 
 	rcu_read_lock();
 
-	channel = consumer_find_channel(key);
-	if (!channel) {
-		ERR("No channel found for key %" PRIu64, key);
-		ret = -1;
-		goto end;
-	}
-
 	/* Splice is not supported yet for channel snapshot. */
 	if (channel->output != CONSUMER_CHANNEL_MMAP) {
-		ERR("Unsupported output %d", channel->output);
+		ERR("Unsupported output type for channel \"%s\": mmap output is required to record a snapshot",
+				channel->name);
 		ret = -1;
 		goto end;
 	}
@@ -163,6 +161,19 @@ int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
 		 */
 		pthread_mutex_lock(&stream->lock);
 
+		assert(channel->trace_chunk);
+		if (!lttng_trace_chunk_get(channel->trace_chunk)) {
+			/*
+			 * Can't happen barring an internal error as the channel
+			 * holds a reference to the trace chunk.
+			 */
+			ERR("Failed to acquire reference to channel's trace chunk");
+			ret = -1;
+			goto end_unlock;
+		}
+		assert(!stream->trace_chunk);
+		stream->trace_chunk = channel->trace_chunk;
+
 		/*
 		 * Assign the received relayd ID so we can use it for streaming. The streams
 		 * are not visible to anyone so this is OK to change it.
@@ -176,20 +187,13 @@ int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
 				goto end_unlock;
 			}
 		} else {
-			ret = utils_create_stream_file(path, stream->name,
-					stream->chan->tracefile_size,
-					stream->tracefile_count_current,
-					stream->uid, stream->gid, NULL);
+			ret = consumer_stream_create_output_files(stream,
+					false);
 			if (ret < 0) {
-				ERR("utils_create_stream_file");
 				goto end_unlock;
 			}
-
-			stream->out_fd = ret;
-			stream->tracefile_size_current = 0;
-
-			DBG("Kernel consumer snapshot stream %s/%s (%" PRIu64 ")",
-					path, stream->name, stream->key);
+			DBG("Kernel consumer snapshot stream (%" PRIu64 ")",
+					stream->key);
 		}
 
 		ret = kernctl_buffer_flush_empty(stream->wait_fd);
@@ -225,15 +229,6 @@ int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
 		if (ret < 0) {
 			ERR("Consumerd kernel snapshot position");
 			goto end_unlock;
-		}
-
-		if (stream->max_sb_size == 0) {
-			ret = kernctl_get_max_subbuf_size(stream->wait_fd,
-					&stream->max_sb_size);
-			if (ret < 0) {
-				ERR("Getting kernel max_sb_size");
-				goto end_unlock;
-			}
 		}
 
 		consumed_pos = consumer_get_consume_start_pos(consumed_pos,
@@ -312,6 +307,8 @@ int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
 			close_relayd_stream(stream);
 			stream->net_seq_idx = (uint64_t) -1ULL;
 		}
+		lttng_trace_chunk_put(stream->trace_chunk);
+		stream->trace_chunk = NULL;
 		pthread_mutex_unlock(&stream->lock);
 	}
 
@@ -333,15 +330,18 @@ end:
 
 /*
  * Read the whole metadata available for a snapshot.
+ * RCU read-side lock must be held across this function to ensure existence of
+ * metadata_channel. The channel lock must be held by the caller.
  *
  * Returns 0 on success, < 0 on error
  */
-static int lttng_kconsumer_snapshot_metadata(uint64_t key, char *path,
-		uint64_t relayd_id, struct lttng_consumer_local_data *ctx)
+static int lttng_kconsumer_snapshot_metadata(
+		struct lttng_consumer_channel *metadata_channel,
+		uint64_t key, char *path, uint64_t relayd_id,
+		struct lttng_consumer_local_data *ctx)
 {
 	int ret, use_relayd = 0;
 	ssize_t ret_read;
-	struct lttng_consumer_channel *metadata_channel;
 	struct lttng_consumer_stream *metadata_stream;
 
 	assert(ctx);
@@ -351,16 +351,12 @@ static int lttng_kconsumer_snapshot_metadata(uint64_t key, char *path,
 
 	rcu_read_lock();
 
-	metadata_channel = consumer_find_channel(key);
-	if (!metadata_channel) {
-		ERR("Kernel snapshot metadata not found for key %" PRIu64, key);
-		ret = -1;
-		goto error_no_channel;
-	}
-
 	metadata_stream = metadata_channel->metadata_stream;
 	assert(metadata_stream);
+
 	pthread_mutex_lock(&metadata_stream->lock);
+	assert(metadata_channel->trace_chunk);
+	assert(metadata_stream->trace_chunk);
 
 	/* Flag once that we have a valid relayd for the stream. */
 	if (relayd_id != (uint64_t) -1ULL) {
@@ -373,14 +369,11 @@ static int lttng_kconsumer_snapshot_metadata(uint64_t key, char *path,
 			goto error_snapshot;
 		}
 	} else {
-		ret = utils_create_stream_file(path, metadata_stream->name,
-				metadata_stream->chan->tracefile_size,
-				metadata_stream->tracefile_count_current,
-				metadata_stream->uid, metadata_stream->gid, NULL);
+		ret = consumer_stream_create_output_files(metadata_stream,
+			        false);
 		if (ret < 0) {
 			goto error_snapshot;
 		}
-		metadata_stream->out_fd = ret;
 	}
 
 	do {
@@ -413,6 +406,8 @@ static int lttng_kconsumer_snapshot_metadata(uint64_t key, char *path,
 				 */
 			}
 			metadata_stream->out_fd = -1;
+			lttng_trace_chunk_put(metadata_stream->trace_chunk);
+			metadata_stream->trace_chunk = NULL;
 		}
 	}
 
@@ -422,7 +417,6 @@ error_snapshot:
 	cds_list_del(&metadata_stream->send_node);
 	consumer_stream_destroy(metadata_stream, NULL);
 	metadata_channel->metadata_stream = NULL;
-error_no_channel:
 	rcu_read_unlock();
 	return ret;
 }
@@ -474,6 +468,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 	{
 		struct lttng_consumer_channel *new_channel;
 		int ret_recv;
+		const uint64_t chunk_id = msg.u.channel.chunk_id.value;
 
 		health_code_update();
 
@@ -488,8 +483,11 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		DBG("consumer_add_channel %" PRIu64, msg.u.channel.channel_key);
 		new_channel = consumer_allocate_channel(msg.u.channel.channel_key,
-				msg.u.channel.session_id, msg.u.channel.pathname,
-				msg.u.channel.name, msg.u.channel.uid, msg.u.channel.gid,
+				msg.u.channel.session_id,
+				msg.u.channel.chunk_id.is_set ?
+						&chunk_id : NULL,
+				msg.u.channel.pathname,
+				msg.u.channel.name,
 				msg.u.channel.relayd_id, msg.u.channel.output,
 				msg.u.channel.tracefile_size,
 				msg.u.channel.tracefile_count, 0,
@@ -593,14 +591,14 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		ret = consumer_send_status_msg(sock, ret_code);
 		if (ret < 0) {
 			/* Somehow, the session daemon is not responding anymore. */
-			goto error_fatal;
+			goto error_add_stream_fatal;
 		}
 
 		health_code_update();
 
 		if (ret_code != LTTCOMM_CONSUMERD_SUCCESS) {
 			/* Channel was not found. */
-			goto end_nosignal;
+			goto error_add_stream_nosignal;
 		}
 
 		/* Blocking call */
@@ -608,7 +606,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		ret = lttng_consumer_poll_socket(consumer_sockpoll);
 		health_poll_exit();
 		if (ret) {
-			goto error_fatal;
+			goto error_add_stream_fatal;
 		}
 
 		health_code_update();
@@ -617,8 +615,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		ret = lttcomm_recv_fds_unix_sock(sock, &fd, 1);
 		if (ret != sizeof(fd)) {
 			lttng_consumer_send_error(ctx, LTTCOMM_CONSUMERD_ERROR_RECV_FD);
-			rcu_read_unlock();
-			return ret;
+			goto end;
 		}
 
 		health_code_update();
@@ -631,19 +628,18 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		ret = consumer_send_status_msg(sock, ret_code);
 		if (ret < 0) {
 			/* Somehow, the session daemon is not responding anymore. */
-			goto end_nosignal;
+			goto error_add_stream_nosignal;
 		}
 
 		health_code_update();
 
+		pthread_mutex_lock(&channel->lock);
 		new_stream = consumer_allocate_stream(channel->key,
 				fd,
-				LTTNG_CONSUMER_ACTIVE_STREAM,
 				channel->name,
-				channel->uid,
-				channel->gid,
 				channel->relayd_id,
 				channel->session_id,
+				channel->trace_chunk,
 				msg.u.stream.cpu,
 				&alloc_ret,
 				channel->type,
@@ -656,17 +652,29 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				lttng_consumer_send_error(ctx, LTTCOMM_CONSUMERD_OUTFD_ERROR);
 				break;
 			}
-			goto end_nosignal;
+			pthread_mutex_unlock(&channel->lock);
+			goto error_add_stream_nosignal;
 		}
 
 		new_stream->chan = channel;
 		new_stream->wait_fd = fd;
+		ret = kernctl_get_max_subbuf_size(new_stream->wait_fd,
+				&new_stream->max_sb_size);
+		if (ret < 0) {
+			pthread_mutex_unlock(&channel->lock);
+			ERR("Failed to get kernel maximal subbuffer size");
+			goto error_add_stream_nosignal;
+		}
+
+		consumer_stream_update_channel_attributes(new_stream,
+				channel);
 		switch (channel->output) {
 		case CONSUMER_CHANNEL_SPLICE:
 			new_stream->output = LTTNG_EVENT_SPLICE;
 			ret = utils_create_pipe(new_stream->splice_pipe);
 			if (ret < 0) {
-				goto end_nosignal;
+				pthread_mutex_unlock(&channel->lock);
+				goto error_add_stream_nosignal;
 			}
 			break;
 		case CONSUMER_CHANNEL_MMAP:
@@ -674,7 +682,8 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			break;
 		default:
 			ERR("Stream output unknown %d", channel->output);
-			goto end_nosignal;
+			pthread_mutex_unlock(&channel->lock);
+			goto error_add_stream_nosignal;
 		}
 
 		/*
@@ -699,14 +708,16 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		health_code_update();
 
+		pthread_mutex_lock(&new_stream->lock);
 		if (ctx->on_recv_stream) {
 			ret = ctx->on_recv_stream(new_stream);
 			if (ret < 0) {
+				pthread_mutex_unlock(&new_stream->lock);
+				pthread_mutex_unlock(&channel->lock);
 				consumer_stream_free(new_stream);
-				goto end_nosignal;
+				goto error_add_stream_nosignal;
 			}
 		}
-
 		health_code_update();
 
 		if (new_stream->metadata_flag) {
@@ -719,7 +730,9 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 					"relayd id %" PRIu64, new_stream->name,
 					new_stream->net_seq_idx);
 			cds_list_add(&new_stream->send_node, &channel->streams.head);
-			break;
+			pthread_mutex_unlock(&new_stream->lock);
+			pthread_mutex_unlock(&channel->lock);
+			goto end_add_stream;
 		}
 
 		/* Send stream to relayd if the stream has an ID. */
@@ -727,8 +740,10 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			ret = consumer_send_relayd_stream(new_stream,
 					new_stream->chan->pathname);
 			if (ret < 0) {
+				pthread_mutex_unlock(&new_stream->lock);
+				pthread_mutex_unlock(&channel->lock);
 				consumer_stream_free(new_stream);
-				goto end_nosignal;
+				goto error_add_stream_nosignal;
 			}
 
 			/*
@@ -740,33 +755,25 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				ret = consumer_send_relayd_streams_sent(
 						new_stream->net_seq_idx);
 				if (ret < 0) {
-					goto end_nosignal;
+					pthread_mutex_unlock(&new_stream->lock);
+					pthread_mutex_unlock(&channel->lock);
+					goto error_add_stream_nosignal;
 				}
 			}
 		}
+		pthread_mutex_unlock(&new_stream->lock);
+		pthread_mutex_unlock(&channel->lock);
 
 		/* Get the right pipe where the stream will be sent. */
 		if (new_stream->metadata_flag) {
-			ret = consumer_add_metadata_stream(new_stream);
-			if (ret) {
-				ERR("Consumer add metadata stream %" PRIu64 " failed. Continuing",
-						new_stream->key);
-				consumer_stream_free(new_stream);
-				goto end_nosignal;
-			}
+			consumer_add_metadata_stream(new_stream);
 			stream_pipe = ctx->consumer_metadata_pipe;
 		} else {
-			ret = consumer_add_data_stream(new_stream);
-			if (ret) {
-				ERR("Consumer add stream %" PRIu64 " failed. Continuing",
-						new_stream->key);
-				consumer_stream_free(new_stream);
-				goto end_nosignal;
-			}
+			consumer_add_data_stream(new_stream);
 			stream_pipe = ctx->consumer_data_pipe;
 		}
 
-		/* Vitible to other threads */
+		/* Visible to other threads */
 		new_stream->globally_visible = 1;
 
 		health_code_update();
@@ -781,12 +788,17 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			} else {
 				consumer_del_stream_for_data(new_stream);
 			}
-			goto end_nosignal;
+			goto error_add_stream_nosignal;
 		}
 
-		DBG("Kernel consumer ADD_STREAM %s (fd: %d) with relayd id %" PRIu64,
-				new_stream->name, fd, new_stream->relayd_stream_id);
+		DBG("Kernel consumer ADD_STREAM %s (fd: %d) %s with relayd id %" PRIu64,
+				new_stream->name, fd, new_stream->chan->pathname, new_stream->relayd_stream_id);
+end_add_stream:
 		break;
+error_add_stream_nosignal:
+		goto end_nosignal;
+error_add_stream_fatal:
+		goto error_fatal;
 	}
 	case LTTNG_CONSUMER_STREAMS_SENT:
 	{
@@ -815,7 +827,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		ret = consumer_send_status_msg(sock, ret_code);
 		if (ret < 0 || ret_code != LTTCOMM_CONSUMERD_SUCCESS) {
 			/* Somehow, the session daemon is not responding anymore. */
-			goto end_nosignal;
+			goto error_streams_sent_nosignal;
 		}
 
 		health_code_update();
@@ -825,7 +837,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		 * streams in this channel.
 		 */
 		if (!channel->monitor) {
-			break;
+			goto end_error_streams_sent;
 		}
 
 		health_code_update();
@@ -834,11 +846,14 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			ret = consumer_send_relayd_streams_sent(
 					msg.u.sent_streams.net_seq_idx);
 			if (ret < 0) {
-				goto end_nosignal;
+				goto error_streams_sent_nosignal;
 			}
 			channel->streams_sent_to_relayd = true;
 		}
+end_error_streams_sent:
 		break;
+error_streams_sent_nosignal:
+		goto end_nosignal;
 	}
 	case LTTNG_CONSUMER_UPDATE_STREAM:
 	{
@@ -909,26 +924,36 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 	}
 	case LTTNG_CONSUMER_SNAPSHOT_CHANNEL:
 	{
-		if (msg.u.snapshot_channel.metadata == 1) {
-			ret = lttng_kconsumer_snapshot_metadata(msg.u.snapshot_channel.key,
-					msg.u.snapshot_channel.pathname,
-					msg.u.snapshot_channel.relayd_id, ctx);
-			if (ret < 0) {
-				ERR("Snapshot metadata failed");
-				ret_code = LTTCOMM_CONSUMERD_ERROR_METADATA;
-			}
-		} else {
-			ret = lttng_kconsumer_snapshot_channel(msg.u.snapshot_channel.key,
-					msg.u.snapshot_channel.pathname,
-					msg.u.snapshot_channel.relayd_id,
-					msg.u.snapshot_channel.nb_packets_per_stream,
-					ctx);
-			if (ret < 0) {
-				ERR("Snapshot channel failed");
-				ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
-			}
-		}
+		struct lttng_consumer_channel *channel;
+		uint64_t key = msg.u.snapshot_channel.key;
 
+		channel = consumer_find_channel(key);
+		if (!channel) {
+			ERR("Channel %" PRIu64 " not found", key);
+			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
+		} else {
+			pthread_mutex_lock(&channel->lock);
+			if (msg.u.snapshot_channel.metadata == 1) {
+				ret = lttng_kconsumer_snapshot_metadata(channel, key,
+						msg.u.snapshot_channel.pathname,
+						msg.u.snapshot_channel.relayd_id, ctx);
+				if (ret < 0) {
+					ERR("Snapshot metadata failed");
+					ret_code = LTTCOMM_CONSUMERD_SNAPSHOT_FAILED;
+				}
+			} else {
+				ret = lttng_kconsumer_snapshot_channel(channel, key,
+						msg.u.snapshot_channel.pathname,
+						msg.u.snapshot_channel.relayd_id,
+						msg.u.snapshot_channel.nb_packets_per_stream,
+						ctx);
+				if (ret < 0) {
+					ERR("Snapshot channel failed");
+					ret_code = LTTCOMM_CONSUMERD_SNAPSHOT_FAILED;
+				}
+			}
+			pthread_mutex_unlock(&channel->lock);
+		}
 		health_code_update();
 
 		ret = consumer_send_status_msg(sock, ret_code);
@@ -954,14 +979,14 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		ret = consumer_send_status_msg(sock, ret_code);
 		if (ret < 0) {
 			/* Somehow, the session daemon is not responding anymore. */
-			goto end_nosignal;
+			goto end_destroy_channel;
 		}
 
 		health_code_update();
 
 		/* Stop right now if no channel was found. */
 		if (!channel) {
-			goto end_nosignal;
+			goto end_destroy_channel;
 		}
 
 		/*
@@ -977,7 +1002,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		assert(!uatomic_sub_return(&channel->refcount, 1));
 
 		consumer_del_channel(channel);
-
+end_destroy_channel:
 		goto end_nosignal;
 	}
 	case LTTNG_CONSUMER_DISCARDED_EVENTS:
@@ -1091,24 +1116,207 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		}
 		break;
 	}
+	case LTTNG_CONSUMER_ROTATE_CHANNEL:
+	{
+		struct lttng_consumer_channel *channel;
+		uint64_t key = msg.u.rotate_channel.key;
+
+		DBG("Consumer rotate channel %" PRIu64, key);
+
+		channel = consumer_find_channel(key);
+		if (!channel) {
+			ERR("Channel %" PRIu64 " not found", key);
+			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
+		} else {
+			/*
+			 * Sample the rotate position of all the streams in this channel.
+			 */
+			ret = lttng_consumer_rotate_channel(channel, key,
+					msg.u.rotate_channel.relayd_id,
+					msg.u.rotate_channel.metadata,
+					ctx);
+			if (ret < 0) {
+				ERR("Rotate channel failed");
+				ret_code = LTTCOMM_CONSUMERD_ROTATION_FAIL;
+			}
+
+			health_code_update();
+		}
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			/* Somehow, the session daemon is not responding anymore. */
+			goto error_rotate_channel;
+		}
+		if (channel) {
+			/* Rotate the streams that are ready right now. */
+			ret = lttng_consumer_rotate_ready_streams(
+					channel, key, ctx);
+			if (ret < 0) {
+				ERR("Rotate ready streams failed");
+			}
+		}
+		break;
+error_rotate_channel:
+		goto end_nosignal;
+	}
+	case LTTNG_CONSUMER_INIT:
+	{
+		ret_code = lttng_consumer_init_command(ctx,
+				msg.u.init.sessiond_uuid);
+		health_code_update();
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			/* Somehow, the session daemon is not responding anymore. */
+			goto end_nosignal;
+		}
+		break;
+	}
+	case LTTNG_CONSUMER_CREATE_TRACE_CHUNK:
+	{
+		const struct lttng_credentials credentials = {
+			.uid = msg.u.create_trace_chunk.credentials.value.uid,
+			.gid = msg.u.create_trace_chunk.credentials.value.gid,
+		};
+		const bool is_local_trace =
+				!msg.u.create_trace_chunk.relayd_id.is_set;
+		const uint64_t relayd_id =
+				msg.u.create_trace_chunk.relayd_id.value;
+		const char *chunk_override_name =
+				*msg.u.create_trace_chunk.override_name ?
+					msg.u.create_trace_chunk.override_name :
+					NULL;
+		LTTNG_OPTIONAL(struct lttng_directory_handle) chunk_directory_handle =
+				LTTNG_OPTIONAL_INIT;
+
+		/*
+		 * The session daemon will only provide a chunk directory file
+		 * descriptor for local traces.
+		 */
+		if (is_local_trace) {
+			int chunk_dirfd;
+
+			/* Acnowledge the reception of the command. */
+			ret = consumer_send_status_msg(sock,
+					LTTCOMM_CONSUMERD_SUCCESS);
+			if (ret < 0) {
+				/* Somehow, the session daemon is not responding anymore. */
+				goto end_nosignal;
+			}
+
+			ret = lttcomm_recv_fds_unix_sock(sock, &chunk_dirfd, 1);
+			if (ret != sizeof(chunk_dirfd)) {
+				ERR("Failed to receive trace chunk directory file descriptor");
+				goto error_fatal;
+			}
+
+			DBG("Received trace chunk directory fd (%d)",
+					chunk_dirfd);
+			ret = lttng_directory_handle_init_from_dirfd(
+					&chunk_directory_handle.value,
+					chunk_dirfd);
+			if (ret) {
+				ERR("Failed to initialize chunk directory handle from directory file descriptor");
+				if (close(chunk_dirfd)) {
+					PERROR("Failed to close chunk directory file descriptor");
+				}
+				goto error_fatal;
+			}
+			chunk_directory_handle.is_set = true;
+		}
+
+		ret_code = lttng_consumer_create_trace_chunk(
+				!is_local_trace ? &relayd_id : NULL,
+				msg.u.create_trace_chunk.session_id,
+				msg.u.create_trace_chunk.chunk_id,
+				(time_t) msg.u.create_trace_chunk
+						.creation_timestamp,
+				chunk_override_name,
+				msg.u.create_trace_chunk.credentials.is_set ?
+						&credentials :
+						NULL,
+				chunk_directory_handle.is_set ?
+						&chunk_directory_handle.value :
+						NULL);
+
+		if (chunk_directory_handle.is_set) {
+			lttng_directory_handle_fini(
+					&chunk_directory_handle.value);
+		}
+		goto end_msg_sessiond;
+	}
+	case LTTNG_CONSUMER_CLOSE_TRACE_CHUNK:
+	{
+		enum lttng_trace_chunk_command_type close_command =
+				msg.u.close_trace_chunk.close_command.value;
+		const uint64_t relayd_id =
+				msg.u.close_trace_chunk.relayd_id.value;
+		struct lttcomm_consumer_close_trace_chunk_reply reply;
+		char path[LTTNG_PATH_MAX];
+
+		ret_code = lttng_consumer_close_trace_chunk(
+				msg.u.close_trace_chunk.relayd_id.is_set ?
+						&relayd_id :
+						NULL,
+				msg.u.close_trace_chunk.session_id,
+				msg.u.close_trace_chunk.chunk_id,
+				(time_t) msg.u.close_trace_chunk.close_timestamp,
+				msg.u.close_trace_chunk.close_command.is_set ?
+						&close_command :
+						NULL, path);
+		reply.ret_code = ret_code;
+		reply.path_length = strlen(path) + 1;
+		ret = lttcomm_send_unix_sock(sock, &reply, sizeof(reply));
+		if (ret != sizeof(reply)) {
+			goto error_fatal;
+		}
+		ret = lttcomm_send_unix_sock(sock, path, reply.path_length);
+		if (ret != reply.path_length) {
+			goto error_fatal;
+		}
+		goto end_nosignal;
+	}
+	case LTTNG_CONSUMER_TRACE_CHUNK_EXISTS:
+	{
+		const uint64_t relayd_id =
+				msg.u.trace_chunk_exists.relayd_id.value;
+
+		ret_code = lttng_consumer_trace_chunk_exists(
+				msg.u.trace_chunk_exists.relayd_id.is_set ?
+						&relayd_id : NULL,
+				msg.u.trace_chunk_exists.session_id,
+				msg.u.trace_chunk_exists.chunk_id);
+		goto end_msg_sessiond;
+	}
 	default:
 		goto end_nosignal;
 	}
 
 end_nosignal:
-	rcu_read_unlock();
-
 	/*
 	 * Return 1 to indicate success since the 0 value can be a socket
 	 * shutdown during the recv() or send() call.
 	 */
-	health_code_update();
-	return 1;
-
+	ret = 1;
+	goto end;
 error_fatal:
-	rcu_read_unlock();
 	/* This will issue a consumer stop. */
-	return -1;
+	ret = -1;
+	goto end;
+end_msg_sessiond:
+	/*
+	 * The returned value here is not useful since either way we'll return 1 to
+	 * the caller because the session daemon socket management is done
+	 * elsewhere. Returning a negative code or 0 will shutdown the consumer.
+	 */
+	ret = consumer_send_status_msg(sock, ret_code);
+	if (ret < 0) {
+		goto error_fatal;
+	}
+	ret = 1;
+end:
+	health_code_update();
+	rcu_read_unlock();
+	return ret;
 }
 
 /*
@@ -1336,17 +1544,32 @@ end:
 
 /*
  * Consume data on a file descriptor and write it on a trace file.
+ * The stream and channel locks must be held by the caller.
  */
 ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		struct lttng_consumer_local_data *ctx)
 {
 	unsigned long len, subbuf_size, padding;
-	int err, write_index = 1;
+	int err, write_index = 1, rotation_ret;
 	ssize_t ret = 0;
 	int infd = stream->wait_fd;
-	struct ctf_packet_index index;
+	struct ctf_packet_index index = {};
 
 	DBG("In read_subbuffer (infd : %d)", infd);
+
+	/*
+	 * If the stream was flagged to be ready for rotation before we extract the
+	 * next packet, rotate it now.
+	 */
+	if (stream->rotate_ready) {
+		DBG("Rotate stream before extracting data");
+		rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
+		if (rotation_ret < 0) {
+			ERR("Stream rotation error");
+			ret = -1;
+			goto error;
+		}
+	}
 
 	/* Get the next subbuffer */
 	err = kernctl_get_next_subbuf(infd);
@@ -1360,7 +1583,7 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		DBG("Reserving sub buffer failed (everything is normal, "
 				"it is due to concurrency)");
 		ret = err;
-		goto end;
+		goto error;
 	}
 
 	/* Get the full subbuffer size including padding */
@@ -1376,10 +1599,10 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 				PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 			}
 			ret = err;
-			goto end;
+			goto error;
 		}
 		ret = err;
-		goto end;
+		goto error;
 	}
 
 	if (!stream->metadata_flag) {
@@ -1394,9 +1617,9 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 				}
 				ret = err;
-				goto end;
+				goto error;
 			}
-			goto end;
+			goto error;
 		}
 		ret = update_stream_stats(stream);
 		if (ret < 0) {
@@ -1409,9 +1632,9 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 				}
 				ret = err;
-				goto end;
+				goto error;
 			}
-			goto end;
+			goto error;
 		}
 	} else {
 		write_index = 0;
@@ -1426,9 +1649,9 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 				}
 				ret = err;
-				goto end;
+				goto error;
 			}
-			goto end;
+			goto error;
 		}
 	}
 
@@ -1473,10 +1696,10 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 				}
 				ret = err;
-				goto end;
+				goto error;
 			}
 			ret = err;
-			goto end;
+			goto error;
 		}
 
 		/* Make sure the tracer is not gone mad on us! */
@@ -1519,12 +1742,12 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 			PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 		}
 		ret = err;
-		goto end;
+		goto error;
 	}
 
 	/* Write index if needed. */
 	if (!write_index) {
-		goto end;
+		goto rotate;
 	}
 
 	if (stream->chan->live_timer_interval && !stream->metadata_flag) {
@@ -1548,16 +1771,35 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 			pthread_mutex_unlock(&stream->metadata_timer_lock);
 		}
 		if (err < 0) {
-			goto end;
+			goto error;
 		}
 	}
 
 	err = consumer_stream_write_index(stream, &index);
 	if (err < 0) {
-		goto end;
+		goto error;
 	}
 
-end:
+rotate:
+	/*
+	 * After extracting the packet, we check if the stream is now ready to be
+	 * rotated and perform the action immediately.
+	 */
+	rotation_ret = lttng_consumer_stream_is_rotate_ready(stream);
+	if (rotation_ret == 1) {
+		rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
+		if (rotation_ret < 0) {
+			ERR("Stream rotation error");
+			ret = -1;
+			goto error;
+		}
+	} else if (rotation_ret < 0) {
+		ERR("Checking if stream is ready to rotate");
+		ret = -1;
+		goto error;
+	}
+
+error:
 	return ret;
 }
 
@@ -1568,32 +1810,14 @@ int lttng_kconsumer_on_recv_stream(struct lttng_consumer_stream *stream)
 	assert(stream);
 
 	/*
-	 * Don't create anything if this is set for streaming or should not be
-	 * monitored.
+	 * Don't create anything if this is set for streaming or if there is
+	 * no current trace chunk on the parent channel.
 	 */
-	if (stream->net_seq_idx == (uint64_t) -1ULL && stream->chan->monitor) {
-		ret = utils_create_stream_file(stream->chan->pathname, stream->name,
-				stream->chan->tracefile_size, stream->tracefile_count_current,
-				stream->uid, stream->gid, NULL);
-		if (ret < 0) {
+	if (stream->net_seq_idx == (uint64_t) -1ULL && stream->chan->monitor &&
+			stream->chan->trace_chunk) {
+		ret = consumer_stream_create_output_files(stream, true);
+		if (ret) {
 			goto error;
-		}
-		stream->out_fd = ret;
-		stream->tracefile_size_current = 0;
-
-		if (!stream->metadata_flag) {
-			struct lttng_index_file *index_file;
-
-			index_file = lttng_index_file_create(stream->chan->pathname,
-					stream->name, stream->uid, stream->gid,
-					stream->chan->tracefile_size,
-					stream->tracefile_count_current,
-					CTF_INDEX_MAJOR, CTF_INDEX_MINOR);
-			if (!index_file) {
-				goto error;
-			}
-			assert(!stream->index_file);
-			stream->index_file = index_file;
 		}
 	}
 

@@ -71,6 +71,32 @@ struct ust_registry_session {
 	/* Current version of the metadata. */
 	uint64_t metadata_version;
 
+	/*
+	 * Those fields are only used when a session is created with
+	 * the --shm-path option. In this case, the metadata is output
+	 * twice: once to the consumer, as ususal, but a second time
+	 * also in the shm path directly. This is done so that a copy
+	 * of the metadata that is as fresh as possible is available
+	 * on the event of a crash.
+	 *
+	 * root_shm_path contains the shm-path provided by the user, along with
+	 * the session's name and timestamp:
+	 *   e.g. /tmp/my_shm/my_session-20180612-135822
+	 *
+	 * shm_path contains the full path of the memory buffers:
+	 *   e.g. /tmp/my_shm/my_session-20180612-135822/ust/uid/1000/64-bit
+	 *
+	 * metadata_path contains the full path to the metadata file that
+	 * is kept for the "crash buffer" extraction:
+	 *  e.g. /tmp/my_shm/my_session-20180612-135822/ust/uid/1000/64-bit/metadata
+	 *
+	 * Note that this is not the trace's final metadata file. It is
+	 * only meant to be used to read the contents of the ring buffers
+	 * in the event of a crash.
+	 *
+	 * metadata_fd is a file descriptor that points to the file at
+	 * 'metadata_path'.
+	 */
 	char root_shm_path[PATH_MAX];
 	char shm_path[PATH_MAX];
 	char metadata_path[PATH_MAX];
@@ -105,6 +131,10 @@ struct ust_registry_session {
 	 */
 	uint32_t major;
 	uint32_t minor;
+
+	/* The id of the parent session */
+	uint64_t tracing_id;
+	uid_t tracing_uid;
 };
 
 struct ust_registry_channel {
@@ -265,7 +295,9 @@ int ust_registry_session_init(struct ust_registry_session **sessionp,
 		const char *root_shm_path,
 		const char *shm_path,
 		uid_t euid,
-		gid_t egid);
+		gid_t egid,
+		uint64_t tracing_id,
+		uid_t tracing_uid);
 void ust_registry_session_destroy(struct ust_registry_session *session);
 
 int ust_registry_create_event(struct ust_registry_session *session,
@@ -325,7 +357,15 @@ int ust_registry_session_init(struct ust_registry_session **sessionp,
 		uint32_t uint32_t_alignment,
 		uint32_t uint64_t_alignment,
 		uint32_t long_alignment,
-		int byte_order)
+		int byte_order,
+		uint32_t major,
+		uint32_t minor,
+		const char *root_shm_path,
+		const char *shm_path,
+		uid_t euid,
+		gid_t egid,
+		uint64_t tracing_id,
+		uid_t tracing_uid)
 {
 	return 0;
 }

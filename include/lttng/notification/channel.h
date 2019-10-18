@@ -18,6 +18,8 @@
 #ifndef LTTNG_NOTIFICATION_CHANNEL_H
 #define LTTNG_NOTIFICATION_CHANNEL_H
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,6 +31,7 @@ struct lttng_notification_channel;
 
 enum lttng_notification_channel_status {
 	LTTNG_NOTIFICATION_CHANNEL_STATUS_NOTIFICATIONS_DROPPED = 1,
+	LTTNG_NOTIFICATION_CHANNEL_STATUS_INTERRUPTED = 2,
 	LTTNG_NOTIFICATION_CHANNEL_STATUS_OK = 0,
 	LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR = -1,
 	LTTNG_NOTIFICATION_CHANNEL_STATUS_CLOSED = -2,
@@ -79,15 +82,40 @@ extern struct lttng_notification_channel *lttng_notification_channel_create(
  * Notifications can be dropped if a client consumes the notifications sent
  * through the notification channel too slowly.
  *
- * Returns LTTNG_NOTIFICATION_CHANNEL_STATUS_OK and a notificationon success,
- * LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID if an invalid parameter was
- * provided, or LTTNG_NOTIFICATION_CHANNEL_STATUS_NOTIFICATIONS_DROPPED if
- * notifications were dropped.
+ * Returns
+ *   - LTTNG_NOTIFICATION_CHANNEL_STATUS_OK and a notification on success,
+ *   - LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID if an invalid parameter was
+ *     provided,
+ *   - LTTNG_NOTIFICATION_CHANNEL_STATUS_NOTIFICATIONS_DROPPED if notifications
+ *     were dropped,
+ *   - LTTNG_NOTIFICATION_CHANNEL_STATUS_INTERRUPTED if a signal was received
+ *     that caused the reception to fail.
  */
 extern enum lttng_notification_channel_status
 lttng_notification_channel_get_next_notification(
 		struct lttng_notification_channel *channel,
 		struct lttng_notification **notification);
+
+/*
+ * Check whether a notification is pending on a notification channel.
+ *
+ * This call allows the user to check whether a notification is pending on
+ * the notification channel.
+ *
+ * If pending is set to true and the return value is
+ * LTTNG_NOTIFICATION_CHANNEL_STATUS_OK,
+ * lttng_notification_channel_get_next_notification() can be called and
+ * is guaranteed to not block.
+ *
+ * Returns
+ *   - LTTNG_NOTIFICATION_CHANNEL_STATUS_OK on success,
+ *   - LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID if an invalid parameter was
+ *     provided.
+ */
+extern enum lttng_notification_channel_status
+lttng_notification_channel_has_pending_notification(
+		struct lttng_notification_channel *channel,
+		bool *notification_pending);
 
 /*
  * Subscribe to notifications of a condition through a notification channel.
@@ -98,10 +126,11 @@ lttng_notification_channel_get_next_notification(
  * An error will be reported if the client tries to subscribe to the same
  * condition multiple times without unsubscribing.
  *
- * Returns LTTNG_NOTIFICATION_CHANNEL_STATUS_OK on success,
- * LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID if an invalid parameter was
- * provided, or LTTNG_NOTIFICATION_CHANNEL_STATUS_ALREADY_SUBSCRIBED if the
- * client was already subscribed to the condition through this channel.
+ * Returns
+ *   - LTTNG_NOTIFICATION_CHANNEL_STATUS_OK on success,
+ *   - LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID if an invalid parameter was
+ *     provided, or LTTNG_NOTIFICATION_CHANNEL_STATUS_ALREADY_SUBSCRIBED if the
+ *     client was already subscribed to the condition through this channel.
  */
 extern enum lttng_notification_channel_status
 lttng_notification_channel_subscribe(
@@ -117,10 +146,11 @@ lttng_notification_channel_subscribe(
  * An error will be reported if the client tries to unsubscribe to from a
  * conditions' notifications to which it was not previously subscribed.
  *
- * Returns LTTNG_NOTIFICATION_CHANNEL_STATUS_OK on success,
- * LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID if an invalid parameter was
- * provided, or LTTNG_NOTIFICATION_CHANNEL_STATUS_UNKNOWN_CONDITION if the
- * client was not already subscribed to the condition through this channel.
+ * Returns
+ *   - LTTNG_NOTIFICATION_CHANNEL_STATUS_OK on success,
+ *   - LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID if an invalid parameter was
+ *     provided, or LTTNG_NOTIFICATION_CHANNEL_STATUS_UNKNOWN_CONDITION if the
+ *     client was not already subscribed to the condition through this channel.
  */
 extern enum lttng_notification_channel_status
 lttng_notification_channel_unsubscribe(

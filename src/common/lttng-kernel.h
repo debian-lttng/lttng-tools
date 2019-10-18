@@ -22,8 +22,13 @@
 
 #include <stdint.h>
 #include <common/macros.h>
+#include <lttng/constant.h>
+#include <lttng/event.h>
 
 #define LTTNG_KERNEL_SYM_NAME_LEN  256
+#define LTTNG_KERNEL_MAX_UPROBE_NUM  32
+#define LTTNG_KERNEL_SESSION_NAME_LEN	256
+#define LTTNG_KERNEL_SESSION_CREATION_TIME_ISO8601_LEN	26
 
 /*
  * LTTng DebugFS ABI structures.
@@ -39,6 +44,7 @@ enum lttng_kernel_instrumentation {
 	LTTNG_KERNEL_KRETPROBE     = 3,
 	LTTNG_KERNEL_NOOP          = 4,    /* not hooked */
 	LTTNG_KERNEL_SYSCALL       = 5,
+	LTTNG_KERNEL_UPROBE        = 6,
 };
 
 enum lttng_kernel_context_type {
@@ -58,6 +64,8 @@ enum lttng_kernel_context_type {
 	LTTNG_KERNEL_CONTEXT_PREEMPTIBLE    = 13,
 	LTTNG_KERNEL_CONTEXT_NEED_RESCHEDULE = 14,
 	LTTNG_KERNEL_CONTEXT_MIGRATABLE     = 15,
+	LTTNG_KERNEL_CONTEXT_CALLSTACK_KERNEL = 16,
+	LTTNG_KERNEL_CONTEXT_CALLSTACK_USER   = 17,
 };
 
 /* Perf counter attributes */
@@ -97,6 +105,20 @@ struct lttng_kernel_kprobe {
 	char symbol_name[LTTNG_KERNEL_SYM_NAME_LEN];
 } LTTNG_PACKED;
 
+struct lttng_kernel_uprobe {
+	int fd;
+} LTTNG_PACKED;
+
+struct lttng_kernel_event_callsite_uprobe {
+	uint64_t offset;
+} LTTNG_PACKED;
+
+struct lttng_kernel_event_callsite {
+	union {
+		struct lttng_kernel_event_callsite_uprobe uprobe;
+	} u;
+} LTTNG_PACKED;
+
 /* Function tracer */
 struct lttng_kernel_function {
 	char symbol_name[LTTNG_KERNEL_SYM_NAME_LEN];
@@ -113,6 +135,7 @@ struct lttng_kernel_event {
 	union {
 		struct lttng_kernel_kretprobe kretprobe;
 		struct lttng_kernel_kprobe kprobe;
+		struct lttng_kernel_uprobe uprobe;
 		struct lttng_kernel_function ftrace;
 		char padding[LTTNG_KERNEL_EVENT_PADDING2];
 	} u;
@@ -155,6 +178,20 @@ struct lttng_kernel_filter_bytecode {
 	uint32_t reloc_offset;
 	uint64_t seqnum;
 	char data[0];
+} LTTNG_PACKED;
+
+/*
+ * kernel session name
+ */
+struct lttng_kernel_session_name {
+	char name[LTTNG_KERNEL_SESSION_NAME_LEN];
+} LTTNG_PACKED;
+
+/*
+ * kernel session creation datetime
+ */
+struct lttng_kernel_session_creation_time {
+	char iso8601[LTTNG_KERNEL_SESSION_CREATION_TIME_ISO8601_LEN];
 } LTTNG_PACKED;
 
 #endif /* _LTTNG_KERNEL_H */

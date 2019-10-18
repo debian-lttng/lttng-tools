@@ -149,7 +149,32 @@ enum lttng_error_code {
 	LTTNG_ERR_TRIGGER_EXISTS         = 126, /* Trigger already registered. */
 	LTTNG_ERR_TRIGGER_NOT_FOUND      = 127, /* Trigger not found. */
 	LTTNG_ERR_COMMAND_CANCELLED      = 128, /* Command cancelled. */
-	LTTNG_ERR_AGENT_TRACING_DISABLED = 139, /* Agent tracing disabled. */
+	LTTNG_ERR_ROTATION_PENDING       = 129, /* Rotate already pending for this session. */
+	LTTNG_ERR_ROTATION_NOT_AVAILABLE = 130, /* Rotate feature not available for this type of session (e.g: live) */
+	LTTNG_ERR_ROTATION_SCHEDULE_SET  = 131, /* Schedule type already set for this session. */
+	LTTNG_ERR_ROTATION_SCHEDULE_NOT_SET = 132, /* No schedule of this type set for this session. */
+	LTTNG_ERR_ROTATION_MULTIPLE_AFTER_STOP = 133, /* Already rotated once after a stop. */
+	LTTNG_ERR_ROTATION_WRONG_VERSION   = 134, /* Session rotation not supported by this kernel tracer version */
+	LTTNG_ERR_NO_SESSION_OUTPUT        = 135, /* Session has no output configured. */
+	LTTNG_ERR_ROTATION_NOT_AVAILABLE_RELAY = 136, /* Rotate feature not available on the relay. */
+	LTTNG_ERR_AGENT_TRACING_DISABLED = 137, /* Agent tracing disabled. */
+	LTTNG_ERR_PROBE_LOCATION_INVAL   = 138, /* Invalid userspace probe location. */
+	LTTNG_ERR_ELF_PARSING            = 139, /* ELF parsing error. */
+	LTTNG_ERR_SDT_PROBE_SEMAPHORE    = 140, /* SDT probe guarded by a semaphore. */
+	LTTNG_ERR_ROTATION_FAIL_CONSUMER = 141, /* Rotation failure on consumer */
+	LTTNG_ERR_ROTATE_RENAME_FAIL_CONSUMER = 142, /* Rotation rename failure on consumer */
+	LTTNG_ERR_ROTATION_PENDING_LOCAL_FAIL_CONSUMER = 143, /* Rotation pending check (local) failure on consumer */
+	LTTNG_ERR_ROTATION_PENDING_RELAY_FAIL_CONSUMER = 144, /* Rotation pending check (relay) failure on consumer */
+	LTTNG_ERR_MKDIR_FAIL_CONSUMER    = 145, /* mkdir failure on consumer */
+	LTTNG_ERR_CHAN_NOT_FOUND         = 146, /* Channel not found */
+	LTTNG_ERR_SNAPSHOT_UNSUPPORTED   = 147, /* Session configuration does not allow the use of snapshots */
+	LTTNG_ERR_SESSION_NOT_EXIST      = 148, /* The session does not exist on the session daemon */
+	LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER     = 149, /* trace chunk creation failure on consumer */
+	LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER      = 150, /* trace chunk close failure on consumer */
+	LTTNG_ERR_TRACE_CHUNK_EXISTS_FAIL_CONSUMER     = 151, /* failed to query consumer for trace chunk existence */
+	LTTNG_ERR_INVALID_PROTOCOL                     = 152, /* a protocol error occurred */
+	LTTNG_ERR_FILE_CREATION_ERROR                  = 153, /* failed to create a file */
+	LTTNG_ERR_TIMER_STOP_ERROR                     = 154, /* failed to stop timer. */
 
 	/* MUST be last element */
 	LTTNG_ERR_NR,                           /* Last element */

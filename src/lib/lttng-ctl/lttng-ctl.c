@@ -1,5 +1,5 @@
 /*
- * liblttngctl.c
+ * lttng-ctl.c
  *
  * Linux Trace Toolkit Control Library
  *
@@ -30,15 +30,22 @@
 #include <unistd.h>
 
 #include <common/common.h>
+#include <common/compat/string.h>
 #include <common/defaults.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/uri.h>
 #include <common/utils.h>
+#include <common/dynamic-buffer.h>
 #include <lttng/lttng.h>
 #include <lttng/health-internal.h>
 #include <lttng/trigger/trigger-internal.h>
 #include <lttng/endpoint.h>
 #include <lttng/channel-internal.h>
+#include <lttng/event-internal.h>
+#include <lttng/userspace-probe-internal.h>
+#include <lttng/session-internal.h>
+#include <lttng/session-descriptor-internal.h>
+#include <lttng/destruction-handle.h>
 
 #include "filter/filter-ast.h"
 #include "filter/filter-parser.h"
@@ -69,7 +76,7 @@ do {								\
 } while (0)
 
 /* Socket to session daemon for communication */
-static int sessiond_socket;
+static int sessiond_socket = -1;
 static char sessiond_sock_path[PATH_MAX];
 
 /* Variables */
@@ -184,6 +191,35 @@ end:
 }
 
 /*
+ * Send file descriptors to the session daemon.
+ *
+ * On success, returns the number of bytes sent (>=0)
+ * On error, returns -1
+ */
+static int send_session_fds(const int *fds, size_t nb_fd)
+{
+	int ret;
+
+	if (!connected) {
+		ret = -LTTNG_ERR_NO_SESSIOND;
+		goto end;
+	}
+
+	if (!fds || !nb_fd) {
+		ret = 0;
+		goto end;
+	}
+
+	ret = lttcomm_send_fds_unix_sock(sessiond_socket, fds, nb_fd);
+	if (ret < 0) {
+		ret = -LTTNG_ERR_FATAL;
+	}
+
+end:
+	return ret;
+}
+
+/*
  * Receive data from the sessiond socket.
  *
  * On success, returns the number of bytes received (>=0)
@@ -257,6 +293,50 @@ free_list:
 
 end:
 	return ret;
+}
+
+static int check_enough_available_memory(size_t num_bytes_requested_per_cpu)
+{
+	int ret;
+	long num_cpu;
+	size_t best_mem_info;
+	size_t num_bytes_requested_total;
+
+	/*
+	 * Get the number of CPU currently online to compute the amount of
+	 * memory needed to create a buffer for every CPU.
+	 */
+	num_cpu = sysconf(_SC_NPROCESSORS_ONLN);
+	if (num_cpu == -1) {
+		goto error;
+	}
+
+	num_bytes_requested_total = num_bytes_requested_per_cpu * num_cpu;
+
+	/*
+	 * Try to get the `MemAvail` field of `/proc/meminfo`. This is the most
+	 * reliable estimate we can get but it is only exposed by the kernel
+	 * since 3.14. (See Linux kernel commit:
+	 * 34e431b0ae398fc54ea69ff85ec700722c9da773)
+	 */
+	ret = utils_get_memory_available(&best_mem_info);
+	if (ret >= 0) {
+		goto success;
+	}
+
+	/*
+	 * As a backup plan, use `MemTotal` field of `/proc/meminfo`. This
+	 * is a sanity check for obvious user error.
+	 */
+	ret = utils_get_memory_total(&best_mem_info);
+	if (ret >= 0) {
+		goto success;
+	}
+
+error:
+	return -1;
+success:
+	return best_mem_info >= num_bytes_requested_total;
 }
 
 /*
@@ -351,16 +431,11 @@ error:
 /*
  * Connect to the LTTng session daemon.
  *
- * On success, return 0. On error, return -1.
+ * On success, return the socket's file descriptor. On error, return -1.
  */
-static int connect_sessiond(void)
+LTTNG_HIDDEN int connect_sessiond(void)
 {
 	int ret;
-
-	/* Don't try to connect if already connected. */
-	if (connected) {
-		return 0;
-	}
 
 	ret = set_session_daemon_path();
 	if (ret < 0) {
@@ -373,13 +448,16 @@ static int connect_sessiond(void)
 		goto error;
 	}
 
-	sessiond_socket = ret;
-	connected = 1;
-
-	return 0;
+	return ret;
 
 error:
 	return -1;
+}
+
+static void reset_global_sessiond_connection_state(void)
+{
+	sessiond_socket = -1;
+	connected = 0;
 }
 
 /*
@@ -393,8 +471,7 @@ static int disconnect_sessiond(void)
 
 	if (connected) {
 		ret = lttcomm_close_unix_sock(sessiond_socket);
-		sessiond_socket = 0;
-		connected = 0;
+		reset_global_sessiond_connection_state();
 	}
 
 	return ret;
@@ -450,15 +527,16 @@ end:
 
 /*
  * Ask the session daemon a specific command and put the data into buf.
- * Takes extra var. len. data as input to send to the session daemon.
+ * Takes extra var. len. data and file descriptors as input to send to the
+ * session daemon.
  *
  * Return size of data (only payload, not header) or a negative error code.
  */
 LTTNG_HIDDEN
-int lttng_ctl_ask_sessiond_varlen(struct lttcomm_session_msg *lsm,
-		const void *vardata, size_t vardata_len,
-		void **user_payload_buf, void **user_cmd_header_buf,
-		size_t *user_cmd_header_len)
+int lttng_ctl_ask_sessiond_fds_varlen(struct lttcomm_session_msg *lsm,
+		const int *fds, size_t nb_fd, const void *vardata,
+		size_t vardata_len, void **user_payload_buf,
+		void **user_cmd_header_buf, size_t *user_cmd_header_len)
 {
 	int ret;
 	size_t payload_len;
@@ -468,6 +546,9 @@ int lttng_ctl_ask_sessiond_varlen(struct lttcomm_session_msg *lsm,
 	if (ret < 0) {
 		ret = -LTTNG_ERR_NO_SESSIOND;
 		goto end;
+	} else {
+		sessiond_socket = ret;
+		connected = 1;
 	}
 
 	/* Send command to session daemon */
@@ -478,6 +559,13 @@ int lttng_ctl_ask_sessiond_varlen(struct lttcomm_session_msg *lsm,
 	}
 	/* Send var len data */
 	ret = send_session_varlen(vardata, vardata_len);
+	if (ret < 0) {
+		/* Ret value is a valid lttng error code. */
+		goto end;
+	}
+
+	/* Send fds */
+	ret = send_session_fds(fds, nb_fd);
 	if (ret < 0) {
 		/* Ret value is a valid lttng error code. */
 		goto end;
@@ -643,7 +731,7 @@ static int _lttng_stop_tracing(const char *session_name, int wait)
 		 * call returned value indicates availability.
 		 */
 		if (data_ret) {
-			usleep(DEFAULT_DATA_AVAILABILITY_WAIT_TIME);
+			usleep(DEFAULT_DATA_AVAILABILITY_WAIT_TIME_US);
 		}
 	} while (data_ret != 0);
 
@@ -892,12 +980,6 @@ static int generate_filter(char *filter_expression,
 		ret = -LTTNG_ERR_FILTER_INVAL;
 		goto parse_error;
 	}
-	ret = filter_visitor_set_parent(ctx);
-	if (ret) {
-		fprintf(stderr, "Set parent error\n");
-		ret = -LTTNG_ERR_FILTER_INVAL;
-		goto parse_error;
-	}
 	if (print_xml) {
 		ret = filter_visitor_print_xml(ctx, stdout, 0);
 		if (ret) {
@@ -998,10 +1080,18 @@ int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
 		int exclusion_count, char **exclusion_list)
 {
 	struct lttcomm_session_msg lsm;
-	char *varlen_data;
-	int ret = 0;
+	struct lttng_dynamic_buffer send_buffer;
+	int ret = 0, i, fd_to_send = -1;
+	bool send_fd = false;
 	unsigned int free_filter_expression = 0;
 	struct filter_parser_ctx *ctx = NULL;
+
+	/*
+	 * We have either a filter or some exclusions, so we need to set up
+	 * a variable-length memory block from where to send the data.
+	 */
+	lttng_dynamic_buffer_init(&send_buffer);
+
 	/*
 	 * Cast as non-const since we may replace the filter expression
 	 * by a dynamically allocated string. Otherwise, the original
@@ -1049,23 +1139,6 @@ int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
 	lsm.u.enable.exclusion_count = exclusion_count;
 	lsm.u.enable.bytecode_len = 0;
 
-	/*
-	 * For the JUL domain, a filter is enforced except for the enable all
-	 * event. This is done to avoid having the event in all sessions thus
-	 * filtering by logger name.
-	 */
-	if (exclusion_count == 0 && filter_expression == NULL &&
-			(handle->domain.type != LTTNG_DOMAIN_JUL &&
-				handle->domain.type != LTTNG_DOMAIN_LOG4J &&
-				handle->domain.type != LTTNG_DOMAIN_PYTHON)) {
-		goto ask_sessiond;
-	}
-
-	/*
-	 * We have either a filter or some exclusions, so we need to set up
-	 * a variable-length memory block from where to send the data.
-	 */
-
 	/* Parse filter expression. */
 	if (filter_expression != NULL || handle->domain.type == LTTNG_DOMAIN_JUL
 			|| handle->domain.type == LTTNG_DOMAIN_LOG4J
@@ -1102,41 +1175,82 @@ int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
 		}
 	}
 
-	varlen_data = zmalloc(lsm.u.enable.bytecode_len
+	ret = lttng_dynamic_buffer_set_capacity(&send_buffer,
+			lsm.u.enable.bytecode_len
 			+ lsm.u.enable.expression_len
 			+ LTTNG_SYMBOL_NAME_LEN * exclusion_count);
-	if (!varlen_data) {
+	if (ret) {
 		ret = -LTTNG_ERR_EXCLUSION_NOMEM;
 		goto mem_error;
 	}
 
 	/* Put exclusion names first in the data. */
-	while (exclusion_count--) {
-		strncpy(varlen_data + LTTNG_SYMBOL_NAME_LEN * exclusion_count,
-			*(exclusion_list + exclusion_count),
-			LTTNG_SYMBOL_NAME_LEN - 1);
+	for (i = 0; i < exclusion_count; i++) {
+		size_t exclusion_len;
+
+		exclusion_len = lttng_strnlen(*(exclusion_list + i),
+				LTTNG_SYMBOL_NAME_LEN);
+		if (exclusion_len == LTTNG_SYMBOL_NAME_LEN) {
+			/* Exclusion is not NULL-terminated. */
+			ret = -LTTNG_ERR_INVALID;
+			goto mem_error;
+		}
+
+		ret = lttng_dynamic_buffer_append(&send_buffer,
+				*(exclusion_list + i),
+				LTTNG_SYMBOL_NAME_LEN);
+		if (ret) {
+			goto mem_error;
+		}
 	}
+
 	/* Add filter expression next. */
-	if (lsm.u.enable.expression_len != 0) {
-		memcpy(varlen_data
-			+ LTTNG_SYMBOL_NAME_LEN * lsm.u.enable.exclusion_count,
-			filter_expression,
-			lsm.u.enable.expression_len);
+	if (filter_expression) {
+		ret = lttng_dynamic_buffer_append(&send_buffer,
+				filter_expression, lsm.u.enable.expression_len);
+		if (ret) {
+			goto mem_error;
+		}
 	}
 	/* Add filter bytecode next. */
 	if (ctx && lsm.u.enable.bytecode_len != 0) {
-		memcpy(varlen_data
-			+ LTTNG_SYMBOL_NAME_LEN * lsm.u.enable.exclusion_count
-			+ lsm.u.enable.expression_len,
-			&ctx->bytecode->b,
-			lsm.u.enable.bytecode_len);
+		ret = lttng_dynamic_buffer_append(&send_buffer,
+				&ctx->bytecode->b, lsm.u.enable.bytecode_len);
+		if (ret) {
+			goto mem_error;
+		}
+	}
+	if (ev->extended.ptr) {
+		struct lttng_event_extended *ev_ext =
+			(struct lttng_event_extended *) ev->extended.ptr;
+
+		if (ev_ext->probe_location) {
+			/*
+			 * lttng_userspace_probe_location_serialize returns the
+			 * number of bytes that was appended to the buffer.
+			 */
+			ret = lttng_userspace_probe_location_serialize(
+				ev_ext->probe_location, &send_buffer,
+				&fd_to_send);
+			if (ret < 0) {
+				goto mem_error;
+			}
+
+			send_fd = fd_to_send >= 0;
+			/*
+			 * Set the size of the userspace probe location element
+			 * of the buffer so that the receiving side knows where
+			 * to split it.
+			 */
+			lsm.u.enable.userspace_probe_location_len = ret;
+		}
 	}
 
-	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, varlen_data,
-			(LTTNG_SYMBOL_NAME_LEN * lsm.u.enable.exclusion_count) +
-			lsm.u.enable.bytecode_len + lsm.u.enable.expression_len,
-			NULL);
-	free(varlen_data);
+	ret = lttng_ctl_ask_sessiond_fds_varlen(&lsm,
+			send_fd ? &fd_to_send : NULL,
+			send_fd ? 1 : 0,
+			send_buffer.size ? send_buffer.data : NULL,
+			send_buffer.size, NULL, NULL, 0);
 
 mem_error:
 	if (filter_expression && ctx) {
@@ -1158,6 +1272,7 @@ error:
 	 * Return directly to the caller and don't ask the sessiond since
 	 * something went wrong in the parsing of data above.
 	 */
+	lttng_dynamic_buffer_reset(&send_buffer);
 	return ret;
 
 ask_sessiond:
@@ -1408,6 +1523,7 @@ int lttng_enable_channel(struct lttng_handle *handle,
 		struct lttng_channel *in_chan)
 {
 	struct lttcomm_session_msg lsm;
+	size_t total_buffer_size_needed_per_cpu = 0;
 
 	/* NULL arguments are forbidden. No default values. */
 	if (handle == NULL || in_chan == NULL) {
@@ -1441,6 +1557,16 @@ int lttng_enable_channel(struct lttng_handle *handle,
 		extended = (struct lttng_channel_extended *)
 				in_chan->attr.extended.ptr;
 		memcpy(&lsm.u.channel.extended, extended, sizeof(*extended));
+	}
+
+	/*
+	 * Verify that the amount of memory required to create the requested
+	 * buffer is available on the system at the moment.
+	 */
+	total_buffer_size_needed_per_cpu = lsm.u.channel.chan.attr.num_subbuf *
+		lsm.u.channel.chan.attr.subbuf_size;
+	if (!check_enough_available_memory(total_buffer_size_needed_per_cpu)) {
+		return -LTTNG_ERR_NOMEM;
 	}
 
 	lsm.cmd_type = LTTNG_ENABLE_CHANNEL;
@@ -1626,81 +1752,296 @@ const char *lttng_strerror(int code)
 	return error_get_str(code);
 }
 
+enum lttng_error_code lttng_create_session_ext(
+		struct lttng_session_descriptor *session_descriptor)
+{
+	enum lttng_error_code ret_code;
+	struct lttcomm_session_msg lsm = {
+		.cmd_type = LTTNG_CREATE_SESSION_EXT,
+	};
+	void *reply = NULL;
+	struct lttng_buffer_view reply_view;
+	int reply_ret;
+	bool sessiond_must_generate_ouput;
+	struct lttng_dynamic_buffer payload;
+	int ret;
+	size_t descriptor_size;
+	struct lttng_session_descriptor *descriptor_reply = NULL;
+
+	lttng_dynamic_buffer_init(&payload);
+	if (!session_descriptor) {
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	sessiond_must_generate_ouput =
+			!lttng_session_descriptor_is_output_destination_initialized(
+				session_descriptor);
+	if (sessiond_must_generate_ouput) {
+		const char *home_dir = utils_get_home_dir();
+		size_t home_dir_len = home_dir ? strlen(home_dir) + 1 : 0;
+
+		if (!home_dir || home_dir_len > LTTNG_PATH_MAX) {
+			ret_code = LTTNG_ERR_FATAL;
+			goto end;
+		}
+
+		lsm.u.create_session.home_dir_size = (uint16_t) home_dir_len;
+		ret = lttng_dynamic_buffer_append(&payload, home_dir,
+				home_dir_len);
+		if (ret) {
+			ret_code = LTTNG_ERR_NOMEM;
+			goto end;
+		}
+	}
+
+	descriptor_size = payload.size;
+	ret = lttng_session_descriptor_serialize(session_descriptor,
+			&payload);
+	if (ret) {
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
+	}
+	descriptor_size = payload.size - descriptor_size;
+	lsm.u.create_session.session_descriptor_size = descriptor_size;
+
+	/* Command returns a session descriptor on success. */
+	reply_ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, payload.data,
+			payload.size, &reply);
+	if (reply_ret < 0) {
+		ret_code = -reply_ret;
+		goto end;
+	} else if (reply_ret == 0) {
+		/* Socket unexpectedly closed by the session daemon. */
+		ret_code = LTTNG_ERR_FATAL;
+		goto end;
+	}
+
+	reply_view = lttng_buffer_view_init(reply, 0, reply_ret);
+	ret = lttng_session_descriptor_create_from_buffer(&reply_view,
+			&descriptor_reply);
+	if (ret < 0) {
+		ret_code = LTTNG_ERR_FATAL;
+		goto end;
+	}
+	ret_code = LTTNG_OK;
+	lttng_session_descriptor_assign(session_descriptor, descriptor_reply);
+end:
+	free(reply);
+	lttng_dynamic_buffer_reset(&payload);
+	lttng_session_descriptor_destroy(descriptor_reply);
+	return ret_code;
+}
+
 /*
- * Create a brand new session using name and url for destination.
+ * Create a new session using name and url for destination.
  *
- * Returns LTTNG_OK on success or a negative error code.
+ * Return 0 on success else a negative LTTng error code.
  */
 int lttng_create_session(const char *name, const char *url)
 {
 	int ret;
 	ssize_t size;
-	struct lttcomm_session_msg lsm;
 	struct lttng_uri *uris = NULL;
+	struct lttng_session_descriptor *descriptor = NULL;
+	enum lttng_error_code ret_code;
 
-	if (name == NULL) {
-		return -LTTNG_ERR_INVALID;
+	if (!name) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
 	}
 
-	memset(&lsm, 0, sizeof(lsm));
-
-	lsm.cmd_type = LTTNG_CREATE_SESSION;
-	lttng_ctl_copy_string(lsm.session.name, name, sizeof(lsm.session.name));
-
-	/* There should never be a data URL */
 	size = uri_parse_str_urls(url, NULL, &uris);
 	if (size < 0) {
-		return -LTTNG_ERR_INVALID;
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
 	}
-
-	lsm.u.uri.size = size;
-
-	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, uris,
-			sizeof(struct lttng_uri) * size, NULL);
-
+	switch (size) {
+	case 0:
+		descriptor = lttng_session_descriptor_create(name);
+		break;
+	case 1:
+		if (uris[0].dtype != LTTNG_DST_PATH) {
+			ret = -LTTNG_ERR_INVALID;
+			goto end;
+		}
+		descriptor = lttng_session_descriptor_local_create(name,
+				uris[0].dst.path);
+		break;
+	case 2:
+		descriptor = lttng_session_descriptor_network_create(name, url,
+				NULL);
+		break;
+	default:
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+	if (!descriptor) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+	ret_code = lttng_create_session_ext(descriptor);
+	ret = ret_code == LTTNG_OK ? 0 : -ret_code;
+end:
+	lttng_session_descriptor_destroy(descriptor);
 	free(uris);
 	return ret;
 }
 
 /*
- * Destroy session using name.
- * Returns size of returned session payload data or a negative error code.
+ * Create a session exclusively used for snapshot.
+ *
+ * Return 0 on success else a negative LTTng error code.
  */
-static
-int _lttng_destroy_session(const char *session_name)
+int lttng_create_session_snapshot(const char *name, const char *snapshot_url)
 {
-	struct lttcomm_session_msg lsm;
+	int ret;
+	enum lttng_error_code ret_code;
+	ssize_t size;
+	struct lttng_uri *uris = NULL;
+	struct lttng_session_descriptor *descriptor = NULL;
 
-	if (session_name == NULL) {
-		return -LTTNG_ERR_INVALID;
+	if (!name) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
 	}
 
-	memset(&lsm, 0, sizeof(lsm));
-	lsm.cmd_type = LTTNG_DESTROY_SESSION;
+	size = uri_parse_str_urls(snapshot_url, NULL, &uris);
+	if (size < 0) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+	/*
+	 * If the user does not specify a custom subdir, use the session name.
+	 */
+	if (size > 0 && uris[0].dtype != LTTNG_DST_PATH &&
+			strlen(uris[0].subdir) == 0) {
+		ret = snprintf(uris[0].subdir, sizeof(uris[0].subdir), "%s",
+				name);
+		if (ret < 0) {
+			PERROR("Failed to set session name as network destination sub-directory");
+			ret = -LTTNG_ERR_FATAL;
+			goto end;
+		} else if (ret >= sizeof(uris[0].subdir)) {
+			/* Truncated output. */
+			ret = -LTTNG_ERR_INVALID;
+			goto end;
+		}
+	}
 
-	lttng_ctl_copy_string(lsm.session.name, session_name,
-			sizeof(lsm.session.name));
+	switch (size) {
+	case 0:
+		descriptor = lttng_session_descriptor_snapshot_create(name);
+		break;
+	case 1:
+		if (uris[0].dtype != LTTNG_DST_PATH) {
+			ret = -LTTNG_ERR_INVALID;
+			goto end;
+		}
+		descriptor = lttng_session_descriptor_snapshot_local_create(
+				name,
+				uris[0].dst.path);
+		break;
+	case 2:
+		descriptor = lttng_session_descriptor_snapshot_network_create(
+				name,
+				snapshot_url,
+				NULL);
+		break;
+	default:
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+	if (!descriptor) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+	ret_code = lttng_create_session_ext(descriptor);
+	ret = ret_code == LTTNG_OK ? 0 : -ret_code;
+end:
+	lttng_session_descriptor_destroy(descriptor);
+	free(uris);
+	return ret;
+}
 
-	return lttng_ctl_ask_sessiond(&lsm, NULL);
+/*
+ * Create a session exclusively used for live.
+ *
+ * Return 0 on success else a negative LTTng error code.
+ */
+int lttng_create_session_live(const char *name, const char *url,
+		unsigned int timer_interval)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct lttng_session_descriptor *descriptor = NULL;
+
+	if (!name) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	if (url) {
+		descriptor = lttng_session_descriptor_live_network_create(
+				name, url, NULL, timer_interval);
+	} else {
+		descriptor = lttng_session_descriptor_live_create(
+				name, timer_interval);
+	}
+	if (!descriptor) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+	ret_code = lttng_create_session_ext(descriptor);
+	ret = ret_code == LTTNG_OK ? 0 : -ret_code;
+end:
+	lttng_session_descriptor_destroy(descriptor);
+	return ret;
 }
 
 /*
  * Stop the session and wait for the data before destroying it
+ *
+ * Return 0 on success else a negative LTTng error code.
  */
 int lttng_destroy_session(const char *session_name)
 {
 	int ret;
+	enum lttng_error_code ret_code;
+	enum lttng_destruction_handle_status status;
+	struct lttng_destruction_handle *handle = NULL;
 
 	/*
-	 * Stop the tracing and wait for the data.
+	 * Stop the tracing and wait for the data to be
+	 * consumed.
 	 */
 	ret = _lttng_stop_tracing(session_name, 1);
 	if (ret && ret != -LTTNG_ERR_TRACE_ALREADY_STOPPED) {
 		goto end;
 	}
 
-	ret = _lttng_destroy_session(session_name);
+	ret_code = lttng_destroy_session_ext(session_name, &handle);
+	if (ret_code != LTTNG_OK) {
+		ret = (int) -ret_code;
+		goto end;
+	}
+	assert(handle);
+
+	/* Block until the completion of the destruction of the session. */
+	status = lttng_destruction_handle_wait_for_completion(handle, -1);
+	if (status != LTTNG_DESTRUCTION_HANDLE_STATUS_COMPLETED) {
+		ret = -LTTNG_ERR_UNK;
+		goto end;
+	}
+
+	status = lttng_destruction_handle_get_result(handle, &ret_code);
+	if (status != LTTNG_DESTRUCTION_HANDLE_STATUS_OK) {
+		ret = -LTTNG_ERR_UNK;
+		goto end;
+	}
+	ret = ret_code == LTTNG_OK ? 0 : -ret_code;
 end:
+	lttng_destruction_handle_destroy(handle);
 	return ret;
 }
 
@@ -1709,21 +2050,10 @@ end:
  */
 int lttng_destroy_session_no_wait(const char *session_name)
 {
-	int ret;
+	enum lttng_error_code ret_code;
 
-	/*
-	 * Stop the tracing without waiting for the data.
-	 * The session might already have been stopped, so just
-	 * skip this error.
-	 */
-	ret = _lttng_stop_tracing(session_name, 0);
-	if (ret && ret != -LTTNG_ERR_TRACE_ALREADY_STOPPED) {
-		goto end;
-	}
-
-	ret = _lttng_destroy_session(session_name);
-end:
-	return ret;
+	ret_code = lttng_destroy_session_ext(session_name, NULL);
+	return ret_code == LTTNG_OK ? ret_code : -ret_code;
 }
 
 /*
@@ -1732,19 +2062,72 @@ end:
  * Returns the number of lttng_session entries in sessions;
  * on error, returns a negative value.
  */
-int lttng_list_sessions(struct lttng_session **sessions)
+int lttng_list_sessions(struct lttng_session **out_sessions)
 {
 	int ret;
 	struct lttcomm_session_msg lsm;
+	const size_t session_size = sizeof(struct lttng_session) +
+			sizeof(struct lttng_session_extended);
+	size_t session_count, i;
+	struct lttng_session_extended *sessions_extended_begin;
+	struct lttng_session *sessions = NULL;
 
 	memset(&lsm, 0, sizeof(lsm));
 	lsm.cmd_type = LTTNG_LIST_SESSIONS;
-	ret = lttng_ctl_ask_sessiond(&lsm, (void**) sessions);
-	if (ret < 0) {
-		return ret;
+	ret = lttng_ctl_ask_sessiond(&lsm, (void**) &sessions);
+	if (ret <= 0) {
+		goto end;
+	}
+	if (!sessions) {
+		ret = -LTTNG_ERR_FATAL;
+		goto end;
 	}
 
-	return ret / sizeof(struct lttng_session);
+	if (ret % session_size) {
+		ret = -LTTNG_ERR_UNK;
+		free(sessions);
+		*out_sessions = NULL;
+		goto end;
+	}
+	session_count = (size_t) ret / session_size;
+	sessions_extended_begin = (struct lttng_session_extended *)
+			(&sessions[session_count]);
+
+	/* Set extended session info pointers. */
+	for (i = 0; i < session_count; i++) {
+		struct lttng_session *session = &sessions[i];
+		struct lttng_session_extended *extended =
+				&(sessions_extended_begin[i]);
+
+		session->extended.ptr = extended;
+	}
+
+	ret = (int) session_count;
+	*out_sessions = sessions;
+end:
+	return ret;
+}
+
+enum lttng_error_code lttng_session_get_creation_time(
+		const struct lttng_session *session, uint64_t *creation_time)
+{
+	enum lttng_error_code ret = LTTNG_OK;
+	struct lttng_session_extended *extended;
+
+	if (!session || !creation_time || !session->extended.ptr) {
+		ret = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	extended = session->extended.ptr;
+	if (!extended->creation_time.is_set) {
+		/* Not created on the session daemon yet. */
+		ret = LTTNG_ERR_SESSION_NOT_EXIST;
+		goto end;
+	}
+	*creation_time = extended->creation_time.value;
+end:
+	return ret;
 }
 
 int lttng_set_session_shm_path(const char *session_name,
@@ -1867,7 +2250,10 @@ int lttng_list_events(struct lttng_handle *handle,
 	struct lttcomm_event_command_header *cmd_header = NULL;
 	size_t cmd_header_len;
 	uint32_t nb_events, i;
-	void *extended_at;
+	void *comm_ext_at;
+	char *reception_buffer = NULL;
+	struct lttng_dynamic_buffer listing;
+	size_t storage_req;
 
 	/* Safety check. An handle and channel name are mandatory */
 	if (handle == NULL || channel_name == NULL) {
@@ -1882,137 +2268,220 @@ int lttng_list_events(struct lttng_handle *handle,
 			sizeof(lsm.u.list.channel_name));
 	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
 
-	ret = lttng_ctl_ask_sessiond_varlen(&lsm, NULL, 0, (void **) events,
-		(void **) &cmd_header, &cmd_header_len);
+	ret = lttng_ctl_ask_sessiond_fds_varlen(&lsm, NULL, 0, NULL, 0,
+		(void **) &reception_buffer, (void **) &cmd_header,
+		&cmd_header_len);
 	if (ret < 0) {
-		goto error;
+		goto end;
+	}
+
+	if (!cmd_header) {
+		ret = -LTTNG_ERR_UNK;
+		goto end;
 	}
 
 	/* Set number of events and free command header */
 	nb_events = cmd_header->nb_events;
 	if (nb_events > INT_MAX) {
 		ret = -EOVERFLOW;
-		goto error;
+		goto end;
 	}
-	ret = (int) nb_events;
 	free(cmd_header);
 	cmd_header = NULL;
 
-	/* Set extended info pointers */
-	extended_at = ((void*) (*events)) +
-			nb_events * sizeof(struct lttng_event);
+	/*
+	 * The buffer that is returned must contain a "flat" version of
+	 * the events that are returned. In other words, all pointers
+	 * within an lttng_event must point to a location within the returned
+	 * buffer so that the user may free everything by simply calling free()
+	 * on the returned buffer. This is needed in order to maintain API
+	 * compatibility.
+	 *
+	 * A first pass is performed to compute the size of the buffer that
+	 * must be allocated. A second pass is then performed to setup
+	 * the returned events so that their members always point within the
+	 * buffer.
+	 *
+	 * The layout of the returned buffer is as follows:
+	 *   - struct lttng_event[nb_events],
+	 *   - nb_events times the following:
+	 *     - struct lttng_event_extended,
+	 *     - flattened version of userspace_probe_location
+	 *     - filter_expression
+	 *     - exclusions
+	 *     - padding to align to 64-bits
+	 */
+	comm_ext_at = reception_buffer +
+		(nb_events * sizeof(struct lttng_event));
+	storage_req = nb_events * sizeof(struct lttng_event);
 
 	for (i = 0; i < nb_events; i++) {
-		struct lttcomm_event_extended_header *ext_header;
-		struct lttng_event *event = &(*events)[i];
+		struct lttcomm_event_extended_header *ext_comm =
+			(struct lttcomm_event_extended_header *) comm_ext_at;
+		int probe_storage_req = 0;
 
-		event->extended.ptr = extended_at;
-		ext_header =
-			(struct lttcomm_event_extended_header *) extended_at;
-		extended_at += sizeof(*ext_header);
-		extended_at += ext_header->filter_len;
-		extended_at +=
-			ext_header->nb_exclusions * LTTNG_SYMBOL_NAME_LEN;
+		comm_ext_at += sizeof(*ext_comm);
+		comm_ext_at += ext_comm->filter_len;
+		comm_ext_at +=
+			ext_comm->nb_exclusions * LTTNG_SYMBOL_NAME_LEN;
+
+		if (ext_comm->userspace_probe_location_len) {
+			struct lttng_userspace_probe_location *probe_location = NULL;
+			struct lttng_buffer_view probe_location_view;
+
+			probe_location_view = lttng_buffer_view_init(
+					comm_ext_at, 0,
+					ext_comm->userspace_probe_location_len);
+
+			/*
+			 * Create a temporary userspace probe location to
+			 * determine the size needed by a "flattened" version
+			 * of that same probe location.
+			 */
+			ret = lttng_userspace_probe_location_create_from_buffer(
+					&probe_location_view, &probe_location);
+			if (ret < 0) {
+				ret = -LTTNG_ERR_PROBE_LOCATION_INVAL;
+				goto end;
+			}
+
+			ret = lttng_userspace_probe_location_flatten(
+					probe_location, NULL);
+			lttng_userspace_probe_location_destroy(probe_location);
+			if (ret < 0) {
+				ret = -LTTNG_ERR_PROBE_LOCATION_INVAL;
+				goto end;
+			}
+
+			probe_storage_req = ret;
+			comm_ext_at += ext_comm->userspace_probe_location_len;
+		}
+
+		storage_req += sizeof(struct lttng_event_extended);
+		storage_req += ext_comm->filter_len;
+		storage_req += ext_comm->nb_exclusions * LTTNG_SYMBOL_NAME_LEN;
+		/* Padding to ensure the flat probe is aligned. */
+		storage_req = ALIGN_TO(storage_req, sizeof(uint64_t));
+		storage_req += probe_storage_req;
 	}
 
-	return ret;
-error:
+	lttng_dynamic_buffer_init(&listing);
+	/*
+	 * We must ensure that "listing" is never resized so as to preserve
+	 * the validity of the flattened objects.
+	 */
+	ret = lttng_dynamic_buffer_set_capacity(&listing, storage_req);
+	if (ret) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	ret = lttng_dynamic_buffer_append(&listing, reception_buffer,
+			nb_events * sizeof(struct lttng_event));
+	if (ret) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto free_dynamic_buffer;
+	}
+
+	comm_ext_at = reception_buffer +
+			(nb_events * sizeof(struct lttng_event));
+	for (i = 0; i < nb_events; i++) {
+		struct lttng_event *event = (struct lttng_event *)
+			(listing.data + (sizeof(struct lttng_event) * i));
+		struct lttcomm_event_extended_header *ext_comm =
+			(struct lttcomm_event_extended_header *) comm_ext_at;
+		struct lttng_event_extended *event_extended =
+			(struct lttng_event_extended *)
+				(listing.data + listing.size);
+
+		/* Insert struct lttng_event_extended. */
+		ret = lttng_dynamic_buffer_set_size(&listing,
+				listing.size + sizeof(*event_extended));
+		if (ret) {
+			ret = -LTTNG_ERR_NOMEM;
+			goto free_dynamic_buffer;
+		}
+		event->extended.ptr = event_extended;
+
+		comm_ext_at += sizeof(*ext_comm);
+
+		/* Insert filter expression. */
+		if (ext_comm->filter_len) {
+			event_extended->filter_expression = listing.data +
+					listing.size;
+			ret = lttng_dynamic_buffer_append(&listing, comm_ext_at,
+					ext_comm->filter_len);
+			if (ret) {
+				ret = -LTTNG_ERR_NOMEM;
+				goto free_dynamic_buffer;
+			}
+			comm_ext_at += ext_comm->filter_len;
+		}
+
+		/* Insert exclusions. */
+		if (ext_comm->nb_exclusions) {
+			event_extended->exclusions.count =
+					ext_comm->nb_exclusions;
+			event_extended->exclusions.strings =
+					listing.data + listing.size;
+
+			ret = lttng_dynamic_buffer_append(&listing,
+					comm_ext_at,
+					ext_comm->nb_exclusions * LTTNG_SYMBOL_NAME_LEN);
+			if (ret) {
+				ret = -LTTNG_ERR_NOMEM;
+				goto free_dynamic_buffer;
+			}
+			comm_ext_at += ext_comm->nb_exclusions * LTTNG_SYMBOL_NAME_LEN;
+		}
+
+		/* Insert padding to align to 64-bits. */
+		ret = lttng_dynamic_buffer_set_size(&listing,
+				ALIGN_TO(listing.size, sizeof(uint64_t)));
+		if (ret) {
+			ret = -LTTNG_ERR_NOMEM;
+			goto free_dynamic_buffer;
+		}
+
+		/* Insert flattened userspace probe location. */
+		if (ext_comm->userspace_probe_location_len) {
+			struct lttng_userspace_probe_location *probe_location = NULL;
+			struct lttng_buffer_view probe_location_view;
+
+			probe_location_view = lttng_buffer_view_init(
+					comm_ext_at, 0,
+					ext_comm->userspace_probe_location_len);
+
+			ret = lttng_userspace_probe_location_create_from_buffer(
+					&probe_location_view, &probe_location);
+			if (ret < 0) {
+				ret = -LTTNG_ERR_PROBE_LOCATION_INVAL;
+				goto free_dynamic_buffer;
+			}
+
+			event_extended->probe_location = (struct lttng_userspace_probe_location *)
+					(listing.data + listing.size);
+			ret = lttng_userspace_probe_location_flatten(
+					probe_location, &listing);
+			lttng_userspace_probe_location_destroy(probe_location);
+			if (ret < 0) {
+				ret = -LTTNG_ERR_PROBE_LOCATION_INVAL;
+				goto free_dynamic_buffer;
+			}
+
+			comm_ext_at += ext_comm->userspace_probe_location_len;
+		}
+	}
+
+	/* Don't reset listing buffer as we return its content. */
+	*events = (struct lttng_event *) listing.data;
+	lttng_dynamic_buffer_init(&listing);
+	ret = (int) nb_events;
+free_dynamic_buffer:
+	lttng_dynamic_buffer_reset(&listing);
+end:
 	free(cmd_header);
-	free(*events);
-	return ret;
-}
-
-int lttng_event_get_filter_expression(struct lttng_event *event,
-	const char **filter_expression)
-{
-	int ret = 0;
-	struct lttcomm_event_extended_header *ext_header;
-
-	if (!event || !filter_expression) {
-		ret = -LTTNG_ERR_INVALID;
-		goto end;
-	}
-
-	ext_header = event->extended.ptr;
-
-	if (!ext_header) {
-		/*
-		 * This can happen since the lttng_event structure is
-		 * used for other tasks where this pointer is never set.
-		 */
-		*filter_expression = NULL;
-		goto end;
-	}
-
-	if (ext_header->filter_len) {
-		*filter_expression = ((const char *) (ext_header)) +
-				sizeof(*ext_header);
-	} else {
-		*filter_expression = NULL;
-	}
-
-end:
-	return ret;
-}
-
-int lttng_event_get_exclusion_name_count(struct lttng_event *event)
-{
-	int ret;
-	struct lttcomm_event_extended_header *ext_header;
-
-	if (!event) {
-		ret = -LTTNG_ERR_INVALID;
-		goto end;
-	}
-
-	ext_header = event->extended.ptr;
-	if (!ext_header) {
-		/*
-		 * This can happen since the lttng_event structure is
-		 * used for other tasks where this pointer is never set.
-		 */
-		ret = 0;
-		goto end;
-	}
-
-	if (ext_header->nb_exclusions > INT_MAX) {
-		ret = -LTTNG_ERR_OVERFLOW;
-		goto end;
-	}
-	ret = (int) ext_header->nb_exclusions;
-end:
-	return ret;
-}
-
-int lttng_event_get_exclusion_name(struct lttng_event *event,
-		size_t index, const char **exclusion_name)
-{
-	int ret = 0;
-	struct lttcomm_event_extended_header *ext_header;
-	void *at;
-
-	if (!event || !exclusion_name) {
-		ret = -LTTNG_ERR_INVALID;
-		goto end;
-	}
-
-	ext_header = event->extended.ptr;
-	if (!ext_header) {
-		ret = -LTTNG_ERR_INVALID;
-		goto end;
-	}
-
-	if (index >= ext_header->nb_exclusions) {
-		ret = -LTTNG_ERR_INVALID;
-		goto end;
-	}
-
-	at = (void *) ext_header + sizeof(*ext_header);
-	at += ext_header->filter_len;
-	at += index * LTTNG_SYMBOL_NAME_LEN;
-	*exclusion_name = at;
-
-end:
+	free(reception_buffer);
 	return ret;
 }
 
@@ -2357,71 +2826,12 @@ int lttng_disable_consumer(struct lttng_handle *handle)
 }
 
 /*
- * This is an extension of create session that is ONLY and SHOULD only be used
- * by the lttng command line program. It exists to avoid using URI parsing in
- * the lttng client.
- *
- * We need the date and time for the trace path subdirectory for the case where
- * the user does NOT define one using either -o or -U. Using the normal
- * lttng_create_session API call, we have no clue on the session daemon side if
- * the URL was generated automatically by the client or define by the user.
- *
- * So this function "wrapper" is hidden from the public API, takes the datetime
- * string and appends it if necessary to the URI subdirectory before sending it
- * to the session daemon.
- *
- * With this extra function, the lttng_create_session call behavior is not
- * changed and the timestamp is appended to the URI on the session daemon side
- * if necessary.
+ * [OBSOLETE]
  */
 int _lttng_create_session_ext(const char *name, const char *url,
 		const char *datetime)
 {
-	int ret;
-	ssize_t size;
-	struct lttcomm_session_msg lsm;
-	struct lttng_uri *uris = NULL;
-
-	if (name == NULL || datetime == NULL) {
-		return -LTTNG_ERR_INVALID;
-	}
-
-	memset(&lsm, 0, sizeof(lsm));
-
-	lsm.cmd_type = LTTNG_CREATE_SESSION;
-	lttng_ctl_copy_string(lsm.session.name, name, sizeof(lsm.session.name));
-
-	/* There should never be a data URL. */
-	size = uri_parse_str_urls(url, NULL, &uris);
-	if (size < 0) {
-		ret = -LTTNG_ERR_INVALID;
-		goto error;
-	}
-
-	lsm.u.uri.size = size;
-
-	if (size > 0 && uris[0].dtype != LTTNG_DST_PATH && strlen(uris[0].subdir) == 0) {
-		/* Don't append datetime if the name was automatically created. */
-		if (strncmp(name, DEFAULT_SESSION_NAME "-",
-					strlen(DEFAULT_SESSION_NAME) + 1)) {
-			ret = snprintf(uris[0].subdir, sizeof(uris[0].subdir), "%s-%s",
-					name, datetime);
-		} else {
-			ret = snprintf(uris[0].subdir, sizeof(uris[0].subdir), "%s", name);
-		}
-		if (ret < 0) {
-			PERROR("snprintf uri subdir");
-			ret = -LTTNG_ERR_FATAL;
-			goto error;
-		}
-	}
-
-	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, uris,
-			sizeof(struct lttng_uri) * size, NULL);
-
-error:
-	free(uris);
-	return ret;
+	return -ENOSYS;
 }
 
 /*
@@ -2461,90 +2871,6 @@ int lttng_data_pending(const char *session_name)
 	ret = (int) *pending;
 end:
 	free(pending);
-	return ret;
-}
-
-/*
- * Create a session exclusively used for snapshot.
- *
- * Returns LTTNG_OK on success or a negative error code.
- */
-int lttng_create_session_snapshot(const char *name, const char *snapshot_url)
-{
-	int ret;
-	ssize_t size;
-	struct lttcomm_session_msg lsm;
-	struct lttng_uri *uris = NULL;
-
-	if (name == NULL) {
-		return -LTTNG_ERR_INVALID;
-	}
-
-	memset(&lsm, 0, sizeof(lsm));
-
-	lsm.cmd_type = LTTNG_CREATE_SESSION_SNAPSHOT;
-	lttng_ctl_copy_string(lsm.session.name, name, sizeof(lsm.session.name));
-
-	size = uri_parse_str_urls(snapshot_url, NULL, &uris);
-	if (size < 0) {
-		return -LTTNG_ERR_INVALID;
-	}
-
-	lsm.u.uri.size = size;
-
-	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, uris,
-			sizeof(struct lttng_uri) * size, NULL);
-
-	free(uris);
-	return ret;
-}
-
-/*
- * Create a session exclusively used for live.
- *
- * Returns LTTNG_OK on success or a negative error code.
- */
-int lttng_create_session_live(const char *name, const char *url,
-		unsigned int timer_interval)
-{
-	int ret;
-	ssize_t size;
-	struct lttcomm_session_msg lsm;
-	struct lttng_uri *uris = NULL;
-
-	if (name == NULL || timer_interval == 0) {
-		return -LTTNG_ERR_INVALID;
-	}
-
-	memset(&lsm, 0, sizeof(lsm));
-
-	lsm.cmd_type = LTTNG_CREATE_SESSION_LIVE;
-	lttng_ctl_copy_string(lsm.session.name, name, sizeof(lsm.session.name));
-
-	if (url) {
-		size = uri_parse_str_urls(url, NULL, &uris);
-		if (size <= 0) {
-			ret = -LTTNG_ERR_INVALID;
-			goto end;
-		}
-
-		/* file:// is not accepted for live session. */
-		if (uris[0].dtype == LTTNG_DST_PATH) {
-			ret = -LTTNG_ERR_INVALID;
-			goto end;
-		}
-	} else {
-		size = 0;
-	}
-
-	lsm.u.session_live.nb_uri = size;
-	lsm.u.session_live.timer_interval = timer_interval;
-
-	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, uris,
-			sizeof(struct lttng_uri) * size, NULL);
-
-end:
-	free(uris);
 	return ret;
 }
 
@@ -2669,9 +2995,9 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 {
 	int ret;
 	struct lttcomm_session_msg lsm;
-	char *trigger_buf = NULL;
-	ssize_t trigger_size;
+	struct lttng_dynamic_buffer buffer;
 
+	lttng_dynamic_buffer_init(&buffer);
 	if (!trigger) {
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
@@ -2682,30 +3008,19 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 		goto end;
 	}
 
-	trigger_size = lttng_trigger_serialize(trigger, NULL);
-	if (trigger_size < 0) {
+	ret = lttng_trigger_serialize(trigger, &buffer);
+	if (ret < 0) {
 		ret = -LTTNG_ERR_UNK;
-		goto end;
-	}
-
-	trigger_buf = zmalloc(trigger_size);
-	if (!trigger_buf) {
-		ret = -LTTNG_ERR_NOMEM;
 		goto end;
 	}
 
 	memset(&lsm, 0, sizeof(lsm));
 	lsm.cmd_type = LTTNG_REGISTER_TRIGGER;
-	if (lttng_trigger_serialize(trigger, trigger_buf) < 0) {
-		ret = -LTTNG_ERR_UNK;
-		goto end;
-	}
-
-	lsm.u.trigger.length = (uint32_t) trigger_size;
-	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, trigger_buf,
-			trigger_size, NULL);
+	lsm.u.trigger.length = (uint32_t) buffer.size;
+	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, buffer.data,
+			buffer.size, NULL);
 end:
-	free(trigger_buf);
+	lttng_dynamic_buffer_reset(&buffer);
 	return ret;
 }
 
@@ -2713,43 +3028,32 @@ int lttng_unregister_trigger(struct lttng_trigger *trigger)
 {
 	int ret;
 	struct lttcomm_session_msg lsm;
-	char *trigger_buf = NULL;
-	ssize_t trigger_size;
+	struct lttng_dynamic_buffer buffer;
 
+	lttng_dynamic_buffer_init(&buffer);
 	if (!trigger) {
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
 
 	if (!lttng_trigger_validate(trigger)) {
-		ret = -LTTNG_ERR_INVALID;
+		ret = -LTTNG_ERR_INVALID_TRIGGER;
 		goto end;
 	}
 
-	trigger_size = lttng_trigger_serialize(trigger, NULL);
-	if (trigger_size < 0) {
+	ret = lttng_trigger_serialize(trigger, &buffer);
+	if (ret < 0) {
 		ret = -LTTNG_ERR_UNK;
-		goto end;
-	}
-
-	trigger_buf = zmalloc(trigger_size);
-	if (!trigger_buf) {
-		ret = -LTTNG_ERR_NOMEM;
 		goto end;
 	}
 
 	memset(&lsm, 0, sizeof(lsm));
 	lsm.cmd_type = LTTNG_UNREGISTER_TRIGGER;
-	if (lttng_trigger_serialize(trigger, trigger_buf) < 0) {
-		ret = -LTTNG_ERR_UNK;
-		goto end;
-	}
-
-	lsm.u.trigger.length = (uint32_t) trigger_size;
-	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, trigger_buf,
-			trigger_size, NULL);
+	lsm.u.trigger.length = (uint32_t) buffer.size;
+	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, buffer.data,
+			buffer.size, NULL);
 end:
-	free(trigger_buf);
+	lttng_dynamic_buffer_reset(&buffer);
 	return ret;
 }
 

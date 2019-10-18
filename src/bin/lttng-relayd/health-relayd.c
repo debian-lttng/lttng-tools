@@ -155,7 +155,8 @@ static
 int setup_health_path(void)
 {
 	int is_root, ret = 0;
-	char *home_path = NULL, *rundir = NULL, *relayd_path = NULL;
+	const char *home_path = NULL;
+	char *rundir = NULL, *relayd_path = NULL;
 
 	ret = parse_health_env();
 	if (ret) {
@@ -342,11 +343,6 @@ restart:
 			/* Fetch once the poll data */
 			revents = LTTNG_POLL_GETEV(&events, i);
 			pollfd = LTTNG_POLL_GETFD(&events, i);
-
-			if (!revents) {
-				/* No activity for this FD (poll implementation). */
-				continue;
-			}
 
 			/* Thread quit pipe has been closed. Killing thread. */
 			ret = check_health_quit_pipe(pollfd, revents);

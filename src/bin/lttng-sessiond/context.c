@@ -55,7 +55,7 @@ static int add_kctx_all_channels(struct ltt_kernel_session *ksession,
 		kctx_copy = trace_kernel_copy_context(kctx);
 		if (!kctx_copy) {
 			PERROR("zmalloc ltt_kernel_context");
-			ret = -ENOMEM;
+			ret = -LTTNG_ERR_NOMEM;
 			goto error;
 		}
 
@@ -107,7 +107,8 @@ error:
  */
 static int add_uctx_to_channel(struct ltt_ust_session *usess,
 		enum lttng_domain_type domain,
-		struct ltt_ust_channel *uchan, struct lttng_event_context *ctx)
+		struct ltt_ust_channel *uchan,
+		const struct lttng_event_context *ctx)
 {
 	int ret;
 	struct ltt_ust_context *uctx = NULL;
@@ -119,7 +120,7 @@ static int add_uctx_to_channel(struct ltt_ust_session *usess,
 	/* Check if context is duplicate */
 	cds_list_for_each_entry(uctx, &uchan->ctx_list, list) {
 		if (trace_ust_match_context(uctx, ctx)) {
-			ret = -EEXIST;
+			ret = LTTNG_ERR_UST_CONTEXT_EXIST;
 			goto duplicate;
 		}
 	}
@@ -140,7 +141,7 @@ static int add_uctx_to_channel(struct ltt_ust_session *usess,
 		if (!agt) {
 			agt = agent_create(domain);
 			if (!agt) {
-				ret = LTTNG_ERR_NOMEM;
+				ret = -LTTNG_ERR_NOMEM;
 				goto error;
 			}
 			agent_add(agt, usess->agents);
@@ -165,22 +166,23 @@ static int add_uctx_to_channel(struct ltt_ust_session *usess,
 	/* Create ltt UST context */
 	uctx = trace_ust_create_context(ctx);
 	if (uctx == NULL) {
-		ret = -EINVAL;
+		ret = LTTNG_ERR_UST_CONTEXT_INVAL;
 		goto error;
+	}
+
+	/* Add ltt UST context node to ltt UST channel */
+	lttng_ht_add_ulong(uchan->ctx, &uctx->node);
+	cds_list_add_tail(&uctx->list, &uchan->ctx_list);
+
+	if (!usess->active) {
+		goto end;
 	}
 
 	ret = ust_app_add_ctx_channel_glb(usess, uchan, uctx);
 	if (ret < 0) {
 		goto error;
 	}
-
-	rcu_read_lock();
-
-	/* Add ltt UST context node to ltt UST channel */
-	lttng_ht_add_ulong(uchan->ctx, &uctx->node);
-	rcu_read_unlock();
-	cds_list_add_tail(&uctx->list, &uchan->ctx_list);
-
+end:
 	DBG("Context UST %d added to channel %s", uctx->ctx.ctx, uchan->name);
 
 	return 0;
@@ -195,7 +197,7 @@ duplicate:
  * Add kernel context to tracer.
  */
 int context_kernel_add(struct ltt_kernel_session *ksession,
-		struct lttng_event_context *ctx, char *channel_name)
+		const struct lttng_event_context *ctx, char *channel_name)
 {
 	int ret;
 	struct ltt_kernel_channel *kchan;
@@ -207,7 +209,7 @@ int context_kernel_add(struct ltt_kernel_session *ksession,
 
 	kctx = trace_kernel_create_context(NULL);
 	if (!kctx) {
-		ret = LTTNG_ERR_NOMEM;
+		ret = -LTTNG_ERR_NOMEM;
 		goto error;
 	}
 
@@ -259,6 +261,12 @@ int context_kernel_add(struct ltt_kernel_session *ksession,
 	case LTTNG_EVENT_CONTEXT_MIGRATABLE:
 		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_MIGRATABLE;
 		break;
+	case LTTNG_EVENT_CONTEXT_CALLSTACK_KERNEL:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_CALLSTACK_KERNEL;
+		break;
+	case LTTNG_EVENT_CONTEXT_CALLSTACK_USER:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_CALLSTACK_USER;
+		break;
 	default:
 		ret = LTTNG_ERR_KERN_CONTEXT_FAIL;
 		goto error;
@@ -306,7 +314,8 @@ error:
  * Add UST context to tracer.
  */
 int context_ust_add(struct ltt_ust_session *usess,
-		enum lttng_domain_type domain, struct lttng_event_context *ctx,
+		enum lttng_domain_type domain,
+		const struct lttng_event_context *ctx,
 		char *channel_name)
 {
 	int ret = LTTNG_OK;
@@ -339,7 +348,7 @@ int context_ust_add(struct ltt_ust_session *usess,
 		/* Add ctx all events, all channels */
 		cds_lfht_for_each_entry(chan_ht->ht, &iter.iter, uchan, node.node) {
 			ret = add_uctx_to_channel(usess, domain, uchan, ctx);
-			if (ret < 0) {
+			if (ret) {
 				ERR("Failed to add context to channel %s",
 						uchan->name);
 				continue;
@@ -349,10 +358,10 @@ int context_ust_add(struct ltt_ust_session *usess,
 	}
 
 	switch (ret) {
-	case -EEXIST:
-		ret = LTTNG_ERR_UST_CONTEXT_EXIST;
+	case LTTNG_ERR_UST_CONTEXT_EXIST:
 		break;
 	case -ENOMEM:
+	case -LTTNG_ERR_NOMEM:
 		ret = LTTNG_ERR_FATAL;
 		break;
 	case -EINVAL:
@@ -362,7 +371,11 @@ int context_ust_add(struct ltt_ust_session *usess,
 		ret = LTTNG_ERR_UNKNOWN_DOMAIN;
 		break;
 	default:
-		ret = LTTNG_OK;
+		if (ret != 0 && ret != LTTNG_OK) {
+			ret = ret > 0 ? ret : LTTNG_ERR_UNK;
+		} else {
+			ret = LTTNG_OK;
+		}
 		break;
 	}
 

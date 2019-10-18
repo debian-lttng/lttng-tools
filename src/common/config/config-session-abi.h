@@ -34,6 +34,16 @@ extern const char * const config_element_probe_attributes;
 extern const char * const config_element_symbol_name;
 extern const char * const config_element_address;
 extern const char * const config_element_offset;
+extern const char * const config_element_userspace_probe_lookup;
+extern const char * const config_element_userspace_probe_lookup_function_default;
+extern const char * const config_element_userspace_probe_lookup_function_elf;
+extern const char * const config_element_userspace_probe_lookup_tracepoint_sdt;
+extern const char * const config_element_userspace_probe_location_binary_path;
+extern const char * const config_element_userspace_probe_function_attributes;
+extern const char * const config_element_userspace_probe_function_location_function_name;
+extern const char * const config_element_userspace_probe_tracepoint_attributes;
+extern const char * const config_element_userspace_probe_tracepoint_location_provider_name;
+extern const char * const config_element_userspace_probe_tracepoint_location_probe_name;
 extern const char * const config_element_name;
 extern const char * const config_element_enabled;
 extern const char * const config_element_overwrite_mode;
@@ -80,6 +90,9 @@ extern const char * const config_element_pid_tracker;
 extern const char * const config_element_trackers;
 extern const char * const config_element_targets;
 extern const char * const config_element_target_pid;
+extern const char * const config_element_rotation_timer_interval;
+extern const char * const config_element_rotation_size;
+extern const char * const config_element_rotation_schedule;
 
 extern const char * const config_domain_type_kernel;
 extern const char * const config_domain_type_ust;
@@ -104,6 +117,7 @@ extern const char * const config_loglevel_type_single;
 extern const char * const config_event_type_all;
 extern const char * const config_event_type_tracepoint;
 extern const char * const config_event_type_probe;
+extern const char * const config_event_type_userspace_probe;
 extern const char * const config_event_type_function;
 extern const char * const config_event_type_function_entry;
 extern const char * const config_event_type_noop;
@@ -129,5 +143,13 @@ extern const char * const config_event_context_interruptible;
 extern const char * const config_event_context_preemptible;
 extern const char * const config_event_context_need_reschedule;
 extern const char * const config_event_context_migratable;
+extern const char * const config_event_context_callstack_user;
+extern const char * const config_event_context_callstack_kernel;
+
+extern const char * const config_element_rotation_schedules;
+extern const char * const config_element_rotation_schedule_periodic;
+extern const char * const config_element_rotation_schedule_periodic_time_us;
+extern const char * const config_element_rotation_schedule_size_threshold;
+extern const char * const config_element_rotation_schedule_size_threshold_bytes;
 
 #endif /* CONFIG_SESSION_INTERNAL_H */

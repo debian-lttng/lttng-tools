@@ -1,44 +1,329 @@
-2019-10-01 lttng-tools 2.10.8 (International Coffee Day)
+2019-10-17 lttng-tools 2.11.0 (Wear Something Gaudy Day)
+	* Fix: sessiond: unbalanced health register/unregister on error
+	* Fix: sessiond: NULL thread_state provided to pthread_cleanup callback
+	* Fix: sessiond: leak of trace chunk on destruction error
+	* common: cleanup error message mentioning mkdir
+	* Fix: sessiond: session destruction errors are unreported
+	* Fix: consumer: double unlock of rcu read lock on error
+	* Fix: sessiond: application channel creation failure stops start cmd
+	* sessiond: clean-up: enhance logging on event allocation failure
+	* Fix: sessiond: don't assert on event creation error
+	* Fix: lttng-elf.c: dereferencing pointer before null check
+	* Fix: sessiond: unbounded elf section data size allocation
+	* Fix: sessiond: double socket close on allocation failure
+	* Fix: sessiond: TOCTOU error on save of session configuration
+	* Fix: tests: replace truncation-prone logging helper
+	* Fix: relayd: Dereference after null check
+	* Fix: sessiond: app sock and notif shm not created by the main thread
+	* Fix: sessiond: client socket not created by the main thread
+	* Fix: relayd: Dereference before null check
+	* Fix: relayd: unchecked return values
+	* Fix: ust-consumer.c: Double unlock of channel lock
+	* Fix: sessiond: Dereference before null check
+	* Fix: sessiond: Dereference after null check
+	* Fix: relayd: Explicit null dereferenced
+	* Cleanup: relayd: Logically dead code
+	* Fix: enable_events.c: typo in `WARN()` message
+	* Cleanup: enable_events.c: fix erroneous comment
+	* Cleanup: relayd: identical code for different branches
+	* Fix: common: Unchecked return value of `closedir()`
+	* Fix: relayd: Dereference after null check
+	* Fix: Tests: test_session.c: Structurally dead code
+	* Fix: session-descriptor.c: Dereference before null check
+	* Fix: common: Dereference after null check
+	* Fix: test_utils_compat_poll.c: Unchecked return value
+	* Fix: liblttng-ctl: wrong variable used during argument validation
+	* Fix: liblttng-ctl: ABI-breaking size change of lttng_session struct
+	* Fix: liblttng-ctl: config and mi strings inadvertantly exported
+	* Fix: liblttng-ctl: compat_sync_file_range inadvertantly exported
+	* Fix: liblttng-ctl: poll compatibility symbols inadvertently exported
+	* Fix: lttng-ctl: unvalidated session destruction handle API arguments
+	* Docs: document the session destruction handle API
+
+2019-10-01 lttng-tools 2.11.0-rc4 (International Coffee Day)
+	* Fix: Tests: Segfault in `test_utils_expand_path()`
+	* Fix: lttng-ctl: missing __cplusplus closing brace
+	* Fix: trace chunk reported unknown before close command execution
+	* Fix: sessiond: leak of application socket on chmod failure
+	* sessiond: clean-up: silence warning that agent event is leaked
+	* Fix: tests: leak of prefix on error to register lttng namespace
+	* Fix: use newly created event filter for condition check
+	* Fix: lttng-crash: detect truncated files
+	* Fix: sessiond: fs.protected_regular sysctl breaks app registration
+	* relayd: clean-up: mix-up between LTTNG_PATH_MAX and LTTNG_NAME_MAX
+	* Fix: destroy command: put consumer output after destroy notifier
+	* Refactor: remove logically dead code
+	* Fix: Null check before destroying health_sessiond
+	* Fix: Move initialization of queue_pipe_fd after null check of handle
+	* Fix: release reference to new chunk on copy error
+	* Fix: Close socket handle on error
 	* Fix: lttng: out-of-bound copy of arguments in 'view' command handler
+	* Revert "lttng: fix: out-of-bounds copy of original 'view' command arguments"
+	* Fix: relayd: session destruction does not complete in live mode
+	* Add a copy method to the trace chunk interface
+	* relayd: move viewer stream chunk reference release to destroy
+	* relayd: move relay_session locking outside of make_viewer_streams
+	* Fix: release reference to trace chunk on index file creation failure
+	* trace-chunk: clean-up: mark close command properties as static const
+	* trace-chunk: clean-up: misleading label name
+	* ust-consumer: fix: metadata stream lock taken before destroy
+	* sessiond: fix: memory leak of section name in elf parser
+	* kconsumer: clean-up: initialize ctf_index before populating it
 	* sessiond: fix: strncpy called with source length
 	* sessiond: fix: possible unaligned access in packed structure
+	* relayd: clean-up: strncpy uses the length of the source as length
+	* lttng: fix: out-of-bounds copy of original 'view' command arguments
+	* lttng: clean-up: silence bogus string truncation warning
+	* sessiond: clean-up: mixed log levels enums used to look-up event
+	* sessiond: fix: possible unaligned access in packed structure
+	* sessiond: fix: possible unaligned access in packed structure
+	* sessiond: fix: possible unaligned access in packed structure
+	* sessiond: fix: possible unaligned access in packed structure
 	* lttng-ctl: fix: possible unaligned access in packed structure
+	* lttng-ctl rotate: fix: possible unaligned access in packed structure
+	* runas: fix: possible unaligned access in packed structure
 	* consumer: fix: possible unaligned access in packed structure
 	* inet: fix: possible unaligned access in packed structure (inet/inet6)
 	* consumer: fix: unaligned accesses to index fields
+	* lttng-sessiond: clean-up: set free'd pointer to NULL
 	* lttng: fix: potential 0-length allocation in pid list parsing
 	* Tests: fix: uninitialized session_id used on list_sessions failure
 	* Tests: fix: uninitialized values passed to close() on error
+	* Clean-up: assert that get_count_order() returns a positive value
+	* Clean-up: suppress bogus scan-build warning
+	* Tests: fix: leak caused by misuse of realloc in multi-lib-test
+	* sessiond: clean-up: init ret value of _session_set_trace_chunk_no_lock_check
+	* sessiond: fix: print_escaped_ctf_string mishandles empty string
 	* lttng-ctl: fix: lttng_data_pending confuses communication status
+	* relayd: fix: rotate_truncate_stream() assumes non-null next chunk
+	* Fix: dereference of NULL pointer in stream_write()
+	* Fix: report bytecode_push failure when pushing symbol
+	* Fix: only invoke PERROR() on failure to close sessiond_socket
+	* Clean-up: lttng: check status returned when checking rotation state
+	* Fix: communication error unreported in relay_rotate_session_streams
+	* Fix: unreported error in relay_close_trace_chunk
+	* Clean-up: remove dead assignment from ht cleanup thread launcher
+	* Clean-up: remove dead assignment from thread_rotation
+	* Clean-up: remove dead assignment in setup_channel_trace_path
+	* Clean-up: remove dead assignments while setting session trace chunk
+	* Fix: report path truncation on addition of local uri to consumer
+	* Clean-up: lttng: silence warning in regenerate command handler
+	* Clean-up: lttng: silence warning in metadata command handler
+	* Clean-up: remove NULL check on sesison_create mandatory arguments
+	* Fix: session may be NULL in relay_create_session error path
+	* Clean-up: silence erroneous leak warning
+	* Fix: leak of lttng_elf_shdr in lttng-elf.c
+	* Fix: leaked chunk reference in lttng_consumer_create_trace_chunk
+	* Clean-up: remove unused stream file creation and unlink functions
+	* Fix: use the trace chunk to truncate streams on late rotation
+	* Clean-up: format using remaining buffer len rather than total len
+	* Fix sessiond: report flush errors on session stop
+	* Fix: leak of trace_path on error in ust_app_snapshot_record
+	* Fix: uninitialized directory handle finalized on error path
+	* Fix: release reference to created chunk if it can't be published
+	* Fix: destroy chunk registry on element creation failure
+	* Fix: return NULL on trace chunk registry failure
+	* Fix: forward fatal error in evaluate_condition_for_client()
+	* Fix relayd: check for NULL in session_put
 	* Fix typo in regenerate statedump test util
-	* Fix: metadata stream is not marked as quiescent after packet commit
-	* Remove unused bitfield.h header
-	* Fix: sessiond: fs.protected_regular sysctl breaks app registration
-	* Fix: lttng-crash: detect truncated files
-	* Fix: use newly created event filter for condition check
+
+2019-09-06 lttng-tools 2.11.0-rc3 (Great Egg Toss Day)
+	* Fix: time constants already defined on macOS
+	* Fix: missing include strings.h for bcopy on Solaris 10/11
+	* Fix: strndup does not exist on Solaris 10
+	* Fix: strnlen is not defined on Solaris 10
+	* Fix: redefinition of USEC_PER_SEC macro on macOS
+	* Fix: sessiond does not build without lttng-ust support
+	* Fix: sessiond: handle NULL control output in session descriptor base path getter
+	* Tests: metadata env scope values
+	* Support LTTNG_KERNEL_SESSION_SET_CREATION_DATETIME of lttng-modules
+	* Support LTTNG_KERNEL_SESSION_SET_NAME of lttng-modules
+	* Metadata: add env fields to ease lttng path hierarchy creation for viewer
+	* Fix: lttng_directory_handle_init fails on opening base relayd output
+	* Fix: init_session_output_path is valid for peer >= 2.11 only
+	* Fix: chunk state is not set when relayd does not support trace chunks
+	* Fix: check validity of a stream before invoking ust flush command
 	* Fix: namespace our gettid wrapper
+	* pprint.m4: add missing copyright header
+	* Fix: reintroduce lazy kernel modules load, fix empty syscall list
 	* Fix: check for lttng modules presence before testing
-	* Fix: test_crash: don't kill first app twice
+	* sessiond: use epoll()/poll() instead of select()
+	* lttng-ctl: notifications: use epoll()/poll() instead of select()
+	* epoll/poll compat: expose interruptible API
+	* tests: invoke full_cleanup from script trap handlers, use modprobe -r
 	* Cleanup: test: don't stop relayd twice
 	* Fix: test: utils.sh: exit from process on full_cleanup
 	* Fix: utils.sh: handle SIGPIPE
 	* Fix: tests: error handling in high throughput limits test (v2)
 	* Improve handling of test SIGTERM/SIGINT (v2)
-	* Fix: check validity of a stream before invoking ust flush command
-	* Fix: initialize syscall table when kernel tracer is lazily initialized
+	* Fix: incorrect conversion specifier used with size and padding
+	* Fix: incorrect conversion specifier used with packet size
+	* Fix: mismatch of ust_app_get_size_one_more_packet_per_stream prototype
+	* Fix: mismatch of ust_app_snapshot_record prototype
+	* Fix: lttcomm_consumer_close_trace_chunk_reply undefined without UST
+	* Fix: kernel/ust snapshot backward compat for 2.10 relay
+	* relayd protocol: reply path for close chunk and create session 2.11
+	* Fix: streaming and snapshot backward compat for relayd < 2.11
+	* Fix: relayd: create_index_file error handling
+	* Fix: don't use newlines in logging message
+	* Fix: relayd outputs traces of legacy sessionds to home dir
+	* relayd comm: add base path to create session
+	* tests: add base-path tests
+	* test utils: support URI in lttng_snapshot_add_output
+	* Fix: close consumer sockets before waiting for them
+	* Fix: consumer: put each chunk on teardown
+	* Fix: validate that session, host and basepath are legal
+	* Fix: honor base path for network URIs
+	* Fix: bindings import segfaults on missing hash_key_u64
+	* Cleanup: typo: overriden -> overridden
+	* Fix: relay: relay_rotate_session_streams uninitialized return value
+	* Fix: test_kernel rotation: expect 60 rather than 64
+	* Save registration time for app
+	* Fix: tests: update rotation ust number of tests
+	* Clean-up: missing word `lock` in comment
+	* Use case-scope error labels handling LTTNG_CONSUMER_ROTATE_CHANNEL
+	* Use case-scope error labels handling LTTNG_CONSUMER_PUSH_METADATA
+	* Use case-scope error labels when handling LTTNG_CONSUMER_GET_CHANNEL
+	* Use case-scope error labels handling LTTNG_CONSUMER_ROTATE_CHANNEL
+	* Use case-scope error labels handling LTTNG_CONSUMER_DESTROY_CHANNEL
+	* Use case-scope error labels handling LTTNG_CONSUMER_STREAMS_SENT
+	* Use case-scope error labels when handling LTTNG_CONSUMER_ADD_STREAM
+	* Clean-up: set stream's channel pointer to NULL after releasing ref
+	* Fix: mark consumer channels as logically deleted during deletion
+	* Cleanup: mark utils_get_home_dir as returning a const string
+	* Fix: use utils_get_home_dir for anonymous trace chunk path
+	* Fix: tests: typo in rotation util
+	* Fix: keep ust/kernel session items around for destroy notifier
+	* Tests: add a test for the "skip non-empy" rmdir flag
+	* Fix: rmdir recursive: skip non-empty directories with flag
+	* Fix: uninitialized variable returned by relay_rotate_session_streams
+	* Fix: allow quiet rotation at destroy of live session
+	* Fix: relayd: live: read index file header
+	* Fix: index: use parenthesis around define
+	* Fix: test_crash: don't kill first app twice
+	* Fix: perform a rotation to a null trace chunk on session destruction
+	* relayd: log destination trace chunk of ROTATE_STREAMS command
+	* Clean-up: declare dummy pipe payload as a char instead of a string
+	* Fix: consumer: assert that stream chunk != NULL (not channel)
+	* relayd fix: trace chunk is reclaimed before close command
+	* Fix: rotation of a stopped session hangs indifinitely
+	* Fix: initialize kernel stream max subbuffer size on creation
+	* Fix: use relay_id from ust_session or kernel_session consumer
+	* Fix: lttng-ctl: public session.h control API: restore 0 success return value
+	* Fix: remote kernel stream paths contain too much information
+	* Fix: destroy command: send credentials with command
+	* relayd: open live viewer files from the current stream's trace chunk
+	* Fix: don't perform an automatic session rotation in snapshot mode
+	* Fix: incorrect time unit used when waiting on destruction handle
+	* relayd: implement file and session rotation on top of trace chunks
+	* Fix: remove assertions of the existence of a trace chunk
+	* Fix: only create trace chunk if the output of a session supports it
+	* Fix: use stream's current tracefile count rather than the max
+	* relayd: use bool for is_metadata relay_stream attribute
+	* relayd: create stream files relative to a session's trace chunk
+	* Fix: leak of consumer_output when using an explicit snapshot output
+	* Fix: reception buffer of control connection is leaked
+	* Fix: ensure a newline is printed before exit on client destroy
+	* Send session creation time to relay daemon when supported
+	* relayd: remove unnecessary allocation in session path formatting
+	* relayd: add remote trace chunk close command
+	* Create userspace buffers using ua_sess effective credentials
+	* Use lttng_credentials instead of bespoke uid/gid members in ua_sess
+	* relayd: add remote trace chunk creation command
+	* Add .clang-format
+	* Don't allow slashes and dots in overriden trace chunk names
+	* relayd: Retrieve a relay_session's trace chunk on creation
+	* relayd: Transmit current trace chunk id in create_sesssion command
+	* Use a "comm" variant of the LTTNG_OPTIONAL helper in sessiond-comm
+	* Remove unused relay daemon commands
+	* relayd: create an implicit trace chunk on session creation
+	* relayd: create sessiond trace chunk registry on session creation
+	* Use directory handle to rename trace chunk directory
+	* Docs: add directory handle header documentation
+	* Add rmdirat and renameat to run-as commands
+	* Print the location of trace chunk produced at session destruction
+	* Docs: misleading documentation of compat_epoll_create
+	* Remove unused ust_sock member of command_ctx
+	* Tests: clarify the tap output of the kernel session rotation test
+	* Fix: wait for the completion of implicit session rotations
+	* Fix: don't hide EBADF error subbuffer write
+	* Tests: don't expect a UST directory after inactive per-PID rotation
+	* Tests: remove check for an empty chunk produced on destruction
+	* Fix: metadata stream is not marked as quiescent after packet commit
+	* Create stream files relative to a stream's current trace chunk
+	* Cleanup: remove duplicated code in snapshot record command
+	* Fix: run_as_mkdirat returns value of errno
+	* Fix: double close of directory fd in runas worker
+	* relayd: add the sessiond_trace_chunk_registry interface
+	* Move index initialization to ctf-index.h
+	* Export utils_stream_file_path outside of common/utils.c
+	* Add file creation/unlinking utils to directory handle
+	* relayd: send sessiond uuid and session id as part of create session
+	* Transmit sessiond uuid to consumerd on launch
+	* Add lttng_uuid_copy() util
+	* Add lttng_uuid_is_nil() util
+	* Add lttng_uuid_is_equal util to lttng_uuid
+	* Add a consumer daemon INIT command
+	* Generate a UUID on lttng-sessiond launch
+	* Remove unneeded creation of the UST domain sub-directory
+	* .gitignore: ignore ccls and clangd files
+	* Create an initial trace chunk on first start of an ltt_session
+	* Allow direct access to the dirfd of a directory handle
+	* Create a consumer daemon trace chunk registry on launch
+	* Add the trace chunk and trace chunk registry interfaces
+	* Add a time_to_iso8601_str() utility
+	* Add a method to create a directory handle relative to another one
+	* Maintain a channel-per-session_id hash table in the consumers
+	* Document lttng_directory_handle_init_from_dirfd
+	* Allow lttng_directory_handle to be moved
+	* Add a copy method to lttng_directory_handle
+	* Remove unused bitfield.h header
+	* Use uuid_to_str() when formatting metadata
+	* Add an internal uuid formatting utility
+	* Tests build fix: undefined MAGIC_VALUE macro
+	* Build fix: undeclared variable in poll compat
+	* Fix: error when listing sessions with no session
 
-2019-05-24 lttng-tools 2.10.7 (Asparagus Day)
+2019-05-24 lttng-tools 2.11.0-rc2 (Asparagus Day)
 	* Update base test for binding
 	* Fix: python binding: expose domain buffer type
+	* Clean-up: correct typo from epoll to poll
+	* Clean code base from redundant verification
+	* Change lttng_poll_wait behaviour of compat-poll to match compat-epoll
+	* Fix: hang in thread_rotation when using compat-poll
+	* Adapt poll layer behaviour to match the epoll layer
+	* Change LTTNG_POLL_GETNB behaviour for poll flavor
+	* Add Unit test to poll compatibility layer
 	* Fix: lttng_poll_mod calls compat_(e)poll_add
+	* Fix: getenv can return null
+	* Bump LTTNG_UST_ABI to 8.0
+	* Fix: directory handle credentials parameter is not const
+	* doc: Add reference to USDT probes
+	* Clean-up: Remove double buffer initialisation
 	* Fix: getgrnam is not MT-Safe, use getgrnam_r
 	* Fix: logging: log_add_time() save/restore errno
 	* Fix relayd: initialize beacon to -1ULL
 	* Fix: relayd: handling of lttng_read errors >= 0
+	* Harmonize pprint macro across projects
+	* Update the ac_define_dir macro from the autoconf archive
+	* Harmonize rw_prog_cxx_works macro across projects
+	* Namespace check_sdt_works custom macro
+	* Update macros from the autoconf archive
+	* Fix: relayd not spawned on default-url live session creation
+	* Clean-up: remove empty line in lttng create command
+	* Add mkdirat utils and runas wrappers
+	* Clean-up: remove commented code from test
+	* Fix tests: NULL pointer dereference in ltt_session unit tests
 	* Fix tests: NULL pointer dereference in ust channel unit tests
 	* Fix tests: NULL pointer dereference in ltt_ust_context unit tests
+	* Fix tests: NULL pointer dereference in ltt_session unit tests
 	* Log the wait-shm's path on shm_open failure
-	* Tests: use modprobe to test for the presence of lttng-modules
+	* Generate session name and default output on sessiond's end
+	* Move completed trace archive chunks to an "archives" sub-folder
+	* Fix: lttng_rotate_session does not handle socket close
+	* Fix: hide internal libcommon time utilities
+	* lttng: make the configuration file interface const correct
+	* Fix: command reply message is leaked for variable-len replies
 	* Fix: skip test when ust doesn't have perf support
 	* Tests: check for lttng-modules presence
 	* Fix: Properly sanitize input parameter
@@ -47,36 +332,167 @@
 	* Fix tests: snapshot size validation failure runs too many test cases
 	* Fix tests: the tree origin can be a symlink itself
 	* Fix tests: skip test_getcpu_override on single core systems
+	* Enforce DL_LIBS value instead of hard coded -ldl
 	* Fix: Add POPT_CFLAGS to lttng_CFLAGS
 	* Fix: consumer snapshot: handle unsigned long overflow
+	* Clean-up: hide internal kernel_consumer_add_channel() symbol
+	* Fix: no-output sessions do not enforce snapshot constraints
 	* Fix: wrong error code returned by kernel_snapshot_record()
+	* Clarify incorrect channel output type logging message
+	* Mark lttng_kconsumer_snapshot_channel as static
+	* Docs: clarify the meaning of the snapshot_mode flag in ltt_session
+	* lttng: clean-up the printout of snapshot outputs
+	* lttng: clean-up printout of session output destination
 	* Docs: document the format of the lttng_session path member
+	* Docs: lttng-ctl has no default live timer period
+	* Fix: missing include can cause structures to not be packed
 	* Fix: check illegal combinations of ctrl-url/data-url/ouput/set-url
+	* Fix: lttng_uri structure must be packed as it is used for IPC
+	* Fix: missing mentions of tracing session rotation in basic help
+	* Fix: release reference to ltt_session on error instead of free()
+	* Fix relayd: session leaked on communication error during creation
+	* Prevent channel buffer allocation larger than memory
+	* Fix: destroy called twice on quit pipe
 	* Remove duplicate check for dlopen
 	* Tests: take multiple snapshots in streaming mode
 	* Fix: don't destroy the sockets if the snapshot was successful
+	* Fix: run-as thread deadlock on itself in restart error path
+	* Fix: session list lock must be held on session put operation
+	* Support minute and hour as time suffixes
+	* Test fix: passing bool argument to va_start is undefined
 	* Fix: missing rcu read locking in trigger "unregister all" command
-	* Fix: notification thread: RCU-safe reclaim of hash table nodes
-
-2019-01-22 lttng-tools 2.10.6 (Blonde Brownie Day)
-	* Fix: worker structure is leaked in run_as process
+	* Fix: create_kernel_session asserts on failure
 	* Fix: only free trace_path when it is dynamically allocated
+	* Fix: wrong error check on kernel session creation
+	* Fix: don't put() thread on shutdown failure
+	* Fix: dereference on NULL pointer on allocation failure
 	* Fix: leak of filter bytecode and expression on agent event re-enable
 	* Test fix: python logging test spams its output
+	* Fix: leak of lttng-consumerd global HTs in run-as worker
+	* Fix: leak of sessiond configuration on launch of run-as worker
 	* Fix: leak of rundir config string
-	* Fix: do not repurpose iterator while it is being used
+	* Fix: only synchronize application configuration on tracing start
 	* Fix: run_command_wait() handle partial write
+	* Fix: do not repurpose iterator while it is being used
+	* Fix: handle_notification_thread_command: handle partial read
+	* Fix: notification thread: free session trigger list on error
+	* Fix: notification thread: RCU-safe reclaim of hash table nodes
+	* Fix: error logged on partial recvmsg() in MSG_DONTWAIT
+	* Print UTF-8 SI suffix only when allowed by the locale
+	* Cleanup: duplicate LDADD of libcommon for utils unit tests
+	* Move time utils to their own time.c file
+	* Fix: sessiond: don't allocate buffers and files for inactive sessions
+	* Cleanup: ust start/stop trace
+	* Fix: relayd: rotation pending off-by-one
 	* Fix: tests: test_crash should start sessions
+	* Fix: missing session reference release on kernel poll update
+	* Fix: set client socket permissions after launch of client thread
+	* Fix: use assignment-suppression for unused sscanf arguments
+	* Fix: report initialization error of app registration thread
+	* Fix: report initialization error of client thread
+	* Cleanup: consumer socket creation debug msg always prints fd:-1
+	* Cleanup: remove unused label
+	* Fix: may be used uninitialized warnings
+	* userspace-probe: tests: add testcase for unsupported instrumentation
+	* userspace-probe: Print error on binary not found
+	* userspace-probe: Print error for unsupported instrumentation mode
+	* Fix: use sys/types.h for ssize_t on Cygwin
 	* Add *.exe to gitignore for Cygwin
+	* Revert stubbing of runas functions
+	* Revert stubbing of unix socket functions
 	* Fix: warning 'fd' may be used uninitialized
+	* Fix: worker structure is leaked in run_as process
+	* Fix: ensure the ht clean pipe is empty before processing quit pipe
+	* Perform the clean-up of application notify sockets in main thread
+	* Clean-up: remove redundant exit labels from sessiond initialization
+	* Make the launch of the application registration thread blocking
+	* Stop the application registration thread before orphaned threads
+	* Rename ust-thread to notify-apps
+	* Teardown the notification thread after the sessiond clean-up
+	* Launch the consumer management thread using lttng_thread
+	* Stop sessions before destroying on teardown of session daemon
+	* Remove the sessiond "ready" counter mechanism
+	* Load session configurations from lttng-sessiond's main thread
+	* Launch the kernel management thread using lttng_thread
+	* Launch agent management thread using lttng_thread
+	* Mark lttng_pipe as const where possible
+	* Launch the application notification thread using lttng_thread
+	* Launch the application management thread with lttng_thread
+	* Launch application registration thread using lttng_thread
+	* Launch the ust registration dispatch thread using lttng_thread
+	* Launch the client management thread using lttng_thread
+	* Launch the timer thread using lttng_thread
+	* Launch the rotation thread using lttng_thread
+	* Fix: flush the rotation thread's job queue on exit
+	* Stop rotation pending check timer from the rotation thread
+	* Launch the notification thread using lttng_thread
+	* Launch the health management thread using lttng_thread
+	* Launch the ht-cleanup thread using lttng_thread util
+	* Add a thread utility class and thread list
+	* Don't perform an implicit rotation on session stop
+	* Wait for the destruction of sessions before tearing down main thread
+	* Fix: rotation_unavailable returned on failure to read time
+	* Fix: mark rotation pending check timer is never marked as disabled
+	* Acquire a reference to a session when a timer is active
+	* Reference count ltt_session objects
+	* Fix: session info reference is not put on unhandled condition type
+	* Fix: typo 'occured' -> 'occurred'
+	* Fix: typo 'retrive' -> 'retrieve'
+	* Fix: typo 'convet' -> 'convert'
+	* Fix: typo 'leat' -> 'least'
 	* Fix: max_t/min_t macros are missing cast on input
 	* Fix: Connect timeout arithmetic in inet/inet6 (v4)
+	* Fix: cmd_snapshot_record can return unexpected error codes
+	* Docs: document why a negative socket may be passed
+	* lttng-enable-event.1.txt: fix SDT acronym, add missing "are supported"
+	* lttng-enable-rotation.1.txt: --timer option should be fairly precise
+	* doc/man: remove AUTHORS section
+	* lttng-enable-event.1.txt: uprobe: update style and content
+	* doc/man: add links between man pages about session rotation
+	* lttng-enable-event.1.txt: document dynamic user space probes
+	* lttng-{enable,disable}-rotation.1.txt: both types can be specified
+	* lttng-disable-rotation.1.txt: remove LIMITATIONS section
+	* lttng-enable-rotation.1.txt: add that SIZE/PERIOD are approximations
+	* lttng-rotate.1.txt: lttng-relayd(8) also has --output option
+	* Fix: sessiond: ust_app_rotate_session error handling
+	* Fix: sessiond: snapshot: handle consumer return codes
+	* Fix: consumer: snapshot error return code
+	* Fix: sessiond: consumer.c: rotation error handling
+	* Fix: consumer: rotation error return codes
 	* Fix: create_channel_per_pid: remove channel on error
 	* Fix: channel errors on local stress-tests
 	* Fix: channel_ust_create: remove channel on agent error
+	* Fix: cmd_rotate_session() returns unexpected error codes
+	* Fix: session rotation logging statement references snapshot
+	* Clean-up: typo in logging message Totation -> Rotation
+	* Fix: rotation error may leave session in "ONGOING" state
+	* Fix: session_list lock must be held to launch a rotation
+	* Add an ASSERT_LOCKED(lock) macro
+	* Clean-up: move global sessiond symbols out of main.o
+	* Fix: split index and data file rotation logic
+	* Fix: trace_archive_id is not sent in add_stream command
+	* Fix: condition unsubscription error leaves session locked
+	* Fix: rotation thread does not unregister from RCU on init error
+	* Remove unused nr_stream_rotate_pending from consumer channel
+	* Fix: session destruction blocks indefinitely if rotation is ongoing
+	* Clean-up: remove non-existent function's declaration
 	* Always choose large event header for UST channels
+	* Fix relayd: stream index file created in the wrong directory
+	* relayd: add payload logging to session rotation commands
+	* relayd: rename stream prev_seq to prev_data_seq
+	* Fix: take index seq number into account for rotation pending check
+	* Fix: take index sequence number into account for data pending check
+	* relayd: keep track of prev_index_seq in relayd_stream
+	* Fix: session conditions not evaluated at subscription/registration
 	* Remove unnecessary check of output parameter
+	* Allow get_next_notification to return when interrupted
+	* Fix: register rotation thread as RCU thread
+	* Docs: comment typo fix (accomodates -> accommodates)
+	* Fix: uninitialized variable may be used in local rotation check
+	* Rename sessiond-timer.[hc] to timer.[hc]
+	* Fix: rotation may never complete in per-PID buffering mode
 	* Fix: perform local data pending before checking data pending with relayd
+	* Fix: missing header breaks the cygwin build
 	* Fix: double put on error path
 	* Fix: holding the stream lock does not equate to having data pending
 	* Fix: skip uid registry when metadata key is 0
@@ -85,6 +501,7 @@
 	* Fix: skip closed session on viewer listing
 	* Fix: use LTTNG_VIEWER_ATTACH_UNK to report a closed session
 	* Doc: withinin -> within
+	* Fix: cleanup relayd sockets on rotation command communication error
 	* Fix: perform relayd socket pair cleanup on control socket error
 	* Fix: relayd control socket mutex is not destroyed
 	* Tests: do not bound test app iterations when in background mode
@@ -96,77 +513,411 @@
 	* Tests: Remove unused variable
 	* Tests: Use stop relayd from utils.sh
 	* Tests: remove declaration already present in utils.sh
+	* Tests: added test_autoload to noinst_SCRIPTS
+	* Fix: Memory leak on run_as worker restart error path
+	* Fix: non-zero return of open handled as error
+	* Fix: global run_as worker lock released during restart
+	* Fix: runas worker attempts to send invalid fd to master
+	* Fix runas: don't attempt close negative fd
+	* Fix: tests: missing frame pointer for callstack test on some compiler
+	* Add release name and description to configure.ac
+
+2018-08-31 lttng-tools 2.11.0-rc1 (National Trail Mix Day)
+	* Missing kernel test files in dist target
+	* elf: support dynamic symbol table lookup
+	* Fix: leak of event attributes on copy failure
+	* Test fix: check length of input string
+	* Test cleanup: wrong indentation style in test_ust_data.c
+	* Test fix: leak of exclusions on allocation error
+	* Fix: runas check fd value before calling close()
+	* Docs: multiple rotation schedules can be active
+	* Docs: immadiate rotations can be performed with active schedules
+	* Fix: ret variable is used instead of cmd_ret in disable-rotation
+	* Cleanup: unused assignation on rotation error
+	* Cleanup: unused assignation on rotation already pending
+	* Fix: unchecked writer open element return value
+	* Remove unused session current_archive_location accessor
 	* Fix: incorrect error message on regenerate missing argument
 	* Fix: incorrect error message on metadata missing argument
 	* Fix: snapshot command mishandles missing arguments
+	* Cleanup: improve readability of filter expression condition
 	* Fix: potential use of NULL path in stat() use
+	* Cleanup: unused assignment of curr_data_ptr in lttng_elf
+	* Fix: uninitialized data/ret in runas offset commands
+	* Fix: uninitialized fd value used in runas
+	* Fix: report setegid()/seteuid() failure in runas
+	* Fix: leak of binary path on location creation error
+	* Fix: missing return value check in notification serialization
+	* Fix: possible leak of path in _utils_expand_path
+	* Fix: silent truncation in _utils_expand_path
+	* Cleanup: unused assignment of ret_code in ROTATE_CHANNEL
 	* Fix: passing null to closedir() on error
 	* Fix: unchecked access to pids array
+	* Fix: missing jump to error on allocation failure
+	* Cleanup: unused assignation of ret value
+	* Cleanup: unused assignation of ELF parsing error
+	* Fix: leak of probe_locs on error
+	* Fix: leak on agent event listing error
+	* Fix: possible null dereference on communication error
 	* Fix: returned pids may be uninitialized
+	* Fix: invalid destruction of lookup_method
+	* Fix: unused value in SDT probe description parsing
+	* Fix: use of uninitialized variable in C++ userspace-probe testapp
+	* Fix: use of uninitialized value in error path
+	* Fix: leaking string by setting pointer to NULL before freeing it
+	* Fix: passing negative param to dup(2) on error
+	* Fix: use-after-free in UST test case
+	* Fix: leak in error handling of userspace param parsing
+	* Fix: Remove dead code in fd passing function
+	* Cleanup: avoid duplicating userspace-probe desc twice
+	* Fix: memory leak in userspace probe param parsing
+	* Fix: missing error handling goto statement in runas
+	* Fix: use-after-free on error of lttng_event creation and copy
+	* Add function instrumentation type accessors to function location type
+	* Docs fix: probe location description is erroneous
+	* Fix: event leak during event load
+	* Hide lttng_event_copy symbol
+	* Docs: document new lttng_event methods
+	* Fix: leak of lookup_method_name in uprobe load
+	* Docs: distinction  between function and tracepoint probe locations
+	* Fix: abort on unknown location type in destructor
+	* Clean-up: location lookup destroy can be type-agnostic
+	* Fix: hide internal uprobe configuration symbols
+	* Fix: event copy constructor frees original event on error
+	* Fix: userspace probe accessors are not const-correct
+	* Cleanup: use lttng_* string utility functions
+	* Silence macro redefinition warnings on macOS
 	* Fix: lttng-save command producing wrong XML fields
+	* Error out if filter expression is attached to unsupported event types
+	* Implement userspace-probe regression tests
+	* Implement lttng-mi for userspace-probe
+	* Implement lttng-save and lttng-load for userspace-probe
+	* Implement lttng-list for userspace-probe
+	* Add --userspace-probe kernel event type
+	* Implement $PATH binary searching function for userspace-probe
+	* Add userspace location in ltt_kernel_event structure
+	* Implement userspace probe location extraction and registration
+	* Implement 2-step registration of userspace probe events
+	* Use lttng_event_{create, destroy} to manage lttng_event struct
+	* Fix: remove unnecessary stderr output on expected behaviour
+	* trace_ust_create_event() now returns an error code
+	* trace_kernel_create_event() now returns an error code
+	* run_as: add extract SDT probe offsets command
+	* run_as: add extract ELF symbol offset command
+	* run_as: adapt run_as implementation to support complex payloads
+	* Add SDT userspace probe location
+	* Add lttng_event copy constructor
+	* Implement SDT probe description parsing function
+	* Add lttng_userspace_probe_location copy constructor
+	* Cleanup: move session saving of K(ret)probe and function tracing to dedicated functions
+	* Implement ELF function offset extraction function
+	* Add utils_expand_path_keep_symlink fonction
+	* Fix: kernel adds creds on recv with SO_PASSCRED unix socket option
+	* lttng-ctl: implement listing of userspace probe locations
+	* Add invalid userspace probe location error
 	* Fix: memory is not zeroed on first set_capacity
+	* Add a util to create a buffer view from a raw buffer
 	* Fix: dynamic buffer mishandles setting capacity to 0
+	* lttng-ctl: send userspace probe location on enable_event
+	* lttng-ctl: locate extended event attributes at reception
+	* Add utils to send file descriptors to the sessiond
+	* lttng-ctl: add accessors of userspace probe location to lttng_event
+	* lttng-ctl: add userspace probe location interface
+	* Add lttng_dynamic_buffer_get_capacity_left util
+	* Add ALIGN_TO util to macros.h
+	* lttng-ctl: add an lttng_event_extended distinct from communication structures
+	* lttng-ctl: move lttng_event functions to a new file
+	* Tests: possible NULL dereference in rotation notification test
+	* Clean-up: remove dead code from rotation test
+	* Fix: size of concrete class used in memcpy of base class
+	* Tests: add a session rotation ongoing/completed notification test
+	* Clean-up: remove useless check of event name
+	* Fix: mix of lttng_error_code and cmd_error_code enums
+	* Add notification session rotation hooks
+	* Implement rotation command handlers in notification system
+	* Fix: return 0 on successful location serialization
+	* Fix: return size from location deserialization function
+	* Add a trace archive location accessor to the session API
+	* Fix: notification channel not released on error path
+	* Implement rotation ongoing/completed commands
+	* Fix: remove session_info from sessions_ht on destruction
+	* Bind newly registered triggers to session or channel objects
+	* Docs: clarify the contents of channel_infos_ht
+	* Add a hashing function for session rotation conditions
+	* Build a list of triggers applying to a given session on creation
+	* Add a comment clarifying the ownership of triggers
+	* Fix: use condition's type to compute its hash
+	* Cleanup: enforce const-correctness in notification thread
+	* Fix: add session_info object to sessions_ht
+	* Add session rotation ongoing/completed notification commands
+	* Add session rotation ongoing/completed conditions
+	* Fix: use the correct condition type in logging statements
+	* Add a by-address equality short-circuit to condition comparison
+	* Fix: assume that conditions are valid before being compared
+	* Cleanup: remove superfluous argument to consumed size create
+	* Docs: prefer 'release' to 'free' in API documentation
+	* Add trace archive location serialization/deserialization methods
+	* Tests: add notap versions of start/stop tracing helpers
+	* Tests: typo in notification test case description
+	* Use the dynamic buffer to serialize notification objects
+	* Fix: consumers don't honor protocol on rotate pending relay command
 	* Fix: client_list_element leak on failure to evaluate a condition
 	* Fix: possible NULL dereference in uri_parse_str_urls()
+	* Typo fix in uri parsing error logging
+	* Fix: unchecked return value of cds_lfht_destroy
 	* Fix: clean-up sessiond condig structure on initialization error
 	* Fix: unchecked return value in sessiond path configuration
+	* Fix: path leak on formatting error
+	* Fix: use of uninitialized 'nb_pipes_fd'
+	* Clean-up: useless assert that unsigned value is >= 0
+	* Test fix: size schedule leaked in a schedule API test case
+	* Fix: unreported error on rotate timer stop failure
+	* save/load: support session rotation schedule descriptors
+	* mi: serialize relay rotation locations
+	* Fix: use negative code for errors in enum
+	* Add rotate-client to .gitignore
+	* Docs: adapt the rotation client example to the API changes
+	* Remove generic error reporting from the lttng client
+	* Test: session rotation schedule API
+	* rotation-api: introduce rotation schedule descriptors
+	* rotation-api: pass session name explicitly
 	* Set consumer's verbosity to the max level on --verbose-consumer
-	* Tests: added test_autoload to noinst_SCRIPTS
-
-2018-07-23 lttng-tools 2.10.5 (National Vanilla Ice Cream Day)
+	* Fix: Tests: use -no-pie linker option only when available
+	* Fix: check for removal of session's shm_path in destroy()
+	* Document the contents of the shm_path fields of the ust session registry
+	* Implement MI and save/load support for callstack contexts
+	* Tests: Add callstack contexts tests
+	* Add kernel and userspace callstack event context
 	* Fix: missing context enum values in session xml schema
+	* lttng-enable-event(1): update the Filter expression section
+	* Filter: document ust app ctx limitation
+	* Filter: add FILTER_OP_RETURN_S64 instruction
+	* Filter: make bitwise and, or, xor higher prio than relational expressions
+	* Filter: Update shifting tests
+	* Add () for bitwise and comparator tests
+	* Filter: Implement rshift, lshift, bit not operators
+	* Filters: generate backward compatible "get field" and "get context" instructions
+	* Filter: index array, sequences, implement bitwise binary operators
+	* Implement support for brackets in filter expressions
 	* Tests: add session auto-loading test cases
+	* Replace deprecated readdir_r() with readdir()
 	* Bash completion: ignore namespace for xmllint parsing
+	* Use https in links to the lttng.org website
+	* Log the session to which a ROTATE_PENDING command applies
+	* Initialize relay_stream chunk_id to its session's current trace archive id
+	* Pass the consumerd stream's trace archive id to the relayd
+	* Fix: propagate archive id to the consumer daemon on stream creation
 	* Typo in ust consumer log message (channek -> channel)
+	* Use dynamic payload for the add stream realyd command
+	* Dynamic payload for relayd create session command
+	* Fix: backward relayd communication compatibility.
+	* Add unused attribute to lttng_to_index_major param
+	* Replace strncpy by lttng_strncpy in lttngctl session configuration API
+	* Replace strncpy by lttng_strncpy in utils_stream_file_name()
+	* Use dynamic buffer to build session configuration path
+	* Replace strncpy by lttng_strncpy in session config
+	* Silence strncpy warning emitted by GCC 8 in XSD path construction
+	* Silence strncpy warning emitted by GCC 8 in lttng_strncpy()
+	* Silence strncpy warning emitted by GCC 8 in ini parser
 	* Fix: use signed variable for refcounting of consumer_relayd_sock_pair
-	* Fix: warning due to hash_key_str() being not const-correct
+	* Cleanup: sobjd is never used by reply_ust_register_channel()
+	* Cleanup: chan is never used by save_agent_events()
+	* Cleanup: open_memstream and close_memstream compat is never used
+	* Remove unnecessary inclusions of version.h
+	* Add multilib test files to .gitignore
+	* Cleanup: ua_sess is never used create_ust_app_channel_context()
+	* Cleanup: consumer_data is never used by update_kernel_stream()
+	* Cleanup: app is never used by alloc_ust_app_session()
+	* Cleanup: ust_session_id unused by buffer_reg_uid_consumer_channel_key
+	* Cleanup: wpipe already contain kernel_tracer_fd
+	* Cleanup: domain type is never used by send_consumer_relayd_socket()
+	* Cleanup: uid and gid are never used by run_as_noworker()
+	* Cleanup: sessiond_id is never used by relayd_create_session_2_*
+	* Cleanup: sock is never used by ask_channel()
+	* Cleanup: ctx is never used by monitor_timer()
+	* Cleanup: signo is never used by metadata_switch_timer
+	* Cleanup: channel is never used by metadata_cache_check_version()
+	* Cleanup: relayd id is never used by write_relayd_metadata_id()
+	* Cleanup: attr is not used by open_ust_stream_fd()
+	* Cleanup: *_domain are never used by create_session
+	* doc/man: update rotation man pages to follow API's terminology
 	* Print consumerd32/64/kernel configuration
+	* Test: change use of space for tabs in utils.sh
+	* Tests: add duplicated providers tests
+	* Tests: add function to validate the number of an event name in metadata
+	* Tests: allow the use of regular expressions to match events
 	* Fix: calling ht_{hash, match}_enum with wrong argument
 	* Fix: probes should be compared strictly by events metadata
+	* Test for lttng-logger
+	* Test mi: rename sessiond load directory constant
+	* mi: support "add-context --list"
 	* Fix: test_ust-dl is generated at configure-time
 	* Fix: cmd line options overwrite env variable config options
 	* Fix: perform the initialization memory barrier out of loop body
+	* Clean-up: explicit mb before decrementing lttng_sessiond_ready
+	* Clean-up: use a define for support thread count
 	* Port: fix format warnings on Cygwin
 	* Add missing include for ssize_t on Cygwin
 	* Fix: sessions with agent channels fail to load
 	* Fix: don't wait for the load thread before serving client commands
+	* Add test_utils_parse_time_suffix to .gitignore
+	* Clean-up: kernel_consumer_add_stream() does not need to be public
 	* Fix: sessiond fails to launch on --without-ust configuration
 	* Fix: agent thread poll set creation failure results in deadlock
 	* Fix: test uses sizeof() on the wrong operand of strncpy
+	* Rename kernel_consumer_send_channel_stream()
+	* Rename consumer_init_channel_comm_msg()
+	* Cleanup: send_fds functions are not const-correct
+	* Remove unused ltt_session look-up result
+	* Clean-up: reduce indentation level of create_channel_per_uid()
+	* Enforce locking assumptions during channel creation
+	* Cleanup: misleading create_ust_app_session() name
+	* Rename rotate_count to current_archive_id
+	* Cleanup: name of send_sessiond_channel() is misleading
+	* Print the git version used to build from a distribution tarball
+	* Docs: lttng-version uses the intransitive form of "broke"
+	* Fix: relayd streams can be leaked on connection error
+	* Cleanup: fix typo in relayd comment
 	* Fix: ret may be used uninitialized in sample_channel_positions()
-
-2018-04-30 lttng-tools 2.10.4 (CERN announces WWW protocols will be free)
+	* Cleanup: ret is unused in relay_process_data_receive_header()
 	* Fix build: in_git_repo is used before being set
+	* Fix: partial writes of padding are not checked
+	* Propagate whether a connection was closed cleanly or after an error
+	* Fix: relayd protocol field present from minor 8 is not checked
 	* Add DBG statement for TCP keep-alive options
+	* Fix: relay_recv_metadata does not check for partial write
+	* Use non-blocking recvmsg() for data/ctrl connections of lttng-relayd
 	* Fix: unprivilieged sessiond agent port clashes with root sessiond
 	* Fix: erroneous use of extern keyword
 	* Fix: failure to launch agent thread is not reported
 	* Fix: agent may not be ready on launch
+	* Cleanup: misleading variable name
 	* Fix: checking for existing session daemon is done after daemonizing
-	* Fix: lttng logs nanoseconds
-	* Fix: stream_per_chan_id_ht should allow duplicates
-	* Fix: relayd send_command() util not logging on failure
-	* Fix: create_output_path() relayd util is not const-correct
-	* Fix: kernel snapshot handling of EAGAIN
-	* Fix validate_trace_empty test check
-	* Fix: circular inclusion of lttng.h results in warning
-	* Fix: channel lock must be taken to check for pending notifications
+	* Fix: null pointer dereference in lttng_rotation_handle_destroy
+	* sessiond: rename syscall.h so it does not conflict with system
+	* Tests: Handle rotations happening on two separate days during testing
+	* Tests: Clean trace_path after each subtest
+	* Tests: Use for loop for identical validation
+	* Tests: Count number of chunk using ls
 	* Fix: quiet option is not set in sessiond-config
 	* Fix: hold consumer socket lock for consumer_send_msg
+	* Fix: use signed member to transport enum value
 	* Fix: use off_t type for lseek function return value to avoid overflow
+	* Extend the rotation API to provide network trace archive locations
+	* Increase LTTNG_HOST_NAME_MAX from 64 to 255
+	* Add lttng_trace_archive_location lttng-ctl API
+	* Clarify notification channel info ht destruction error log
+	* Fix: goto end after end label
+	* Check return value of cds_lfht_destroy
+	* Fix: destroy schedule attr
+	* Tests: fix oot and dist for rotation tests
+	* Tests: add rotation tests scripts to noinst_SCRIPTS and EXTRA_DIST
+	* Tests: SESSION_NAME defined on each iteration of kernel rotation test
+	* Tests: Reduce scope of TRACE_PATH to a function
+	* Tests: PID_RELAYD is never used
+	* Tests: use functions from utils.sh in rotation tests
+	* Tests: consolidate session creation with a uri parameter in utils.sh
+	* Tests: use modprobe to test for the presence of lttng-modules
+	* Tests: missing license header in rotation utils
+	* Tests: missing parenthesis in userspace rotation test
+	* Tests: use enable_ust_lttng_channel_ok instead of a custom lttng invocation
+	* Tests: remove TRACE_PATH at the end of the rotation test only
+	* Tests: exit $out gets overridden by EXIT trap from tap/tap.sh
+	* Tests: Use SIGTERM instead of SIGKILL
+	* Add --post-script to tap-driver.sh
+	* Tests: add rotation tests to the "check" target
+	* Fix: fail on truncation of kernel channel path
+	* Fix: fail on truncation of snapshot path
+	* Dedicated error message when relay does not support rotations
+	* Fix: add missing includes for embedded help
+	* Document tracing session rotation features
+	* Check for pending notification on notification channel activity
+	* Clarify error logging statement of rotation thread
+	* Fix: rotation state marked as completed before relayd has completed
+	* Fix: cmd_rotate_set_schedule returns positive error codes
+	* Fix: unchecked return value of domain_mkdir()
+	* Add initial "no rotation" state to session rotation states
+	* Fix: erroneous use of kernel consumer error codes
+	* Fix: unhandled prev_seq initial value
+	* Size-based rotation
+	* Add lttng_notification_channel_has_pending_notification()
+	* Fix: channel lock must be taken to check for pending notifications
+	* Docs: typo in notification channel header
+	* Fix: circular inclusion of lttng.h results in warning
+	* Remove unneeded domain.h include
+	* Docs: wrong enum value used in evaluation API description
+	* Remove unneeded forward declaration in condition headers
+	* Add the GMT offset in the rotated chunk path
+	* Tests for the session rotation feature
+	* Fix validate_trace_empty test check
+	* Example client to use the session rotation API
+	* Save, restore and list the rotation parameters
+	* Session consumed size notification
+	* Fix: previous channel total is not updated
+	* Add likely/unlikely annotations on channel sample handling path
+	* Separate session info from channel info in notification thread
+	* Rotate timer
+	* Simplify lock handling in enqueue_timer_rotate_job()
+	* Use utils_parse_time_suffix in create and enable-channel command
+	* Introduce utils_parse_time_suffix
+	* Fix: use metadata key instead of fd for consumer rotation command
 	* Fix: double similar condition
-
-2018-03-26 lttng-tools 2.10.3 (Purple Day)
+	* Fix: missing type definitions in mi-lttng-3.0.xsd
+	* Fix: out of tree build fails on missing header
+	* lttng rotate command
+	* Relay rotate pending command
+	* Rotate command
+	* Sessiond timer thread
+	* Fix: ret is uninitialized on standard path
+	* Sessiond rotation thread
+	* Consumer rotate a channel
+	* Consumer perform the rotation when extracting a packet
+	* Consumer rotate stream
+	* Implement the RELAYD_ROTATE_PENDING relay daemon command
+	* Implement the RELAYD_ROTATE_STREAM relay daemon command
+	* Channel rotate pipe between sessiond and the consumers
+	* Support to dump the kernel metadata cache from the beginning
+	* Add ustctl_flush_buffer to the consumer API
+	* Common consumer functions to read current positions
+	* Dedicated function to wakeup the consumer metadata pipe
+	* Keep read-only copies of fields from the channel to the stream
+	* Cleanup: keep the number of pipes used by poll in a variable
+	* Fix: kernel snapshot handling of EAGAIN
+	* Command to rename a folder
+	* Fix: create_output_path() relayd util is not const-correct
+	* Fix: relayd send_command() util not logging on failure
+	* Clean-up: relayd send_command() helper is not const-correct
+	* Clean-up: remove unneeded cast
+	* Create the session and domain directories on start
+	* Command to make a directory on the consumer or relay
+	* Use free running metadata channel key between sessiond and kernel consumer
+	* Fix: leftover use of channel fd as identifier
+	* Clean-up: use LTTNG_PATH_MAX rather than PATH_MAX
+	* Keep the base directory of a relay session separate
+	* Change trace_path to session_root_path and chunk_path
+	* Make kernel tracer version global to the session daemon
+	* Clean-up: typo fixes in notification thread comments
+	* Bump minor notification protocol version
+	* Clean-up: hash table utils are unnecessarily non-const
+	* Fix: stream_per_chan_id_ht should allow duplicates
+	* Fix: lttng logs nanoseconds
+	* Fix: use a free running channel key between sessiond and kernel consumer
+	* Tests: Fix: arm64 use sys_openat instead of sys_open
 	* Fix: set errno with value from SO_ERROR on error.
 	* Fix: missing value handling for lttng_event_context_type
 	* Fix: Use SOL_SOCKET level for SO_KEEPALIVE on all platform
 	* Fix: error out on leftover arguments
+	* Load preemptirq lttng-modules probe
 	* Fix: reply to version check even on protocol mismatch
 	* Fix: error handling on relay version check
 	* Document add-context limitation for started session
 	* Fix: add-context cannot be performed after a session has been started
 	* Fix: duplicated kernel consumer socket locking
+	* Tests: Change syscall tests to use `gen-syscall-events` testapp
+	* Tests: Add test app to generate syscalls
+	* Tests: Move script synchronization functions to utils library
 	* Fix: remove unused event types in MI XML schema
+	* Updating lttng-ust-ctl header file
 	* Tests: cleanly exit from test apps on reception of SIGTERM
 	* Document consumer socket locking assumptions
 	* Fix: consumer socket lock not held during snapshot record
@@ -177,22 +928,32 @@
 	* Assert that the consumer socket lock is taken during communication
 	* Tests: refuse to run test suite if lttng processes are present
 	* Fix: metadata channel leak when using the snapshot tracing mode
-
-2018-02-05 lttng-tools 2.10.2
 	* Fix: do not flag consumer as disabled on relayd comm failure
 	* Fix: cleanup inactive FDs in the consumer polling thread
 	* man: document dead-peer detection for lttng-relayd
 	* lttng-relayd: use TCP keep-alive mechanism to detect dead-peer
+	* Tests: add kernel notification tests to the root regression list
+	* Docs: clarify which socket serves as the ust_app_ht_by_sock's key
+	* Docs: refer to apps_notify_thread instead of 'the other thread'
+	* Docs: describe the apps_thread's working in function header
 	* Tests: race between consumer pause and trace start/stop
+	* Clean-up: remove unneeded rcu_read_lock acquisition
+	* Docs: document locking assumption of function
 	* Fix: notification thread not notified of channel creation on app error
+	* Clean-up: consumer_add_metadata_stream always returns 0
+	* Fix: scope ownership of a stream for ust-consumer
+	* Clean-up: reduce scope of dyanamically-allocated string
 	* Fix: using putenv() and free()-ing the value is invalid
+	* Clean-up: unnecessary duplicated call to exit()
 	* Fix: unknown consumer type considered a libc error
 	* Fix: consumerd(64/32)_lib_dir can be NULL
+	* Fix: evaluate trigger condition on registration
 	* Fix: nonsensical message printed by lttng track/untrack
 	* Fix: O_CLOEXEC is erroneously used on pipe creation
 	* Fix: wrong parameter to fcntl in pipe_set_flag
 	* Fix: use lttng_clock_gettime instead of clock_gettime
 	* Fix: close channel monitor pipe after killing the metadata_timer_thread
+	* Fix: path of snapshots with a relay and default URI
 	* Fix: use file based synchronization for python logging test
 	* Test: add file based synchronization point for python test app
 	* Fix: wrong use of the relay_streams_sent in snapshot
@@ -204,21 +965,19 @@
 	* Fix: include scripts for distribution
 	* Fix: typo in lttng-consumerd file default
 	* Fix: missing NULL checks in logging statements
-	* Test: kernel testing for notification
 	* Fix: kernel consumerd sock paths need rundir substitution
+	* Test: kernel testing for notification
 	* Fix: create lttng run dir regardless of user privilege
 	* Fix: Make version.h generation work with dash
 	* lttng-enable-event(1): filtering: specify that `$ctx.cpu_id` is available
 	* centralize sessiond config option handling
 	* Fix: buffer overflow warning in python bindings
 	* Tests fix: BT2 does not output the metadata of a trace collection
-
-2017-08-03 lttng-tools 2.10.1 (Watermelon Day)
+	* Update version to 2.11.0-pre
 	* Typo: occured -> occurred
-	* Fix: uninitialized return value on error path
 	* Fix: ensure kernel context is in a list before trying to delete it
-
-2017-08-01 lttng-tools 2.10.0 (World Wide Web Day)
+	* Harmonize return code conventions in context handling
+	* Fix: uninitialized return value on error path
 	* lttng enable-channel: disallow --overwrite and --blocking-timeout
 	* lttng-enable-channel(1): reword --blocking-timeout, document in description
 	* lttng enable-channel: --blocking-timeout opt.: use `inf` instead of -1
@@ -284,8 +1043,6 @@
 	* Typo: occured -> occurred
 	* Fix: join consumer timer thread
 	* Cleanup: use CMM accessors for consumer_quit variable
-
-2017-06-14 lttng-tools 2.10.0-rc2 (National Bourbon Day)
 	* Fix: test_utils_expand_path passes NULL to sprintf
 	* Fix: reject triggers if they depend on an unavailable feature
 	* Fix: check lttng-modules ABI version for RING_BUFFER_SNAPSHOT_SAMPLE_POSITIONS support
@@ -312,8 +1069,8 @@
 	* Cleanup: uuid library detection
 	* Fix: Don't override user variables within the build system
 	* Fix: registry can be null on lookup
-	* Tests: channel subbuffers must be larger or equal to PAGE_SIZE
 	* Test: Replace test relying on pselect6(2) man page ambiguity
+	* Tests: channel subbuffers must be larger or equal to PAGE_SIZE
 	* Tests: regression testing for notification API
 	* Tests: add consumer testpoint to pause data consumption
 	* Fix: explicitly send client credentials during handshake
@@ -334,6 +1091,7 @@
 	* Unit tests for notification api
 	* Run unit tests before regression tests
 	* Fix: semaphore semantics are expected from notification command eventfd
+	* relay: use urcu_ref_get_unless_zero
 	* Fix: use "flush empty" ioctl for snapshots
 	* Fix: lttng-consumerd: cpu hotplug: send "streams_sent" command
 	* Fix: lttng-sessiond: cpu hotplug: send channel to consumer only once
@@ -376,8 +1134,6 @@
 	* Fix: dereference before null check of channel attributes
 	* Fix: memory leak of client_list_element
 	* Fix: unchecked lttng_dynamic_buffer_set_size return value
-
-2017-05-05 lttng-tools 2.10.0-rc1
 	* Add 2.10 release beer name and description
 	* Build: missing includes for ssize_t definition on Cygwin
 	* Fix: consumer-timer.c includes ust-ctl.h even --without-lttng-ust

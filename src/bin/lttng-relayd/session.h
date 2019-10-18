@@ -28,6 +28,9 @@
 
 #include <lttng/constant.h>
 #include <common/hashtable/hashtable.h>
+#include <common/compat/uuid.h>
+#include <common/trace-chunk.h>
+#include <common/optional.h>
 
 /*
  * Represents a session for the relay point of view
@@ -39,8 +42,27 @@ struct relay_session {
 	 * It is used to match a set of streams to their session.
 	 */
 	uint64_t id;
+	/*
+	 * ID of the session in the session daemon's domain.
+	 * This information is only provided by 2.11+ peers.
+	 */
+	LTTNG_OPTIONAL(uint64_t) id_sessiond;
+	/*
+	 * Only provided by 2.11+ peers. However, the UUID is set to 'nil' in
+	 * the other cases.
+	 */
+	lttng_uuid sessiond_uuid;
+	LTTNG_OPTIONAL(time_t) creation_time;
 	char session_name[LTTNG_NAME_MAX];
 	char hostname[LTTNG_HOST_NAME_MAX];
+	char base_path[LTTNG_PATH_MAX];
+	/*
+	 * Session output path relative to relayd's output path.
+	 * Will be empty when interacting with peers < 2.11 since their
+	 * streams' path are expressed relative to the relay daemon's
+	 * output path.
+	 */
+	char output_path[LTTNG_PATH_MAX];
 	uint32_t live_timer;
 
 	/* Session in snapshot mode. */
@@ -54,8 +76,6 @@ struct relay_session {
 	 */
 
 	struct urcu_ref ref;
-	/* session reflock nests inside ctf_trace reflock. */
-	pthread_mutex_t reflock;
 
 	pthread_mutex_t lock;
 
@@ -73,6 +93,10 @@ struct relay_session {
 	 * pending ctrl data.
 	 */
 	bool aborted;
+
+	bool session_name_contains_creation_time;
+	/* Whether session has performed an explicit rotation. */
+	bool has_rotated;
 
 	/* Contains ctf_trace object of that session indexed by path name. */
 	struct lttng_ht *ctf_traces_ht;
@@ -107,18 +131,31 @@ struct relay_session {
 	 * session_list_lock. Traversals are protected by RCU.
 	 */
 	struct cds_list_head viewer_session_node;
+	struct lttng_trace_chunk *current_trace_chunk;
+	struct lttng_trace_chunk *pending_closure_trace_chunk;
 	struct rcu_head rcu_node;	/* For call_rcu teardown. */
 };
 
 struct relay_session *session_create(const char *session_name,
-		const char *hostname, uint32_t live_timer,
-		bool snapshot, uint32_t major, uint32_t minor);
+		const char *hostname, const char *base_path,
+		uint32_t live_timer,
+		bool snapshot,
+		const lttng_uuid sessiond_uuid,
+		const uint64_t *id_sessiond,
+		const uint64_t *current_chunk_id,
+		const time_t *creation_time,
+		uint32_t major,
+		uint32_t minor,
+		bool session_name_contains_creation_timestamp);
 struct relay_session *session_get_by_id(uint64_t id);
 bool session_get(struct relay_session *session);
 void session_put(struct relay_session *session);
 
 int session_close(struct relay_session *session);
 int session_abort(struct relay_session *session);
+
+int session_init_output_directory_handle(struct relay_session *session,
+		struct lttng_directory_handle *handle);
 
 void print_sessions(void);
 

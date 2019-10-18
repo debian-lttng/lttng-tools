@@ -87,10 +87,10 @@ no_match:
 	return 0;
 }
 
-static unsigned long ht_hash_event(void *_key, unsigned long seed)
+static unsigned long ht_hash_event(const void *_key, unsigned long seed)
 {
 	uint64_t hashed_key;
-	struct ust_registry_event *key = _key;
+	const struct ust_registry_event *key = _key;
 
 	assert(key);
 
@@ -880,7 +880,9 @@ int ust_registry_session_init(struct ust_registry_session **sessionp,
 		const char *root_shm_path,
 		const char *shm_path,
 		uid_t euid,
-		gid_t egid)
+		gid_t egid,
+		uint64_t tracing_id,
+		uid_t tracing_uid)
 {
 	int ret;
 	struct ust_registry_session *session;
@@ -962,6 +964,9 @@ int ust_registry_session_init(struct ust_registry_session **sessionp,
 		goto error;
 	}
 
+	session->tracing_id = tracing_id;
+	session->tracing_uid = tracing_uid;
+
 	pthread_mutex_lock(&session->lock);
 	ret = ust_metadata_session_statedump(session, app, major, minor);
 	pthread_mutex_unlock(&session->lock);
@@ -1031,7 +1036,8 @@ void ust_registry_session_destroy(struct ust_registry_session *reg)
 		 * Try deleting the directory hierarchy.
 		 */
 		(void) run_as_rmdir_recursive(reg->root_shm_path,
-				reg->uid, reg->gid);
+				reg->uid, reg->gid,
+				LTTNG_DIRECTORY_HANDLE_SKIP_NON_EMPTY_FLAG);
 	}
 	/* Destroy the enum hash table */
 	if (reg->enums) {

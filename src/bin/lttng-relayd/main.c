@@ -37,8 +37,10 @@
 #include <inttypes.h>
 #include <urcu/futex.h>
 #include <urcu/uatomic.h>
+#include <urcu/rculist.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <strings.h>
 
 #include <lttng/lttng.h>
 #include <common/common.h>
@@ -54,8 +56,11 @@
 #include <common/sessiond-comm/relayd.h>
 #include <common/uri.h>
 #include <common/utils.h>
+#include <common/align.h>
 #include <common/config/session-config.h>
-#include <urcu/rculist.h>
+#include <common/dynamic-buffer.h>
+#include <common/buffer-view.h>
+#include <common/string-utils/format.h>
 
 #include "cmd.h"
 #include "ctf-trace.h"
@@ -71,6 +76,7 @@
 #include "connection.h"
 #include "tracefile-array.h"
 #include "tcp_keep_alive.h"
+#include "sessiond-trace-chunks.h"
 
 static const char *help_msg =
 #ifdef LTTNG_EMBED_HELP
@@ -79,6 +85,14 @@ static const char *help_msg =
 NULL
 #endif
 ;
+
+enum relay_connection_status {
+	RELAY_CONNECTION_STATUS_OK,
+	/* An error occurred while processing an event on the connection. */
+	RELAY_CONNECTION_STATUS_ERROR,
+	/* Connection closed/shutdown cleanly. */
+	RELAY_CONNECTION_STATUS_CLOSED,
+};
 
 /* command line options */
 char *opt_output_path;
@@ -143,10 +157,6 @@ static uint64_t last_relay_stream_id;
  */
 static struct relay_conn_queue relay_conn_queue;
 
-/* buffer allocated at startup, used to store the trace data */
-static char *data_buffer;
-static unsigned int data_buffer_size;
-
 /* Global relay stream hash table. */
 struct lttng_ht *relay_streams_ht;
 
@@ -158,6 +168,8 @@ struct lttng_ht *sessions_ht;
 
 /* Relayd health monitoring */
 struct health_app *health_relayd;
+
+struct sessiond_trace_chunk_registry *sessiond_trace_chunk_registry;
 
 static struct option long_options[] = {
 	{ "control-port", 1, 0, 'C', },
@@ -850,14 +862,6 @@ restart:
 			revents = LTTNG_POLL_GETEV(&events, i);
 			pollfd = LTTNG_POLL_GETFD(&events, i);
 
-			if (!revents) {
-				/*
-				 * No activity for this FD (poll
-				 * implementation).
-				 */
-				continue;
-			}
-
 			/* Thread quit pipe has been closed. Killing thread. */
 			ret = check_thread_quit_pipe(pollfd, revents);
 			if (ret) {
@@ -1048,34 +1052,9 @@ error_testpoint:
 	return NULL;
 }
 
-/*
- * Set index data from the control port to a given index object.
- */
-static int set_index_control_data(struct relay_index *index,
-		struct lttcomm_relayd_index *data,
-		struct relay_connection *conn)
+static bool session_streams_have_index(const struct relay_session *session)
 {
-	struct ctf_packet_index index_data;
-
-	/*
-	 * The index on disk is encoded in big endian, so we don't need
-	 * to convert the data received on the network. The data_offset
-	 * value is NEVER modified here and is updated by the data
-	 * thread.
-	 */
-	index_data.packet_size = data->packet_size;
-	index_data.content_size = data->content_size;
-	index_data.timestamp_begin = data->timestamp_begin;
-	index_data.timestamp_end = data->timestamp_end;
-	index_data.events_discarded = data->events_discarded;
-	index_data.stream_id = data->stream_id;
-
-	if (conn->minor >= 8) {
-		index->index_data.stream_instance_id = data->stream_instance_id;
-		index->index_data.packet_seq_num = data->packet_seq_num;
-	}
-
-	return relay_index_set_data(index, &index_data);
+	return session->minor >= 4 && !session->snapshot;
 }
 
 /*
@@ -1083,38 +1062,73 @@ static int set_index_control_data(struct relay_index *index,
  *
  * On success, send back the session id or else return a negative value.
  */
-static int relay_create_session(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_create_session(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
-	int ret = 0, send_ret;
-	struct relay_session *session;
-	struct lttcomm_relayd_status_session reply;
-	char session_name[LTTNG_NAME_MAX];
-	char hostname[LTTNG_HOST_NAME_MAX];
+	int ret = 0;
+	ssize_t send_ret;
+	struct relay_session *session = NULL;
+	struct lttcomm_relayd_create_session_reply_2_11 reply = {};
+	char session_name[LTTNG_NAME_MAX] = {};
+	char hostname[LTTNG_HOST_NAME_MAX] = {};
 	uint32_t live_timer = 0;
 	bool snapshot = false;
+	bool session_name_contains_creation_timestamp = false;
+	/* Left nil for peers < 2.11. */
+	char base_path[LTTNG_PATH_MAX] = {};
+	lttng_uuid sessiond_uuid = {};
+	LTTNG_OPTIONAL(uint64_t) id_sessiond = {};
+	LTTNG_OPTIONAL(uint64_t) current_chunk_id = {};
+	LTTNG_OPTIONAL(time_t) creation_time = {};
+	struct lttng_dynamic_buffer reply_payload;
 
-	memset(session_name, 0, LTTNG_NAME_MAX);
-	memset(hostname, 0, LTTNG_HOST_NAME_MAX);
+	lttng_dynamic_buffer_init(&reply_payload);
 
-	memset(&reply, 0, sizeof(reply));
-
-	switch (conn->minor) {
-	case 1:
-	case 2:
-	case 3:
-		break;
-	case 4: /* LTTng sessiond 2.4 */
-	default:
-		ret = cmd_create_session_2_4(conn, session_name,
+	if (conn->minor < 4) {
+		/* From 2.1 to 2.3 */
+		ret = 0;
+	} else if (conn->minor >= 4 && conn->minor < 11) {
+		/* From 2.4 to 2.10 */
+		ret = cmd_create_session_2_4(payload, session_name,
 			hostname, &live_timer, &snapshot);
+	} else {
+		bool has_current_chunk;
+		uint64_t current_chunk_id_value;
+		time_t creation_time_value;
+		uint64_t id_sessiond_value;
+
+		/* From 2.11 to ... */
+		ret = cmd_create_session_2_11(payload, session_name, hostname,
+				base_path, &live_timer, &snapshot, &id_sessiond_value,
+				sessiond_uuid, &has_current_chunk,
+				&current_chunk_id_value, &creation_time_value,
+				&session_name_contains_creation_timestamp);
+		if (lttng_uuid_is_nil(sessiond_uuid)) {
+			/* The nil UUID is reserved for pre-2.11 clients. */
+			ERR("Illegal nil UUID announced by peer in create session command");
+			ret = -1;
+			goto send_reply;
+		}
+		LTTNG_OPTIONAL_SET(&id_sessiond, id_sessiond_value);
+		LTTNG_OPTIONAL_SET(&creation_time, creation_time_value);
+		if (has_current_chunk) {
+			LTTNG_OPTIONAL_SET(&current_chunk_id,
+					current_chunk_id_value);
+		}
 	}
+
 	if (ret < 0) {
 		goto send_reply;
 	}
 
-	session = session_create(session_name, hostname, live_timer,
-			snapshot, conn->major, conn->minor);
+	session = session_create(session_name, hostname, base_path, live_timer,
+			snapshot, sessiond_uuid,
+			id_sessiond.is_set ? &id_sessiond.value : NULL,
+			current_chunk_id.is_set ? &current_chunk_id.value : NULL,
+			creation_time.is_set ? &creation_time.value : NULL,
+			conn->major, conn->minor,
+			session_name_contains_creation_timestamp);
 	if (!session) {
 		ret = -1;
 		goto send_reply;
@@ -1123,21 +1137,59 @@ static int relay_create_session(struct lttcomm_relayd_hdr *recv_hdr,
 	conn->session = session;
 	DBG("Created session %" PRIu64, session->id);
 
-	reply.session_id = htobe64(session->id);
+	reply.generic.session_id = htobe64(session->id);
 
 send_reply:
 	if (ret < 0) {
-		reply.ret_code = htobe32(LTTNG_ERR_FATAL);
+		reply.generic.ret_code = htobe32(LTTNG_ERR_FATAL);
 	} else {
-		reply.ret_code = htobe32(LTTNG_OK);
+		reply.generic.ret_code = htobe32(LTTNG_OK);
 	}
 
-	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
-	if (send_ret < 0) {
-		ERR("Relayd sending session id");
-		ret = send_ret;
+	if (conn->minor < 11) {
+		/* From 2.1 to 2.10 */
+		ret = lttng_dynamic_buffer_append(&reply_payload,
+				&reply.generic, sizeof(reply.generic));
+		if (ret) {
+			ERR("Failed to append \"create session\" command reply header to payload buffer");
+			ret = -1;
+			goto end;
+		}
+	} else {
+		const uint32_t output_path_length =
+				session ? strlen(session->output_path) + 1 : 0;
+
+		reply.output_path_length = htobe32(output_path_length);
+		ret = lttng_dynamic_buffer_append(
+				&reply_payload, &reply, sizeof(reply));
+		if (ret) {
+			ERR("Failed to append \"create session\" command reply header to payload buffer");
+			goto end;
+		}
+
+		if (output_path_length) {
+			ret = lttng_dynamic_buffer_append(&reply_payload,
+					session->output_path,
+					output_path_length);
+			if (ret) {
+				ERR("Failed to append \"create session\" command reply path to payload buffer");
+				goto end;
+			}
+		}
 	}
 
+	send_ret = conn->sock->ops->sendmsg(conn->sock, reply_payload.data,
+			reply_payload.size, 0);
+	if (send_ret < (ssize_t) reply_payload.size) {
+		ERR("Failed to send \"create session\" command reply of %zu bytes (ret = %zd)",
+				reply_payload.size, send_ret);
+		ret = -1;
+	}
+end:
+	if (ret < 0 && session) {
+		session_put(session);
+	}
+	lttng_dynamic_buffer_reset(&reply_payload);
 	return ret;
 }
 
@@ -1171,11 +1223,40 @@ static void publish_connection_local_streams(struct relay_connection *conn)
 	pthread_mutex_unlock(&session->lock);
 }
 
+static int conform_channel_path(char *channel_path)
+{
+	int ret = 0;
+
+	if (strstr("../", channel_path)) {
+		ERR("Refusing channel path as it walks up the path hierarchy: \"%s\"",
+				channel_path);
+		ret = -1;
+		goto end;
+	}
+
+	if (*channel_path == '/') {
+		const size_t len = strlen(channel_path);
+
+		/*
+		 * Channel paths from peers prior to 2.11 are expressed as an
+		 * absolute path that is, in reality, relative to the relay
+		 * daemon's output directory. Remove the leading slash so it
+		 * is correctly interpreted as a relative path later on.
+		 *
+		 * len (and not len - 1) is used to copy the trailing NULL.
+		 */
+		bcopy(channel_path + 1, channel_path, len);
+	}
+end:
+	return ret;
+}
+
 /*
  * relay_add_stream: allocate a new stream for a session
  */
-static int relay_add_stream(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_add_stream(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret;
 	ssize_t send_ret;
@@ -1186,25 +1267,35 @@ static int relay_add_stream(struct lttcomm_relayd_hdr *recv_hdr,
 	uint64_t stream_handle = -1ULL;
 	char *path_name = NULL, *channel_name = NULL;
 	uint64_t tracefile_size = 0, tracefile_count = 0;
+	LTTNG_OPTIONAL(uint64_t) stream_chunk_id = {};
 
-	if (!session || conn->version_check_done == 0) {
+	if (!session || !conn->version_check_done) {
 		ERR("Trying to add a stream before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	switch (session->minor) {
-	case 1: /* LTTng sessiond 2.1. Allocates path_name and channel_name. */
-		ret = cmd_recv_stream_2_1(conn, &path_name,
+	if (session->minor == 1) {
+		/* For 2.1 */
+		ret = cmd_recv_stream_2_1(payload, &path_name,
 			&channel_name);
-		break;
-	case 2: /* LTTng sessiond 2.2. Allocates path_name and channel_name. */
-	default:
-		ret = cmd_recv_stream_2_2(conn, &path_name,
+	} else if (session->minor > 1 && session->minor < 11) {
+		/* From 2.2 to 2.10 */
+		ret = cmd_recv_stream_2_2(payload, &path_name,
 			&channel_name, &tracefile_size, &tracefile_count);
-		break;
+	} else {
+		/* From 2.11 to ... */
+		ret = cmd_recv_stream_2_11(payload, &path_name,
+			&channel_name, &tracefile_size, &tracefile_count,
+			&stream_chunk_id.value);
+		stream_chunk_id.is_set = true;
 	}
+
 	if (ret < 0) {
+		goto send_reply;
+	}
+
+	if (conform_channel_path(path_name)) {
 		goto send_reply;
 	}
 
@@ -1220,7 +1311,7 @@ static int relay_add_stream(struct lttcomm_relayd_hdr *recv_hdr,
 
 	/* We pass ownership of path_name and channel_name. */
 	stream = stream_create(trace, stream_handle, path_name,
-			channel_name, tracefile_size, tracefile_count);
+		channel_name, tracefile_size, tracefile_count);
 	path_name = NULL;
 	channel_name = NULL;
 
@@ -1241,9 +1332,10 @@ send_reply:
 
 	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply,
 			sizeof(struct lttcomm_relayd_status_stream), 0);
-	if (send_ret < 0) {
-		ERR("Relay sending stream id");
-		ret = (int) send_ret;
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"add stream\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
 	}
 
 end_no_session:
@@ -1255,10 +1347,12 @@ end_no_session:
 /*
  * relay_close_stream: close a specific stream
  */
-static int relay_close_stream(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_close_stream(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
-	int ret, send_ret;
+	int ret;
+	ssize_t send_ret;
 	struct relay_session *session = conn->session;
 	struct lttcomm_relayd_close_stream stream_info;
 	struct lttcomm_relayd_generic_reply reply;
@@ -1266,26 +1360,23 @@ static int relay_close_stream(struct lttcomm_relayd_hdr *recv_hdr,
 
 	DBG("Close stream received");
 
-	if (!session || conn->version_check_done == 0) {
+	if (!session || !conn->version_check_done) {
 		ERR("Trying to close a stream before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &stream_info,
-			sizeof(struct lttcomm_relayd_close_stream), 0);
-	if (ret < sizeof(struct lttcomm_relayd_close_stream)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid add_stream struct size : %d", ret);
-		}
+	if (payload->size < sizeof(stream_info)) {
+		ERR("Unexpected payload size in \"relay_close_stream\": expected >= %zu bytes, got %zu bytes",
+				sizeof(stream_info), payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
+	memcpy(&stream_info, payload->data, sizeof(stream_info));
+	stream_info.stream_id = be64toh(stream_info.stream_id);
+	stream_info.last_net_seq_num = be64toh(stream_info.last_net_seq_num);
 
-	stream = stream_get_by_id(be64toh(stream_info.stream_id));
+	stream = stream_get_by_id(stream_info.stream_id);
 	if (!stream) {
 		ret = -1;
 		goto end;
@@ -1296,7 +1387,7 @@ static int relay_close_stream(struct lttcomm_relayd_hdr *recv_hdr,
 	 * pending check.
 	 */
 	pthread_mutex_lock(&stream->lock);
-	stream->last_net_seq_num = be64toh(stream_info.last_net_seq_num);
+	stream->last_net_seq_num = stream_info.last_net_seq_num;
 	pthread_mutex_unlock(&stream->lock);
 
 	/*
@@ -1327,6 +1418,7 @@ static int relay_close_stream(struct lttcomm_relayd_hdr *recv_hdr,
 		}
 	}
 	stream_put(stream);
+	ret = 0;
 
 end:
 	memset(&reply, 0, sizeof(reply));
@@ -1337,9 +1429,10 @@ end:
 	}
 	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply,
 			sizeof(struct lttcomm_relayd_generic_reply), 0);
-	if (send_ret < 0) {
-		ERR("Relay sending stream id");
-		ret = send_ret;
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"close stream\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
 	}
 
 end_no_session:
@@ -1350,10 +1443,12 @@ end_no_session:
  * relay_reset_metadata: reset a metadata stream
  */
 static
-int relay_reset_metadata(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+int relay_reset_metadata(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
-	int ret, send_ret;
+	int ret;
+	ssize_t send_ret;
 	struct relay_session *session = conn->session;
 	struct lttcomm_relayd_reset_metadata stream_info;
 	struct lttcomm_relayd_generic_reply reply;
@@ -1361,26 +1456,23 @@ int relay_reset_metadata(struct lttcomm_relayd_hdr *recv_hdr,
 
 	DBG("Reset metadata received");
 
-	if (!session || conn->version_check_done == 0) {
+	if (!session || !conn->version_check_done) {
 		ERR("Trying to reset a metadata stream before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &stream_info,
-			sizeof(struct lttcomm_relayd_reset_metadata), 0);
-	if (ret < sizeof(struct lttcomm_relayd_reset_metadata)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid reset_metadata struct "
-					"size : %d", ret);
-		}
+	if (payload->size < sizeof(stream_info)) {
+		ERR("Unexpected payload size in \"relay_reset_metadata\": expected >= %zu bytes, got %zu bytes",
+				sizeof(stream_info), payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
-	DBG("Update metadata to version %" PRIu64, be64toh(stream_info.version));
+	memcpy(&stream_info, payload->data, sizeof(stream_info));
+	stream_info.stream_id = be64toh(stream_info.stream_id);
+	stream_info.version = be64toh(stream_info.version);
+
+	DBG("Update metadata to version %" PRIu64, stream_info.version);
 
 	/* Unsupported for live sessions for now. */
 	if (session->live_timer != 0) {
@@ -1388,7 +1480,7 @@ int relay_reset_metadata(struct lttcomm_relayd_hdr *recv_hdr,
 		goto end;
 	}
 
-	stream = stream_get_by_id(be64toh(stream_info.stream_id));
+	stream = stream_get_by_id(stream_info.stream_id);
 	if (!stream) {
 		ret = -1;
 		goto end;
@@ -1399,15 +1491,14 @@ int relay_reset_metadata(struct lttcomm_relayd_hdr *recv_hdr,
 		goto end_unlock;
 	}
 
-	ret = utils_rotate_stream_file(stream->path_name, stream->channel_name,
-			0, 0, -1, -1, stream->stream_fd->fd, NULL,
-			&stream->stream_fd->fd);
+	ret = stream_reset_file(stream);
 	if (ret < 0) {
-		ERR("Failed to rotate metadata file %s of channel %s",
-				stream->path_name, stream->channel_name);
+		ERR("Failed to reset metadata stream %" PRIu64
+				": stream_path = %s, channel = %s",
+				stream->stream_handle, stream->path_name,
+				stream->channel_name);
 		goto end_unlock;
 	}
-
 end_unlock:
 	pthread_mutex_unlock(&stream->lock);
 	stream_put(stream);
@@ -1421,9 +1512,10 @@ end:
 	}
 	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply,
 			sizeof(struct lttcomm_relayd_generic_reply), 0);
-	if (send_ret < 0) {
-		ERR("Relay sending reset metadata reply");
-		ret = send_ret;
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"reset metadata\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
 	}
 
 end_no_session:
@@ -1436,14 +1528,13 @@ end_no_session:
 static void relay_unknown_command(struct relay_connection *conn)
 {
 	struct lttcomm_relayd_generic_reply reply;
-	int ret;
+	ssize_t send_ret;
 
 	memset(&reply, 0, sizeof(reply));
 	reply.ret_code = htobe32(LTTNG_ERR_UNK);
-	ret = conn->sock->ops->sendmsg(conn->sock, &reply,
-			sizeof(struct lttcomm_relayd_generic_reply), 0);
-	if (ret < 0) {
-		ERR("Relay sending unknown command");
+	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
+	if (send_ret < sizeof(reply)) {
+		ERR("Failed to send \"unknown command\" command reply (ret = %zd)", send_ret);
 	}
 }
 
@@ -1451,10 +1542,12 @@ static void relay_unknown_command(struct relay_connection *conn)
  * relay_start: send an acknowledgment to the client to tell if we are
  * ready to receive data. We are ready if a session is established.
  */
-static int relay_start(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_start(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
-	int ret = htobe32(LTTNG_OK);
+	int ret = 0;
+	ssize_t send_ret;
 	struct lttcomm_relayd_generic_reply reply;
 	struct relay_session *session = conn->session;
 
@@ -1464,58 +1557,31 @@ static int relay_start(struct lttcomm_relayd_hdr *recv_hdr,
 	}
 
 	memset(&reply, 0, sizeof(reply));
-	reply.ret_code = ret;
-	ret = conn->sock->ops->sendmsg(conn->sock, &reply,
-			sizeof(struct lttcomm_relayd_generic_reply), 0);
-	if (ret < 0) {
-		ERR("Relay sending start ack");
-	}
-
-	return ret;
-}
-
-/*
- * Append padding to the file pointed by the file descriptor fd.
- */
-static int write_padding_to_file(int fd, uint32_t size)
-{
-	ssize_t ret = 0;
-	char *zeros;
-
-	if (size == 0) {
-		goto end;
-	}
-
-	zeros = zmalloc(size);
-	if (zeros == NULL) {
-		PERROR("zmalloc zeros for padding");
+	reply.ret_code = htobe32(LTTNG_OK);
+	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply,
+			sizeof(reply), 0);
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"relay_start\" command reply (ret = %zd)",
+				send_ret);
 		ret = -1;
-		goto end;
 	}
 
-	ret = lttng_write(fd, zeros, size);
-	if (ret < size) {
-		PERROR("write padding to file");
-	}
-
-	free(zeros);
-
-end:
 	return ret;
 }
 
 /*
  * relay_recv_metadata: receive the metadata for the session.
  */
-static int relay_recv_metadata(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_recv_metadata(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret = 0;
-	ssize_t size_ret;
 	struct relay_session *session = conn->session;
-	struct lttcomm_relayd_metadata_payload *metadata_struct;
+	struct lttcomm_relayd_metadata_payload metadata_payload_header;
 	struct relay_stream *metadata_stream;
-	uint64_t data_size, payload_size;
+	uint64_t metadata_payload_size;
+	struct lttng_buffer_view packet_view;
 
 	if (!session) {
 		ERR("Metadata sent before version check");
@@ -1523,72 +1589,44 @@ static int relay_recv_metadata(struct lttcomm_relayd_hdr *recv_hdr,
 		goto end;
 	}
 
-	data_size = payload_size = be64toh(recv_hdr->data_size);
-	if (data_size < sizeof(struct lttcomm_relayd_metadata_payload)) {
+	if (recv_hdr->data_size < sizeof(struct lttcomm_relayd_metadata_payload)) {
 		ERR("Incorrect data size");
 		ret = -1;
 		goto end;
 	}
-	payload_size -= sizeof(struct lttcomm_relayd_metadata_payload);
+	metadata_payload_size = recv_hdr->data_size -
+			sizeof(struct lttcomm_relayd_metadata_payload);
 
-	if (data_buffer_size < data_size) {
-		/* In case the realloc fails, we can free the memory */
-		char *tmp_data_ptr;
+	memcpy(&metadata_payload_header, payload->data,
+			sizeof(metadata_payload_header));
+	metadata_payload_header.stream_id = be64toh(
+			metadata_payload_header.stream_id);
+	metadata_payload_header.padding_size = be32toh(
+			metadata_payload_header.padding_size);
 
-		tmp_data_ptr = realloc(data_buffer, data_size);
-		if (!tmp_data_ptr) {
-			ERR("Allocating data buffer");
-			free(data_buffer);
-			ret = -1;
-			goto end;
-		}
-		data_buffer = tmp_data_ptr;
-		data_buffer_size = data_size;
-	}
-	memset(data_buffer, 0, data_size);
-	DBG2("Relay receiving metadata, waiting for %" PRIu64 " bytes", data_size);
-	size_ret = conn->sock->ops->recvmsg(conn->sock, data_buffer, data_size, 0);
-	if (size_ret < 0 || size_ret != data_size) {
-		if (size_ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive the whole metadata");
-		}
-		ret = -1;
-		goto end;
-	}
-	metadata_struct = (struct lttcomm_relayd_metadata_payload *) data_buffer;
-
-	metadata_stream = stream_get_by_id(be64toh(metadata_struct->stream_id));
+	metadata_stream = stream_get_by_id(metadata_payload_header.stream_id);
 	if (!metadata_stream) {
 		ret = -1;
 		goto end;
 	}
 
-	pthread_mutex_lock(&metadata_stream->lock);
-
-	size_ret = lttng_write(metadata_stream->stream_fd->fd, metadata_struct->payload,
-			payload_size);
-	if (size_ret < payload_size) {
-		ERR("Relay error writing metadata on file");
+	packet_view = lttng_buffer_view_from_view(payload,
+			sizeof(metadata_payload_header), metadata_payload_size);
+	if (!packet_view.data) {
+		ERR("Invalid metadata packet length announced by header");
 		ret = -1;
 		goto end_put;
 	}
 
-	size_ret = write_padding_to_file(metadata_stream->stream_fd->fd,
-			be32toh(metadata_struct->padding_size));
-	if (size_ret < 0) {
+	pthread_mutex_lock(&metadata_stream->lock);
+	ret = stream_write(metadata_stream, &packet_view,
+			metadata_payload_header.padding_size);
+	pthread_mutex_unlock(&metadata_stream->lock);
+	if (ret){
+		ret = -1;
 		goto end_put;
 	}
-
-	metadata_stream->metadata_received +=
-		payload_size + be32toh(metadata_struct->padding_size);
-	DBG2("Relay metadata written. Updated metadata_received %" PRIu64,
-		metadata_stream->metadata_received);
-
 end_put:
-	pthread_mutex_unlock(&metadata_stream->lock);
 	stream_put(metadata_stream);
 end:
 	return ret;
@@ -1597,53 +1635,59 @@ end:
 /*
  * relay_send_version: send relayd version number
  */
-static int relay_send_version(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_send_version(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret;
+	ssize_t send_ret;
 	struct lttcomm_relayd_version reply, msg;
 	bool compatible = true;
 
-	conn->version_check_done = 1;
+	conn->version_check_done = true;
 
 	/* Get version from the other side. */
-	ret = conn->sock->ops->recvmsg(conn->sock, &msg, sizeof(msg), 0);
-	if (ret < 0 || ret != sizeof(msg)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay failed to receive the version values.");
-		}
+	if (payload->size < sizeof(msg)) {
+		ERR("Unexpected payload size in \"relay_send_version\": expected >= %zu bytes, got %zu bytes",
+				sizeof(msg), payload->size);
 		ret = -1;
 		goto end;
 	}
+
+	memcpy(&msg, payload->data, sizeof(msg));
+	msg.major = be32toh(msg.major);
+	msg.minor = be32toh(msg.minor);
 
 	memset(&reply, 0, sizeof(reply));
 	reply.major = RELAYD_VERSION_COMM_MAJOR;
 	reply.minor = RELAYD_VERSION_COMM_MINOR;
 
 	/* Major versions must be the same */
-	if (reply.major != be32toh(msg.major)) {
+	if (reply.major != msg.major) {
 		DBG("Incompatible major versions (%u vs %u), deleting session",
-				reply.major, be32toh(msg.major));
+				reply.major, msg.major);
 		compatible = false;
 	}
 
 	conn->major = reply.major;
 	/* We adapt to the lowest compatible version */
-	if (reply.minor <= be32toh(msg.minor)) {
+	if (reply.minor <= msg.minor) {
 		conn->minor = reply.minor;
 	} else {
-		conn->minor = be32toh(msg.minor);
+		conn->minor = msg.minor;
 	}
 
 	reply.major = htobe32(reply.major);
 	reply.minor = htobe32(reply.minor);
-	ret = conn->sock->ops->sendmsg(conn->sock, &reply,
-			sizeof(struct lttcomm_relayd_version), 0);
-	if (ret < 0) {
-		ERR("Relay sending version");
+	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply,
+			sizeof(reply), 0);
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"send version\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
+		goto end;
+	} else {
+		ret = 0;
 	}
 
 	if (!compatible) {
@@ -1661,41 +1705,37 @@ end:
 /*
  * Check for data pending for a given stream id from the session daemon.
  */
-static int relay_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_data_pending(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	struct relay_session *session = conn->session;
 	struct lttcomm_relayd_data_pending msg;
 	struct lttcomm_relayd_generic_reply reply;
 	struct relay_stream *stream;
+	ssize_t send_ret;
 	int ret;
-	uint64_t last_net_seq_num, stream_id;
+	uint64_t stream_seq;
 
 	DBG("Data pending command received");
 
-	if (!session || conn->version_check_done == 0) {
+	if (!session || !conn->version_check_done) {
 		ERR("Trying to check for data before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &msg, sizeof(msg), 0);
-	if (ret < sizeof(msg)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid data_pending struct size : %d",
-					ret);
-		}
+	if (payload->size < sizeof(msg)) {
+		ERR("Unexpected payload size in \"relay_data_pending\": expected >= %zu bytes, got %zu bytes",
+				sizeof(msg), payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
+	memcpy(&msg, payload->data, sizeof(msg));
+	msg.stream_id = be64toh(msg.stream_id);
+	msg.last_net_seq_num = be64toh(msg.last_net_seq_num);
 
-	stream_id = be64toh(msg.stream_id);
-	last_net_seq_num = be64toh(msg.last_net_seq_num);
-
-	stream = stream_get_by_id(stream_id);
+	stream = stream_get_by_id(msg.stream_id);
 	if (stream == NULL) {
 		ret = -1;
 		goto end;
@@ -1703,12 +1743,23 @@ static int relay_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
 
 	pthread_mutex_lock(&stream->lock);
 
-	DBG("Data pending for stream id %" PRIu64 " prev_seq %" PRIu64
-			" and last_seq %" PRIu64, stream_id, stream->prev_seq,
-			last_net_seq_num);
+	if (session_streams_have_index(session)) {
+		/*
+		 * Ensure that both the index and stream data have been
+		 * flushed up to the requested point.
+		 */
+		stream_seq = min(stream->prev_data_seq, stream->prev_index_seq);
+	} else {
+		stream_seq = stream->prev_data_seq;
+	}
+	DBG("Data pending for stream id %" PRIu64 ": prev_data_seq %" PRIu64
+			", prev_index_seq %" PRIu64
+			", and last_seq %" PRIu64, msg.stream_id,
+			stream->prev_data_seq, stream->prev_index_seq,
+			msg.last_net_seq_num);
 
 	/* Avoid wrapping issue */
-	if (((int64_t) (stream->prev_seq - last_net_seq_num)) >= 0) {
+	if (((int64_t) (stream_seq - msg.last_net_seq_num)) >= 0) {
 		/* Data has in fact been written and is NOT pending */
 		ret = 0;
 	} else {
@@ -1724,9 +1775,11 @@ end:
 
 	memset(&reply, 0, sizeof(reply));
 	reply.ret_code = htobe32(ret);
-	ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
-	if (ret < 0) {
-		ERR("Relay data pending ret code failed");
+	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"data pending\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
 	}
 
 end_no_session:
@@ -1741,52 +1794,53 @@ end_no_session:
  * the control socket has been handled. So, this is why we simply return
  * OK here.
  */
-static int relay_quiescent_control(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_quiescent_control(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret;
-	uint64_t stream_id;
+	ssize_t send_ret;
 	struct relay_stream *stream;
 	struct lttcomm_relayd_quiescent_control msg;
 	struct lttcomm_relayd_generic_reply reply;
 
 	DBG("Checking quiescent state on control socket");
 
-	if (!conn->session || conn->version_check_done == 0) {
+	if (!conn->session || !conn->version_check_done) {
 		ERR("Trying to check for data before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &msg, sizeof(msg), 0);
-	if (ret < sizeof(msg)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid begin data_pending struct size: %d",
-					ret);
-		}
+	if (payload->size < sizeof(msg)) {
+		ERR("Unexpected payload size in \"relay_quiescent_control\": expected >= %zu bytes, got %zu bytes",
+				sizeof(msg), payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
+	memcpy(&msg, payload->data, sizeof(msg));
+	msg.stream_id = be64toh(msg.stream_id);
 
-	stream_id = be64toh(msg.stream_id);
-	stream = stream_get_by_id(stream_id);
+	stream = stream_get_by_id(msg.stream_id);
 	if (!stream) {
 		goto reply;
 	}
 	pthread_mutex_lock(&stream->lock);
 	stream->data_pending_check_done = true;
 	pthread_mutex_unlock(&stream->lock);
-	DBG("Relay quiescent control pending flag set to %" PRIu64, stream_id);
+
+	DBG("Relay quiescent control pending flag set to %" PRIu64, msg.stream_id);
 	stream_put(stream);
 reply:
 	memset(&reply, 0, sizeof(reply));
 	reply.ret_code = htobe32(LTTNG_OK);
-	ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
-	if (ret < 0) {
-		ERR("Relay data quiescent control ret code failed");
+	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"quiescent control\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
+	} else {
+		ret = 0;
 	}
 
 end_no_session:
@@ -1800,41 +1854,36 @@ end_no_session:
  *
  * This command returns to the client a LTTNG_OK code.
  */
-static int relay_begin_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_begin_data_pending(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret;
+	ssize_t send_ret;
 	struct lttng_ht_iter iter;
 	struct lttcomm_relayd_begin_data_pending msg;
 	struct lttcomm_relayd_generic_reply reply;
 	struct relay_stream *stream;
-	uint64_t session_id;
 
 	assert(recv_hdr);
 	assert(conn);
 
 	DBG("Init streams for data pending");
 
-	if (!conn->session || conn->version_check_done == 0) {
+	if (!conn->session || !conn->version_check_done) {
 		ERR("Trying to check for data before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &msg, sizeof(msg), 0);
-	if (ret < sizeof(msg)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid begin data_pending struct size: %d",
-					ret);
-		}
+	if (payload->size < sizeof(msg)) {
+		ERR("Unexpected payload size in \"relay_begin_data_pending\": expected >= %zu bytes, got %zu bytes",
+				sizeof(msg), payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
-
-	session_id = be64toh(msg.session_id);
+	memcpy(&msg, payload->data, sizeof(msg));
+	msg.session_id = be64toh(msg.session_id);
 
 	/*
 	 * Iterate over all streams to set the begin data pending flag.
@@ -1848,7 +1897,7 @@ static int relay_begin_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
 		if (!stream_get(stream)) {
 			continue;
 		}
-		if (stream->trace->session->id == session_id) {
+		if (stream->trace->session->id == msg.session_id) {
 			pthread_mutex_lock(&stream->lock);
 			stream->data_pending_check_done = false;
 			pthread_mutex_unlock(&stream->lock);
@@ -1863,9 +1912,13 @@ static int relay_begin_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
 	/* All good, send back reply. */
 	reply.ret_code = htobe32(LTTNG_OK);
 
-	ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
-	if (ret < 0) {
-		ERR("Relay begin data pending send reply failed");
+	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"begin data pending\" command reply (ret = %zd)",
+			send_ret);
+		ret = -1;
+	} else {
+		ret = 0;
 	}
 
 end_no_session:
@@ -1881,39 +1934,34 @@ end_no_session:
  *
  * Return to the client if there is data in flight or not with a ret_code.
  */
-static int relay_end_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_end_data_pending(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret;
+	ssize_t send_ret;
 	struct lttng_ht_iter iter;
 	struct lttcomm_relayd_end_data_pending msg;
 	struct lttcomm_relayd_generic_reply reply;
 	struct relay_stream *stream;
-	uint64_t session_id;
 	uint32_t is_data_inflight = 0;
 
 	DBG("End data pending command");
 
-	if (!conn->session || conn->version_check_done == 0) {
+	if (!conn->session || !conn->version_check_done) {
 		ERR("Trying to check for data before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &msg, sizeof(msg), 0);
-	if (ret < sizeof(msg)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid end data_pending struct size: %d",
-					ret);
-		}
+	if (payload->size < sizeof(msg)) {
+		ERR("Unexpected payload size in \"relay_end_data_pending\": expected >= %zu bytes, got %zu bytes",
+				sizeof(msg), payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
-
-	session_id = be64toh(msg.session_id);
+	memcpy(&msg, payload->data, sizeof(msg));
+	msg.session_id = be64toh(msg.session_id);
 
 	/*
 	 * Iterate over all streams to see if the begin data pending
@@ -1925,13 +1973,24 @@ static int relay_end_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
 		if (!stream_get(stream)) {
 			continue;
 		}
-		if (stream->trace->session->id != session_id) {
+		if (stream->trace->session->id != msg.session_id) {
 			stream_put(stream);
 			continue;
 		}
 		pthread_mutex_lock(&stream->lock);
 		if (!stream->data_pending_check_done) {
-			if (!stream->closed || !(((int64_t) (stream->prev_seq - stream->last_net_seq_num)) >= 0)) {
+			uint64_t stream_seq;
+
+			if (session_streams_have_index(conn->session)) {
+				/*
+				 * Ensure that both the index and stream data have been
+				 * flushed up to the requested point.
+				 */
+				stream_seq = min(stream->prev_data_seq, stream->prev_index_seq);
+			} else {
+				stream_seq = stream->prev_data_seq;
+			}
+			if (!stream->closed || !(((int64_t) (stream_seq - stream->last_net_seq_num)) >= 0)) {
 				is_data_inflight = 1;
 				DBG("Data is still in flight for stream %" PRIu64,
 						stream->stream_handle);
@@ -1949,9 +2008,13 @@ static int relay_end_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
 	/* All good, send back reply. */
 	reply.ret_code = htobe32(is_data_inflight);
 
-	ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
-	if (ret < 0) {
-		ERR("Relay end data pending send reply failed");
+	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"end data pending\" command reply (ret = %zd)",
+			send_ret);
+		ret = -1;
+	} else {
+		ret = 0;
 	}
 
 end_no_session:
@@ -1963,23 +2026,23 @@ end_no_session:
  *
  * Return 0 on success else a negative value.
  */
-static int relay_recv_index(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
-	int ret, send_ret;
+	int ret;
+	ssize_t send_ret;
 	struct relay_session *session = conn->session;
 	struct lttcomm_relayd_index index_info;
-	struct relay_index *index;
 	struct lttcomm_relayd_generic_reply reply;
 	struct relay_stream *stream;
-	uint64_t net_seq_num;
 	size_t msg_len;
 
 	assert(conn);
 
 	DBG("Relay receiving index");
 
-	if (!session || conn->version_check_done == 0) {
+	if (!session || !conn->version_check_done) {
 		ERR("Trying to close a stream before version check");
 		ret = -1;
 		goto end_no_session;
@@ -1988,88 +2051,45 @@ static int relay_recv_index(struct lttcomm_relayd_hdr *recv_hdr,
 	msg_len = lttcomm_relayd_index_len(
 			lttng_to_index_major(conn->major, conn->minor),
 			lttng_to_index_minor(conn->major, conn->minor));
-	ret = conn->sock->ops->recvmsg(conn->sock, &index_info,
-			msg_len, 0);
-	if (ret < msg_len) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid index struct size : %d", ret);
-		}
+	if (payload->size < msg_len) {
+		ERR("Unexpected payload size in \"relay_recv_index\": expected >= %zu bytes, got %zu bytes",
+				msg_len, payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
+	memcpy(&index_info, payload->data, msg_len);
+	index_info.relay_stream_id = be64toh(index_info.relay_stream_id);
+	index_info.net_seq_num = be64toh(index_info.net_seq_num);
+	index_info.packet_size = be64toh(index_info.packet_size);
+	index_info.content_size = be64toh(index_info.content_size);
+	index_info.timestamp_begin = be64toh(index_info.timestamp_begin);
+	index_info.timestamp_end = be64toh(index_info.timestamp_end);
+	index_info.events_discarded = be64toh(index_info.events_discarded);
+	index_info.stream_id = be64toh(index_info.stream_id);
 
-	net_seq_num = be64toh(index_info.net_seq_num);
+	if (conn->minor >= 8) {
+		index_info.stream_instance_id =
+				be64toh(index_info.stream_instance_id);
+		index_info.packet_seq_num = be64toh(index_info.packet_seq_num);
+	}
 
-	stream = stream_get_by_id(be64toh(index_info.relay_stream_id));
+	stream = stream_get_by_id(index_info.relay_stream_id);
 	if (!stream) {
 		ERR("stream_get_by_id not found");
 		ret = -1;
 		goto end;
 	}
+
 	pthread_mutex_lock(&stream->lock);
-
-	/* Live beacon handling */
-	if (index_info.packet_size == 0) {
-		DBG("Received live beacon for stream %" PRIu64,
-				stream->stream_handle);
-
-		/*
-		 * Only flag a stream inactive when it has already
-		 * received data and no indexes are in flight.
-		 */
-		if (stream->index_received_seqcount > 0
-				&& stream->indexes_in_flight == 0) {
-			stream->beacon_ts_end =
-				be64toh(index_info.timestamp_end);
-		}
-		ret = 0;
+	ret = stream_add_index(stream, &index_info);
+	pthread_mutex_unlock(&stream->lock);
+	if (ret) {
 		goto end_stream_put;
-	} else {
-		stream->beacon_ts_end = -1ULL;
-	}
-
-	if (stream->ctf_stream_id == -1ULL) {
-		stream->ctf_stream_id = be64toh(index_info.stream_id);
-	}
-	index = relay_index_get_by_id_or_create(stream, net_seq_num);
-	if (!index) {
-		ret = -1;
-		ERR("relay_index_get_by_id_or_create index NULL");
-		goto end_stream_put;
-	}
-	if (set_index_control_data(index, &index_info, conn)) {
-		ERR("set_index_control_data error");
-		relay_index_put(index);
-		ret = -1;
-		goto end_stream_put;
-	}
-	ret = relay_index_try_flush(index);
-	if (ret == 0) {
-		tracefile_array_commit_seq(stream->tfa);
-		stream->index_received_seqcount++;
-	} else if (ret > 0) {
-		/* no flush. */
-		ret = 0;
-	} else {
-		/*
-		 * ret < 0
-		 *
-		 * relay_index_try_flush is responsible for the self-reference
-		 * put of the index object on error.
-		 */
-		ERR("relay_index_try_flush error %d", ret);
-		ret = -1;
 	}
 
 end_stream_put:
-	pthread_mutex_unlock(&stream->lock);
 	stream_put(stream);
-
 end:
-
 	memset(&reply, 0, sizeof(reply));
 	if (ret < 0) {
 		reply.ret_code = htobe32(LTTNG_ERR_UNK);
@@ -2077,9 +2097,9 @@ end:
 		reply.ret_code = htobe32(LTTNG_OK);
 	}
 	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
-	if (send_ret < 0) {
-		ERR("Relay sending close index id reply");
-		ret = send_ret;
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"recv index\" command reply (ret = %zd)", send_ret);
+		ret = -1;
 	}
 
 end_no_session:
@@ -2091,17 +2111,19 @@ end_no_session:
  *
  * Return 0 on success else a negative value.
  */
-static int relay_streams_sent(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_streams_sent(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
-	int ret, send_ret;
+	int ret;
+	ssize_t send_ret;
 	struct lttcomm_relayd_generic_reply reply;
 
 	assert(conn);
 
 	DBG("Relay receiving streams_sent");
 
-	if (!conn->session || conn->version_check_done == 0) {
+	if (!conn->session || !conn->version_check_done) {
 		ERR("Trying to close a stream before version check");
 		ret = -1;
 		goto end_no_session;
@@ -2116,9 +2138,10 @@ static int relay_streams_sent(struct lttcomm_relayd_hdr *recv_hdr,
 	memset(&reply, 0, sizeof(reply));
 	reply.ret_code = htobe32(LTTNG_OK);
 	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
-	if (send_ret < 0) {
-		ERR("Relay sending sent_stream reply");
-		ret = send_ret;
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"streams sent\" command reply (ret = %zd)",
+			send_ret);
+		ret = -1;
 	} else {
 		/* Success. */
 		ret = 0;
@@ -2129,56 +2152,661 @@ end_no_session:
 }
 
 /*
- * Process the commands received on the control socket
+ * relay_rotate_session_stream: rotate a stream to a new tracefile for the
+ * session rotation feature (not the tracefile rotation feature).
  */
-static int relay_process_control(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_rotate_session_streams(
+		const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
+{
+	int ret = 0;
+	uint32_t i;
+	ssize_t send_ret;
+	enum lttng_error_code reply_code = LTTNG_ERR_UNK;
+	struct relay_session *session = conn->session;
+	struct lttcomm_relayd_rotate_streams rotate_streams;
+	struct lttcomm_relayd_generic_reply reply = {};
+	struct relay_stream *stream = NULL;
+	const size_t header_len = sizeof(struct lttcomm_relayd_rotate_streams);
+	struct lttng_trace_chunk *next_trace_chunk = NULL;
+	struct lttng_buffer_view stream_positions;
+	char chunk_id_buf[MAX_INT_DEC_LEN(uint64_t)];
+	const char *chunk_id_str = "none";
+
+	if (!session || !conn->version_check_done) {
+		ERR("Trying to rotate a stream before version check");
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	if (session->major == 2 && session->minor < 11) {
+		ERR("Unsupported feature before 2.11");
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	if (payload->size < header_len) {
+		ERR("Unexpected payload size in \"relay_rotate_session_stream\": expected >= %zu bytes, got %zu bytes",
+				header_len, payload->size);
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	memcpy(&rotate_streams, payload->data, header_len);
+
+	/* Convert header to host endianness. */
+	rotate_streams = (typeof(rotate_streams)) {
+		.stream_count = be32toh(rotate_streams.stream_count),
+		.new_chunk_id = (typeof(rotate_streams.new_chunk_id)) {
+			.is_set = !!rotate_streams.new_chunk_id.is_set,
+			.value = be64toh(rotate_streams.new_chunk_id.value),
+		}
+	};
+
+	if (rotate_streams.new_chunk_id.is_set) {
+		/*
+		 * Retrieve the trace chunk the stream must transition to. As
+		 * per the protocol, this chunk should have been created
+		 * before this command is received.
+		 */
+		next_trace_chunk = sessiond_trace_chunk_registry_get_chunk(
+				sessiond_trace_chunk_registry,
+				session->sessiond_uuid, session->id,
+				rotate_streams.new_chunk_id.value);
+		if (!next_trace_chunk) {
+			char uuid_str[UUID_STR_LEN];
+
+			lttng_uuid_to_str(session->sessiond_uuid, uuid_str);
+			ERR("Unknown next trace chunk in ROTATE_STREAMS command: sessiond_uuid = {%s}, session_id = %" PRIu64
+					", trace_chunk_id = %" PRIu64,
+					uuid_str, session->id,
+					rotate_streams.new_chunk_id.value);
+			reply_code = LTTNG_ERR_INVALID_PROTOCOL;
+			ret = -1;
+			goto end;
+		}
+
+		ret = snprintf(chunk_id_buf, sizeof(chunk_id_buf), "%" PRIu64,
+				rotate_streams.new_chunk_id.value);
+		if (ret < 0 || ret >= sizeof(chunk_id_buf)) {
+			chunk_id_str = "formatting error";
+		} else {
+			chunk_id_str = chunk_id_buf;
+		}
+		session->has_rotated = true;
+	}
+
+	DBG("Rotate %" PRIu32 " streams of session \"%s\" to chunk \"%s\"",
+			rotate_streams.stream_count, session->session_name,
+			chunk_id_str);
+
+	stream_positions = lttng_buffer_view_from_view(payload,
+			sizeof(rotate_streams), -1);
+	if (!stream_positions.data ||
+			stream_positions.size <
+					(rotate_streams.stream_count *
+							sizeof(struct lttcomm_relayd_stream_rotation_position))) {
+		reply_code = LTTNG_ERR_INVALID_PROTOCOL;
+		ret = -1;
+		goto end;
+	}
+
+	for (i = 0; i < rotate_streams.stream_count; i++) {
+		struct lttcomm_relayd_stream_rotation_position *position_comm =
+				&((typeof(position_comm)) stream_positions.data)[i];
+		const struct lttcomm_relayd_stream_rotation_position pos = {
+			.stream_id = be64toh(position_comm->stream_id),
+			.rotate_at_seq_num = be64toh(
+					position_comm->rotate_at_seq_num),
+		};
+
+		stream = stream_get_by_id(pos.stream_id);
+		if (!stream) {
+			reply_code = LTTNG_ERR_INVALID;
+			ret = -1;
+			goto end;
+		}
+
+		pthread_mutex_lock(&stream->lock);
+		ret = stream_set_pending_rotation(stream, next_trace_chunk,
+				pos.rotate_at_seq_num);
+		pthread_mutex_unlock(&stream->lock);
+		if (ret) {
+			reply_code = LTTNG_ERR_FILE_CREATION_ERROR;
+			goto end;
+		}
+
+		stream_put(stream);
+		stream = NULL;
+	}
+
+	reply_code = LTTNG_OK;
+	ret = 0;
+end:
+	if (stream) {
+		stream_put(stream);
+	}
+
+	reply.ret_code = htobe32((uint32_t) reply_code);
+	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply,
+			sizeof(struct lttcomm_relayd_generic_reply), 0);
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"rotate session stream\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
+	}
+end_no_reply:
+	lttng_trace_chunk_put(next_trace_chunk);
+	return ret;
+}
+
+
+
+/*
+ * relay_create_trace_chunk: create a new trace chunk
+ */
+static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
+{
+	int ret = 0;
+	ssize_t send_ret;
+	struct relay_session *session = conn->session;
+	struct lttcomm_relayd_create_trace_chunk *msg;
+	struct lttcomm_relayd_generic_reply reply = {};
+	struct lttng_buffer_view header_view;
+	struct lttng_buffer_view chunk_name_view;
+	struct lttng_trace_chunk *chunk = NULL, *published_chunk = NULL;
+	enum lttng_error_code reply_code = LTTNG_OK;
+	enum lttng_trace_chunk_status chunk_status;
+	struct lttng_directory_handle session_output;
+
+	if (!session || !conn->version_check_done) {
+		ERR("Trying to create a trace chunk before version check");
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	if (session->major == 2 && session->minor < 11) {
+		ERR("Chunk creation command is unsupported before 2.11");
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	header_view = lttng_buffer_view_from_view(payload, 0, sizeof(*msg));
+	if (!header_view.data) {
+		ERR("Failed to receive payload of chunk creation command");
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	/* Convert to host endianness. */
+	msg = (typeof(msg)) header_view.data;
+	msg->chunk_id = be64toh(msg->chunk_id);
+	msg->creation_timestamp = be64toh(msg->creation_timestamp);
+	msg->override_name_length = be32toh(msg->override_name_length);
+
+	chunk = lttng_trace_chunk_create(
+			msg->chunk_id, msg->creation_timestamp);
+	if (!chunk) {
+		ERR("Failed to create trace chunk in trace chunk creation command");
+		ret = -1;
+		reply_code = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	if (msg->override_name_length) {
+		const char *name;
+
+		chunk_name_view = lttng_buffer_view_from_view(payload,
+				sizeof(*msg),
+				msg->override_name_length);
+		name = chunk_name_view.data;
+		if (!name || name[msg->override_name_length - 1]) {
+			ERR("Failed to receive payload of chunk creation command");
+			ret = -1;
+			reply_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+
+		chunk_status = lttng_trace_chunk_override_name(
+				chunk, chunk_name_view.data);
+		switch (chunk_status) {
+		case LTTNG_TRACE_CHUNK_STATUS_OK:
+			break;
+		case LTTNG_TRACE_CHUNK_STATUS_INVALID_ARGUMENT:
+			ERR("Failed to set the name of new trace chunk in trace chunk creation command (invalid name)");
+			reply_code = LTTNG_ERR_INVALID;
+			ret = -1;
+			goto end;
+		default:
+			ERR("Failed to set the name of new trace chunk in trace chunk creation command (unknown error)");
+			reply_code = LTTNG_ERR_UNK;
+			ret = -1;
+			goto end;
+		}
+	}
+
+	chunk_status = lttng_trace_chunk_set_credentials_current_user(chunk);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		reply_code = LTTNG_ERR_UNK;
+		ret = -1;
+		goto end;
+	}
+
+	ret = session_init_output_directory_handle(
+			conn->session, &session_output);
+	if (ret) {
+		reply_code = LTTNG_ERR_CREATE_DIR_FAIL;
+		goto end;
+	}
+	chunk_status = lttng_trace_chunk_set_as_owner(chunk, &session_output);
+	lttng_directory_handle_fini(&session_output);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		reply_code = LTTNG_ERR_UNK;
+		ret = -1;
+		goto end;
+	}
+
+	published_chunk = sessiond_trace_chunk_registry_publish_chunk(
+			sessiond_trace_chunk_registry,
+			conn->session->sessiond_uuid,
+			conn->session->id,
+			chunk);
+	if (!published_chunk) {
+		char uuid_str[UUID_STR_LEN];
+
+		lttng_uuid_to_str(conn->session->sessiond_uuid, uuid_str);
+		ERR("Failed to publish chunk: sessiond_uuid = %s, session_id = %" PRIu64 ", chunk_id = %" PRIu64,
+				uuid_str,
+				conn->session->id,
+				msg->chunk_id);
+		ret = -1;
+		reply_code = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	pthread_mutex_lock(&conn->session->lock);
+	if (conn->session->pending_closure_trace_chunk) {
+		/*
+		 * Invalid; this means a second create_trace_chunk command was
+		 * received before a close_trace_chunk.
+		 */
+		ERR("Invalid trace chunk close command received; a trace chunk is already waiting for a trace chunk close command");
+		reply_code = LTTNG_ERR_INVALID_PROTOCOL;
+		ret = -1;
+		goto end_unlock_session;
+	}
+	conn->session->pending_closure_trace_chunk =
+			conn->session->current_trace_chunk;
+	conn->session->current_trace_chunk = published_chunk;
+	published_chunk = NULL;
+end_unlock_session:
+	pthread_mutex_unlock(&conn->session->lock);
+end:
+	reply.ret_code = htobe32((uint32_t) reply_code);
+	send_ret = conn->sock->ops->sendmsg(conn->sock,
+			&reply,
+			sizeof(struct lttcomm_relayd_generic_reply),
+			0);
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"create trace chunk\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
+	}
+end_no_reply:
+	lttng_trace_chunk_put(chunk);
+	lttng_trace_chunk_put(published_chunk);
+	return ret;
+}
+
+/*
+ * relay_close_trace_chunk: close a trace chunk
+ */
+static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
+{
+	int ret = 0, buf_ret;
+	ssize_t send_ret;
+	struct relay_session *session = conn->session;
+	struct lttcomm_relayd_close_trace_chunk *msg;
+	struct lttcomm_relayd_close_trace_chunk_reply reply = {};
+	struct lttng_buffer_view header_view;
+	struct lttng_trace_chunk *chunk = NULL;
+	enum lttng_error_code reply_code = LTTNG_OK;
+	enum lttng_trace_chunk_status chunk_status;
+	uint64_t chunk_id;
+	LTTNG_OPTIONAL(enum lttng_trace_chunk_command_type) close_command = {};
+	time_t close_timestamp;
+	char closed_trace_chunk_path[LTTNG_PATH_MAX];
+	size_t path_length = 0;
+	const char *chunk_name = NULL;
+	struct lttng_dynamic_buffer reply_payload;
+
+	lttng_dynamic_buffer_init(&reply_payload);
+
+	if (!session || !conn->version_check_done) {
+		ERR("Trying to close a trace chunk before version check");
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	if (session->major == 2 && session->minor < 11) {
+		ERR("Chunk close command is unsupported before 2.11");
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	header_view = lttng_buffer_view_from_view(payload, 0, sizeof(*msg));
+	if (!header_view.data) {
+		ERR("Failed to receive payload of chunk close command");
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	/* Convert to host endianness. */
+	msg = (typeof(msg)) header_view.data;
+	chunk_id = be64toh(msg->chunk_id);
+	close_timestamp = (time_t) be64toh(msg->close_timestamp);
+	close_command = (typeof(close_command)){
+		.value = be32toh(msg->close_command.value),
+		.is_set = msg->close_command.is_set,
+	};
+
+	chunk = sessiond_trace_chunk_registry_get_chunk(
+			sessiond_trace_chunk_registry,
+			conn->session->sessiond_uuid,
+			conn->session->id,
+			chunk_id);
+	if (!chunk) {
+		char uuid_str[UUID_STR_LEN];
+
+		lttng_uuid_to_str(conn->session->sessiond_uuid, uuid_str);
+		ERR("Failed to find chunk to close: sessiond_uuid = %s, session_id = %" PRIu64 ", chunk_id = %" PRIu64,
+				uuid_str,
+				conn->session->id,
+				msg->chunk_id);
+		ret = -1;
+		reply_code = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	pthread_mutex_lock(&session->lock);
+	if (session->pending_closure_trace_chunk &&
+			session->pending_closure_trace_chunk != chunk) {
+		ERR("Trace chunk close command for session \"%s\" does not target the trace chunk pending closure",
+				session->session_name);
+		reply_code = LTTNG_ERR_INVALID_PROTOCOL;
+		ret = -1;
+		goto end_unlock_session;
+	}
+
+	chunk_status = lttng_trace_chunk_set_close_timestamp(
+			chunk, close_timestamp);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ERR("Failed to set trace chunk close timestamp");
+		ret = -1;
+		reply_code = LTTNG_ERR_UNK;
+		goto end_unlock_session;
+	}
+
+	if (close_command.is_set) {
+		chunk_status = lttng_trace_chunk_set_close_command(
+				chunk, close_command.value);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ret = -1;
+			reply_code = LTTNG_ERR_INVALID;
+			goto end_unlock_session;
+		}
+	}
+	chunk_status = lttng_trace_chunk_get_name(chunk, &chunk_name, NULL);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ERR("Failed to get chunk name");
+		ret = -1;
+		reply_code = LTTNG_ERR_UNK;
+		goto end_unlock_session;
+	}
+	if (!session->has_rotated && !session->snapshot) {
+		ret = lttng_strncpy(closed_trace_chunk_path,
+				session->output_path,
+				sizeof(closed_trace_chunk_path));
+		if (ret) {
+			ERR("Failed to send trace chunk path: path length of %zu bytes exceeds the maximal allowed length of %zu bytes",
+					strlen(session->output_path),
+					sizeof(closed_trace_chunk_path));
+			reply_code = LTTNG_ERR_NOMEM;
+			ret = -1;
+			goto end_unlock_session;
+		}
+	} else {
+		if (session->snapshot) {
+			ret = snprintf(closed_trace_chunk_path,
+					sizeof(closed_trace_chunk_path),
+					"%s/%s", session->output_path,
+					chunk_name);
+		} else {
+			ret = snprintf(closed_trace_chunk_path,
+					sizeof(closed_trace_chunk_path),
+					"%s/" DEFAULT_ARCHIVED_TRACE_CHUNKS_DIRECTORY
+					"/%s",
+					session->output_path, chunk_name);
+		}
+		if (ret < 0 || ret == sizeof(closed_trace_chunk_path)) {
+			ERR("Failed to format closed trace chunk resulting path");
+			reply_code = ret < 0 ? LTTNG_ERR_UNK : LTTNG_ERR_NOMEM;
+			ret = -1;
+			goto end_unlock_session;
+		}
+	}
+	DBG("Reply chunk path on close: %s", closed_trace_chunk_path);
+	path_length = strlen(closed_trace_chunk_path) + 1;
+	if (path_length > UINT32_MAX) {
+		ERR("Closed trace chunk path exceeds the maximal length allowed by the protocol");
+		ret = -1;
+		reply_code = LTTNG_ERR_INVALID_PROTOCOL;
+		goto end_unlock_session;
+	}
+
+	if (session->current_trace_chunk == chunk) {
+		/*
+		 * After a trace chunk close command, no new streams
+		 * referencing the chunk may be created. Hence, on the
+		 * event that no new trace chunk have been created for
+		 * the session, the reference to the current trace chunk
+		 * is released in order to allow it to be reclaimed when
+		 * the last stream releases its reference to it.
+		 */
+		lttng_trace_chunk_put(session->current_trace_chunk);
+		session->current_trace_chunk = NULL;
+	}
+	lttng_trace_chunk_put(session->pending_closure_trace_chunk);
+	session->pending_closure_trace_chunk = NULL;
+end_unlock_session:
+	pthread_mutex_unlock(&session->lock);
+
+end:
+	reply.generic.ret_code = htobe32((uint32_t) reply_code);
+	reply.path_length = htobe32((uint32_t) path_length);
+	buf_ret = lttng_dynamic_buffer_append(
+			&reply_payload, &reply, sizeof(reply));
+	if (buf_ret) {
+		ERR("Failed to append \"close trace chunk\" command reply header to payload buffer");
+		goto end_no_reply;
+	}
+
+	if (reply_code == LTTNG_OK) {
+		buf_ret = lttng_dynamic_buffer_append(&reply_payload,
+				closed_trace_chunk_path, path_length);
+		if (buf_ret) {
+			ERR("Failed to append \"close trace chunk\" command reply path to payload buffer");
+			goto end_no_reply;
+		}
+	}
+
+	send_ret = conn->sock->ops->sendmsg(conn->sock,
+			reply_payload.data,
+			reply_payload.size,
+			0);
+	if (send_ret < reply_payload.size) {
+		ERR("Failed to send \"close trace chunk\" command reply of %zu bytes (ret = %zd)",
+				reply_payload.size, send_ret);
+		ret = -1;
+		goto end_no_reply;
+	}
+end_no_reply:
+	lttng_trace_chunk_put(chunk);
+	lttng_dynamic_buffer_reset(&reply_payload);
+	return ret;
+}
+
+/*
+ * relay_trace_chunk_exists: check if a trace chunk exists
+ */
+static int relay_trace_chunk_exists(const struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
+{
+	int ret = 0;
+	ssize_t send_ret;
+	struct relay_session *session = conn->session;
+	struct lttcomm_relayd_trace_chunk_exists *msg;
+	struct lttcomm_relayd_trace_chunk_exists_reply reply = {};
+	struct lttng_buffer_view header_view;
+	uint64_t chunk_id;
+	bool chunk_exists;
+
+	if (!session || !conn->version_check_done) {
+		ERR("Trying to close a trace chunk before version check");
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	if (session->major == 2 && session->minor < 11) {
+		ERR("Chunk close command is unsupported before 2.11");
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	header_view = lttng_buffer_view_from_view(payload, 0, sizeof(*msg));
+	if (!header_view.data) {
+		ERR("Failed to receive payload of chunk close command");
+		ret = -1;
+		goto end_no_reply;
+	}
+
+	/* Convert to host endianness. */
+	msg = (typeof(msg)) header_view.data;
+	chunk_id = be64toh(msg->chunk_id);
+
+	ret = sessiond_trace_chunk_registry_chunk_exists(
+			sessiond_trace_chunk_registry,
+			conn->session->sessiond_uuid,
+			conn->session->id,
+			chunk_id, &chunk_exists);
+	/*
+	 * If ret is not 0, send the reply and report the error to the caller.
+	 * It is a protocol (or internal) error and the session/connection
+	 * should be torn down.
+	 */
+	reply = (typeof(reply)){
+		.generic.ret_code = htobe32((uint32_t)
+			(ret == 0 ? LTTNG_OK : LTTNG_ERR_INVALID_PROTOCOL)),
+		.trace_chunk_exists = ret == 0 ? chunk_exists : 0,
+	};
+	send_ret = conn->sock->ops->sendmsg(
+			conn->sock, &reply, sizeof(reply), 0);
+	if (send_ret < (ssize_t) sizeof(reply)) {
+		ERR("Failed to send \"create trace chunk\" command reply (ret = %zd)",
+				send_ret);
+		ret = -1;
+	}
+end_no_reply:
+	return ret;
+}
+
+#define DBG_CMD(cmd_name, conn) \
+		DBG3("Processing \"%s\" command for socket %i", cmd_name, conn->sock->fd);
+
+static int relay_process_control_command(struct relay_connection *conn,
+		const struct lttcomm_relayd_hdr *header,
+		const struct lttng_buffer_view *payload)
 {
 	int ret = 0;
 
-	switch (be32toh(recv_hdr->cmd)) {
+	switch (header->cmd) {
 	case RELAYD_CREATE_SESSION:
-		ret = relay_create_session(recv_hdr, conn);
+		DBG_CMD("RELAYD_CREATE_SESSION", conn);
+		ret = relay_create_session(header, conn, payload);
 		break;
 	case RELAYD_ADD_STREAM:
-		ret = relay_add_stream(recv_hdr, conn);
+		DBG_CMD("RELAYD_ADD_STREAM", conn);
+		ret = relay_add_stream(header, conn, payload);
 		break;
 	case RELAYD_START_DATA:
-		ret = relay_start(recv_hdr, conn);
+		DBG_CMD("RELAYD_START_DATA", conn);
+		ret = relay_start(header, conn, payload);
 		break;
 	case RELAYD_SEND_METADATA:
-		ret = relay_recv_metadata(recv_hdr, conn);
+		DBG_CMD("RELAYD_SEND_METADATA", conn);
+		ret = relay_recv_metadata(header, conn, payload);
 		break;
 	case RELAYD_VERSION:
-		ret = relay_send_version(recv_hdr, conn);
+		DBG_CMD("RELAYD_VERSION", conn);
+		ret = relay_send_version(header, conn, payload);
 		break;
 	case RELAYD_CLOSE_STREAM:
-		ret = relay_close_stream(recv_hdr, conn);
+		DBG_CMD("RELAYD_CLOSE_STREAM", conn);
+		ret = relay_close_stream(header, conn, payload);
 		break;
 	case RELAYD_DATA_PENDING:
-		ret = relay_data_pending(recv_hdr, conn);
+		DBG_CMD("RELAYD_DATA_PENDING", conn);
+		ret = relay_data_pending(header, conn, payload);
 		break;
 	case RELAYD_QUIESCENT_CONTROL:
-		ret = relay_quiescent_control(recv_hdr, conn);
+		DBG_CMD("RELAYD_QUIESCENT_CONTROL", conn);
+		ret = relay_quiescent_control(header, conn, payload);
 		break;
 	case RELAYD_BEGIN_DATA_PENDING:
-		ret = relay_begin_data_pending(recv_hdr, conn);
+		DBG_CMD("RELAYD_BEGIN_DATA_PENDING", conn);
+		ret = relay_begin_data_pending(header, conn, payload);
 		break;
 	case RELAYD_END_DATA_PENDING:
-		ret = relay_end_data_pending(recv_hdr, conn);
+		DBG_CMD("RELAYD_END_DATA_PENDING", conn);
+		ret = relay_end_data_pending(header, conn, payload);
 		break;
 	case RELAYD_SEND_INDEX:
-		ret = relay_recv_index(recv_hdr, conn);
+		DBG_CMD("RELAYD_SEND_INDEX", conn);
+		ret = relay_recv_index(header, conn, payload);
 		break;
 	case RELAYD_STREAMS_SENT:
-		ret = relay_streams_sent(recv_hdr, conn);
+		DBG_CMD("RELAYD_STREAMS_SENT", conn);
+		ret = relay_streams_sent(header, conn, payload);
 		break;
 	case RELAYD_RESET_METADATA:
-		ret = relay_reset_metadata(recv_hdr, conn);
+		DBG_CMD("RELAYD_RESET_METADATA", conn);
+		ret = relay_reset_metadata(header, conn, payload);
+		break;
+	case RELAYD_ROTATE_STREAMS:
+		DBG_CMD("RELAYD_ROTATE_STREAMS", conn);
+		ret = relay_rotate_session_streams(header, conn, payload);
+		break;
+	case RELAYD_CREATE_TRACE_CHUNK:
+		DBG_CMD("RELAYD_CREATE_TRACE_CHUNK", conn);
+		ret = relay_create_trace_chunk(header, conn, payload);
+		break;
+	case RELAYD_CLOSE_TRACE_CHUNK:
+		DBG_CMD("RELAYD_CLOSE_TRACE_CHUNK", conn);
+		ret = relay_close_trace_chunk(header, conn, payload);
+		break;
+	case RELAYD_TRACE_CHUNK_EXISTS:
+		DBG_CMD("RELAYD_TRACE_CHUNK_EXISTS", conn);
+		ret = relay_trace_chunk_exists(header, conn, payload);
 		break;
 	case RELAYD_UPDATE_SYNC_INFO:
 	default:
-		ERR("Received unknown command (%u)", be32toh(recv_hdr->cmd));
+		ERR("Received unknown command (%u)", header->cmd);
 		relay_unknown_command(conn);
 		ret = -1;
 		goto end;
@@ -2188,228 +2816,427 @@ end:
 	return ret;
 }
 
-/*
- * Handle index for a data stream.
- *
- * Called with the stream lock held.
- *
- * Return 0 on success else a negative value.
- */
-static int handle_index_data(struct relay_stream *stream, uint64_t net_seq_num,
-		int rotate_index)
+static enum relay_connection_status relay_process_control_receive_payload(
+		struct relay_connection *conn)
 {
 	int ret = 0;
-	uint64_t data_offset;
-	struct relay_index *index;
+	enum relay_connection_status status = RELAY_CONNECTION_STATUS_OK;
+	struct lttng_dynamic_buffer *reception_buffer =
+			&conn->protocol.ctrl.reception_buffer;
+	struct ctrl_connection_state_receive_payload *state =
+			&conn->protocol.ctrl.state.receive_payload;
+	struct lttng_buffer_view payload_view;
 
-	/* Get data offset because we are about to update the index. */
-	data_offset = htobe64(stream->tracefile_size_current);
+	if (state->left_to_receive == 0) {
+		/* Short-circuit for payload-less commands. */
+		goto reception_complete;
+	}
 
-	DBG("handle_index_data: stream %" PRIu64 " net_seq_num %" PRIu64 " data offset %" PRIu64,
-			stream->stream_handle, net_seq_num, stream->tracefile_size_current);
-
-	/*
-	 * Lookup for an existing index for that stream id/sequence
-	 * number. If it exists, the control thread has already received the
-	 * data for it, thus we need to write it to disk.
-	 */
-	index = relay_index_get_by_id_or_create(stream, net_seq_num);
-	if (!index) {
-		ret = -1;
+	ret = conn->sock->ops->recvmsg(conn->sock,
+			reception_buffer->data + state->received,
+			state->left_to_receive, MSG_DONTWAIT);
+	if (ret < 0) {
+		if (errno != EAGAIN && errno != EWOULDBLOCK) {
+			PERROR("Unable to receive command payload on sock %d",
+					conn->sock->fd);
+			status = RELAY_CONNECTION_STATUS_ERROR;
+		}
+		goto end;
+	} else if (ret == 0) {
+		DBG("Socket %d performed an orderly shutdown (received EOF)", conn->sock->fd);
+		status = RELAY_CONNECTION_STATUS_CLOSED;
 		goto end;
 	}
 
-	if (rotate_index || !stream->index_file) {
-		uint32_t major, minor;
+	assert(ret > 0);
+	assert(ret <= state->left_to_receive);
 
-		/* Put ref on previous index_file. */
-		if (stream->index_file) {
-			lttng_index_file_put(stream->index_file);
-			stream->index_file = NULL;
-		}
-		major = stream->trace->session->major;
-		minor = stream->trace->session->minor;
-		stream->index_file = lttng_index_file_create(stream->path_name,
-				stream->channel_name,
-			        -1, -1, stream->tracefile_size,
-				tracefile_array_get_file_index_head(stream->tfa),
-				lttng_to_index_major(major, minor),
-				lttng_to_index_minor(major, minor));
-		if (!stream->index_file) {
-			ret = -1;
-			/* Put self-ref for this index due to error. */
-			relay_index_put(index);
-			index = NULL;
-			goto end;
-		}
-	}
+	state->left_to_receive -= ret;
+	state->received += ret;
 
-	if (relay_index_set_file(index, stream->index_file, data_offset)) {
-		ret = -1;
-		/* Put self-ref for this index due to error. */
-		relay_index_put(index);
-		index = NULL;
-		goto end;
-	}
-
-	ret = relay_index_try_flush(index);
-	if (ret == 0) {
-		tracefile_array_commit_seq(stream->tfa);
-		stream->index_received_seqcount++;
-	} else if (ret > 0) {
-		/* No flush. */
-		ret = 0;
-	} else {
+	if (state->left_to_receive > 0) {
 		/*
-		 * ret < 0
-		 *
-		 * relay_index_try_flush is responsible for the self-reference
-		 * put of the index object on error.
+		 * Can't transition to the protocol's next state, wait to
+		 * receive the rest of the header.
 		 */
-		ERR("relay_index_try_flush error %d", ret);
-		ret = -1;
+		DBG3("Partial reception of control connection protocol payload (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
+				state->received, state->left_to_receive,
+				conn->sock->fd);
+		goto end;
+	}
+
+reception_complete:
+	DBG("Done receiving control command payload: fd = %i, payload size = %" PRIu64 " bytes",
+			conn->sock->fd, state->received);
+	/*
+	 * The payload required to process the command has been received.
+	 * A view to the reception buffer is forwarded to the various
+	 * commands and the state of the control is reset on success.
+	 *
+	 * Commands are responsible for sending their reply to the peer.
+	 */
+	payload_view = lttng_buffer_view_from_dynamic_buffer(reception_buffer,
+			0, -1);
+	ret = relay_process_control_command(conn,
+			&state->header, &payload_view);
+	if (ret < 0) {
+		status = RELAY_CONNECTION_STATUS_ERROR;
+		goto end;
+	}
+
+	ret = connection_reset_protocol_state(conn);
+	if (ret) {
+		status = RELAY_CONNECTION_STATUS_ERROR;
 	}
 end:
-	return ret;
+	return status;
+}
+
+static enum relay_connection_status relay_process_control_receive_header(
+		struct relay_connection *conn)
+{
+	int ret = 0;
+	enum relay_connection_status status = RELAY_CONNECTION_STATUS_OK;
+	struct lttcomm_relayd_hdr header;
+	struct lttng_dynamic_buffer *reception_buffer =
+			&conn->protocol.ctrl.reception_buffer;
+	struct ctrl_connection_state_receive_header *state =
+			&conn->protocol.ctrl.state.receive_header;
+
+	assert(state->left_to_receive != 0);
+
+	ret = conn->sock->ops->recvmsg(conn->sock,
+			reception_buffer->data + state->received,
+			state->left_to_receive, MSG_DONTWAIT);
+	if (ret < 0) {
+		if (errno != EAGAIN && errno != EWOULDBLOCK) {
+			PERROR("Unable to receive control command header on sock %d",
+					conn->sock->fd);
+			status = RELAY_CONNECTION_STATUS_ERROR;
+		}
+		goto end;
+	} else if (ret == 0) {
+		DBG("Socket %d performed an orderly shutdown (received EOF)", conn->sock->fd);
+		status = RELAY_CONNECTION_STATUS_CLOSED;
+		goto end;
+	}
+
+	assert(ret > 0);
+	assert(ret <= state->left_to_receive);
+
+	state->left_to_receive -= ret;
+	state->received += ret;
+
+	if (state->left_to_receive > 0) {
+		/*
+		 * Can't transition to the protocol's next state, wait to
+		 * receive the rest of the header.
+		 */
+		DBG3("Partial reception of control connection protocol header (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
+				state->received, state->left_to_receive,
+				conn->sock->fd);
+		goto end;
+	}
+
+	/* Transition to next state: receiving the command's payload. */
+	conn->protocol.ctrl.state_id =
+			CTRL_CONNECTION_STATE_RECEIVE_PAYLOAD;
+	memcpy(&header, reception_buffer->data, sizeof(header));
+	header.circuit_id = be64toh(header.circuit_id);
+	header.data_size = be64toh(header.data_size);
+	header.cmd = be32toh(header.cmd);
+	header.cmd_version = be32toh(header.cmd_version);
+	memcpy(&conn->protocol.ctrl.state.receive_payload.header,
+			&header, sizeof(header));
+
+	DBG("Done receiving control command header: fd = %i, cmd = %" PRIu32 ", cmd_version = %" PRIu32 ", payload size = %" PRIu64 " bytes",
+			conn->sock->fd, header.cmd, header.cmd_version,
+			header.data_size);
+
+	if (header.data_size > DEFAULT_NETWORK_RELAYD_CTRL_MAX_PAYLOAD_SIZE) {
+		ERR("Command header indicates a payload (%" PRIu64 " bytes) that exceeds the maximal payload size allowed on a control connection.",
+				header.data_size);
+		status = RELAY_CONNECTION_STATUS_ERROR;
+		goto end;
+	}
+
+	conn->protocol.ctrl.state.receive_payload.left_to_receive =
+			header.data_size;
+	conn->protocol.ctrl.state.receive_payload.received = 0;
+	ret = lttng_dynamic_buffer_set_size(reception_buffer,
+			header.data_size);
+	if (ret) {
+		status = RELAY_CONNECTION_STATUS_ERROR;
+		goto end;
+	}
+
+	if (header.data_size == 0) {
+		/*
+		 * Manually invoke the next state as the poll loop
+		 * will not wake-up to allow us to proceed further.
+		 */
+		status = relay_process_control_receive_payload(conn);
+	}
+end:
+	return status;
 }
 
 /*
- * relay_process_data: Process the data received on the data socket
+ * Process the commands received on the control socket
  */
-static int relay_process_data(struct relay_connection *conn)
+static enum relay_connection_status relay_process_control(
+		struct relay_connection *conn)
 {
-	int ret = 0, rotate_index = 0;
-	ssize_t size_ret;
+	enum relay_connection_status status;
+
+	switch (conn->protocol.ctrl.state_id) {
+	case CTRL_CONNECTION_STATE_RECEIVE_HEADER:
+		status = relay_process_control_receive_header(conn);
+		break;
+	case CTRL_CONNECTION_STATE_RECEIVE_PAYLOAD:
+		status = relay_process_control_receive_payload(conn);
+		break;
+	default:
+		ERR("Unknown control connection protocol state encountered.");
+		abort();
+	}
+
+	return status;
+}
+
+static enum relay_connection_status relay_process_data_receive_header(
+		struct relay_connection *conn)
+{
+	int ret;
+	enum relay_connection_status status = RELAY_CONNECTION_STATUS_OK;
+	struct data_connection_state_receive_header *state =
+			&conn->protocol.data.state.receive_header;
+	struct lttcomm_relayd_data_hdr header;
 	struct relay_stream *stream;
-	struct lttcomm_relayd_data_hdr data_hdr;
-	uint64_t stream_id;
-	uint64_t net_seq_num;
-	uint32_t data_size;
-	struct relay_session *session;
-	bool new_stream = false, close_requested = false;
-	size_t chunk_size = RECV_DATA_BUFFER_SIZE;
-	size_t recv_off = 0;
-	char data_buffer[chunk_size];
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &data_hdr,
-			sizeof(struct lttcomm_relayd_data_hdr), 0);
-	if (ret <= 0) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Unable to receive data header on sock %d", conn->sock->fd);
+	assert(state->left_to_receive != 0);
+
+	ret = conn->sock->ops->recvmsg(conn->sock,
+			state->header_reception_buffer + state->received,
+			state->left_to_receive, MSG_DONTWAIT);
+	if (ret < 0) {
+		if (errno != EAGAIN && errno != EWOULDBLOCK) {
+			PERROR("Unable to receive data header on sock %d", conn->sock->fd);
+			status = RELAY_CONNECTION_STATUS_ERROR;
 		}
-		ret = -1;
+		goto end;
+	} else if (ret == 0) {
+		/* Orderly shutdown. Not necessary to print an error. */
+		DBG("Socket %d performed an orderly shutdown (received EOF)", conn->sock->fd);
+		status = RELAY_CONNECTION_STATUS_CLOSED;
 		goto end;
 	}
 
-	stream_id = be64toh(data_hdr.stream_id);
-	stream = stream_get_by_id(stream_id);
+	assert(ret > 0);
+	assert(ret <= state->left_to_receive);
+
+	state->left_to_receive -= ret;
+	state->received += ret;
+
+	if (state->left_to_receive > 0) {
+		/*
+		 * Can't transition to the protocol's next state, wait to
+		 * receive the rest of the header.
+		 */
+		DBG3("Partial reception of data connection header (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
+				state->received, state->left_to_receive,
+				conn->sock->fd);
+		goto end;
+	}
+
+	/* Transition to next state: receiving the payload. */
+	conn->protocol.data.state_id = DATA_CONNECTION_STATE_RECEIVE_PAYLOAD;
+
+	memcpy(&header, state->header_reception_buffer, sizeof(header));
+	header.circuit_id = be64toh(header.circuit_id);
+	header.stream_id = be64toh(header.stream_id);
+	header.data_size = be32toh(header.data_size);
+	header.net_seq_num = be64toh(header.net_seq_num);
+	header.padding_size = be32toh(header.padding_size);
+	memcpy(&conn->protocol.data.state.receive_payload.header, &header, sizeof(header));
+
+	conn->protocol.data.state.receive_payload.left_to_receive =
+			header.data_size;
+	conn->protocol.data.state.receive_payload.received = 0;
+	conn->protocol.data.state.receive_payload.rotate_index = false;
+
+	DBG("Received data connection header on fd %i: circuit_id = %" PRIu64 ", stream_id = %" PRIu64 ", data_size = %" PRIu32 ", net_seq_num = %" PRIu64 ", padding_size = %" PRIu32,
+			conn->sock->fd, header.circuit_id,
+			header.stream_id, header.data_size,
+			header.net_seq_num, header.padding_size);
+
+	stream = stream_get_by_id(header.stream_id);
 	if (!stream) {
-		ERR("relay_process_data: Cannot find stream %" PRIu64, stream_id);
-		ret = -1;
+		DBG("relay_process_data_receive_payload: Cannot find stream %" PRIu64,
+				header.stream_id);
+		/* Protocol error. */
+		status = RELAY_CONNECTION_STATUS_ERROR;
 		goto end;
 	}
-	session = stream->trace->session;
-	data_size = be32toh(data_hdr.data_size);
-
-	net_seq_num = be64toh(data_hdr.net_seq_num);
-
-	DBG3("Receiving data of size %u for stream id %" PRIu64 " seqnum %" PRIu64,
-		data_size, stream_id, net_seq_num);
 
 	pthread_mutex_lock(&stream->lock);
+	/* Prepare stream for the reception of a new packet. */
+	ret = stream_init_packet(stream, header.data_size,
+			&conn->protocol.data.state.receive_payload.rotate_index);
+	pthread_mutex_unlock(&stream->lock);
+	if (ret) {
+		ERR("Failed to rotate stream output file");
+		status = RELAY_CONNECTION_STATUS_ERROR;
+		goto end_stream_unlock;
+	}
 
-	/* Check if a rotation is needed. */
-	if (stream->tracefile_size > 0 &&
-			(stream->tracefile_size_current + data_size) >
-			stream->tracefile_size) {
-		uint64_t old_id, new_id;
+end_stream_unlock:
+	stream_put(stream);
+end:
+	return status;
+}
 
-		old_id = tracefile_array_get_file_index_head(stream->tfa);
-		tracefile_array_file_rotate(stream->tfa);
+static enum relay_connection_status relay_process_data_receive_payload(
+		struct relay_connection *conn)
+{
+	int ret;
+	enum relay_connection_status status = RELAY_CONNECTION_STATUS_OK;
+	struct relay_stream *stream;
+	struct data_connection_state_receive_payload *state =
+			&conn->protocol.data.state.receive_payload;
+	const size_t chunk_size = RECV_DATA_BUFFER_SIZE;
+	char data_buffer[chunk_size];
+	bool partial_recv = false;
+	bool new_stream = false, close_requested = false, index_flushed = false;
+	uint64_t left_to_receive = state->left_to_receive;
+	struct relay_session *session;
 
-		/* new_id is updated by utils_rotate_stream_file. */
-		new_id = old_id;
+	DBG3("Receiving data for stream id %" PRIu64 " seqnum %" PRIu64 ", %" PRIu64" bytes received, %" PRIu64 " bytes left to receive",
+			state->header.stream_id, state->header.net_seq_num,
+			state->received, left_to_receive);
 
-		ret = utils_rotate_stream_file(stream->path_name,
-				stream->channel_name, stream->tracefile_size,
-				stream->tracefile_count, -1,
-			        -1, stream->stream_fd->fd,
-				&new_id, &stream->stream_fd->fd);
-		if (ret < 0) {
-			ERR("Rotating stream output file");
+	stream = stream_get_by_id(state->header.stream_id);
+	if (!stream) {
+		/* Protocol error. */
+		ERR("relay_process_data_receive_payload: cannot find stream %" PRIu64,
+				state->header.stream_id);
+		status = RELAY_CONNECTION_STATUS_ERROR;
+		goto end;
+	}
+
+	pthread_mutex_lock(&stream->lock);
+	session = stream->trace->session;
+	if (!conn->session) {
+		ret = connection_set_session(conn, session);
+		if (ret) {
+			status = RELAY_CONNECTION_STATUS_ERROR;
 			goto end_stream_unlock;
 		}
-		/*
-		 * Reset current size because we just performed a stream
-		 * rotation.
-		 */
-		stream->tracefile_size_current = 0;
-		rotate_index = 1;
 	}
 
 	/*
-	 * Index are handled in protocol version 2.4 and above. Also,
-	 * snapshot and index are NOT supported.
+	 * The size of the "chunk" received on any iteration is bounded by:
+	 *   - the data left to receive,
+	 *   - the data immediately available on the socket,
+	 *   - the on-stack data buffer
 	 */
-	if (session->minor >= 4 && !session->snapshot) {
-		ret = handle_index_data(stream, net_seq_num, rotate_index);
+	while (left_to_receive > 0 && !partial_recv) {
+		size_t recv_size = min(left_to_receive, chunk_size);
+		struct lttng_buffer_view packet_chunk;
+
+		ret = conn->sock->ops->recvmsg(conn->sock, data_buffer,
+				recv_size, MSG_DONTWAIT);
 		if (ret < 0) {
-			ERR("handle_index_data: fail stream %" PRIu64 " net_seq_num %" PRIu64 " ret %d",
-					stream->stream_handle, net_seq_num, ret);
-			goto end_stream_unlock;
-		}
-	}
-
-	for (recv_off = 0; recv_off < data_size; recv_off += chunk_size) {
-		size_t recv_size = min(data_size - recv_off, chunk_size);
-
-		ret = conn->sock->ops->recvmsg(conn->sock, data_buffer, recv_size, 0);
-		if (ret <= 0) {
-			if (ret == 0) {
-				/* Orderly shutdown. Not necessary to print an error. */
-				DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-			} else {
-				ERR("Socket %d error %d", conn->sock->fd, ret);
+			if (errno != EAGAIN && errno != EWOULDBLOCK) {
+				PERROR("Socket %d error", conn->sock->fd);
+				status = RELAY_CONNECTION_STATUS_ERROR;
 			}
-			ret = -1;
 			goto end_stream_unlock;
+		} else if (ret == 0) {
+			/* No more data ready to be consumed on socket. */
+			DBG3("No more data ready for consumption on data socket of stream id %" PRIu64,
+					state->header.stream_id);
+			status = RELAY_CONNECTION_STATUS_CLOSED;
+			break;
+		} else if (ret < (int) recv_size) {
+			/*
+			 * All the data available on the socket has been
+			 * consumed.
+			 */
+			partial_recv = true;
+			recv_size = ret;
 		}
 
-		/* Write data to stream output fd. */
-		size_ret = lttng_write(stream->stream_fd->fd, data_buffer,
-				recv_size);
-		if (size_ret < recv_size) {
+		packet_chunk = lttng_buffer_view_init(data_buffer,
+				0, recv_size);
+		assert(packet_chunk.data);
+
+		ret = stream_write(stream, &packet_chunk, 0);
+		if (ret) {
 			ERR("Relay error writing data to file");
-			ret = -1;
+			status = RELAY_CONNECTION_STATUS_ERROR;
 			goto end_stream_unlock;
 		}
 
-		DBG2("Relay wrote %zd bytes to tracefile for stream id %" PRIu64,
-				size_ret, stream->stream_handle);
+		left_to_receive -= recv_size;
+		state->received += recv_size;
+		state->left_to_receive = left_to_receive;
 	}
 
-	ret = write_padding_to_file(stream->stream_fd->fd,
-			be32toh(data_hdr.padding_size));
-	if (ret < 0) {
-		ERR("write_padding_to_file: fail stream %" PRIu64 " net_seq_num %" PRIu64 " ret %d",
-				stream->stream_handle, net_seq_num, ret);
+	if (state->left_to_receive > 0) {
+		/*
+		 * Did not receive all the data expected, wait for more data to
+		 * become available on the socket.
+		 */
+		DBG3("Partial receive on data connection of stream id %" PRIu64 ", %" PRIu64 " bytes received, %" PRIu64 " bytes left to receive",
+				state->header.stream_id, state->received,
+				state->left_to_receive);
 		goto end_stream_unlock;
 	}
-	stream->tracefile_size_current +=
-			data_size + be32toh(data_hdr.padding_size);
-	if (stream->prev_seq == -1ULL) {
+
+	ret = stream_write(stream, NULL, state->header.padding_size);
+	if (ret) {
+		status = RELAY_CONNECTION_STATUS_ERROR;
+		goto end_stream_unlock;
+	}
+
+	if (session_streams_have_index(session)) {
+		ret = stream_update_index(stream, state->header.net_seq_num,
+				state->rotate_index, &index_flushed,
+				state->header.data_size + state->header.padding_size);
+		if (ret < 0) {
+			ERR("Failed to update index: stream %" PRIu64 " net_seq_num %" PRIu64 " ret %d",
+					stream->stream_handle,
+					state->header.net_seq_num, ret);
+			status = RELAY_CONNECTION_STATUS_ERROR;
+			goto end_stream_unlock;
+		}
+	}
+
+	if (stream->prev_data_seq == -1ULL) {
 		new_stream = true;
 	}
 
-	stream->prev_seq = net_seq_num;
+	ret = stream_complete_packet(stream, state->header.data_size +
+			state->header.padding_size, state->header.net_seq_num,
+			index_flushed);
+	if (ret) {
+		status = RELAY_CONNECTION_STATUS_ERROR;
+		goto end_stream_unlock;
+	}
+
+	/*
+	 * Resetting the protocol state (to RECEIVE_HEADER) will trash the
+	 * contents of *state which are aliased (union) to the same location as
+	 * the new state. Don't use it beyond this point.
+	 */
+	connection_reset_protocol_state(conn);
+	state = NULL;
 
 end_stream_unlock:
 	close_requested = stream->close_requested;
 	pthread_mutex_unlock(&stream->lock);
-	if (close_requested) {
+	if (close_requested && left_to_receive == 0) {
 		try_stream_close(stream);
 	}
 
@@ -2418,9 +3245,33 @@ end_stream_unlock:
 		uatomic_set(&session->new_streams, 1);
 		pthread_mutex_unlock(&session->lock);
 	}
+
 	stream_put(stream);
 end:
-	return ret;
+	return status;
+}
+
+/*
+ * relay_process_data: Process the data received on the data socket
+ */
+static enum relay_connection_status relay_process_data(
+		struct relay_connection *conn)
+{
+	enum relay_connection_status status;
+
+	switch (conn->protocol.data.state_id) {
+	case DATA_CONNECTION_STATE_RECEIVE_HEADER:
+		status = relay_process_data_receive_header(conn);
+		break;
+	case DATA_CONNECTION_STATE_RECEIVE_PAYLOAD:
+		status = relay_process_data_receive_payload(conn);
+		break;
+	default:
+		ERR("Unexpected data connection communication state.");
+		abort();
+	}
+
+	return status;
 }
 
 static void cleanup_connection_pollfd(struct lttng_poll_event *events, int pollfd)
@@ -2471,7 +3322,6 @@ static void *relay_thread_worker(void *data)
 	struct lttng_poll_event events;
 	struct lttng_ht *relay_connections_ht;
 	struct lttng_ht_iter iter;
-	struct lttcomm_relayd_hdr recv_hdr;
 	struct relay_connection *destroy_conn = NULL;
 
 	DBG("[thread] Relay worker started");
@@ -2537,14 +3387,6 @@ restart:
 
 			health_code_update();
 
-			if (!revents) {
-				/*
-				 * No activity for this FD (poll
-				 * implementation).
-				 */
-				continue;
-			}
-
 			/* Thread quit pipe has been closed. Killing thread. */
 			ret = check_thread_quit_pipe(pollfd, revents);
 			if (ret) {
@@ -2561,8 +3403,13 @@ restart:
 					if (ret < 0) {
 						goto error;
 					}
-					lttng_poll_add(&events, conn->sock->fd,
+					ret = lttng_poll_add(&events,
+							conn->sock->fd,
 							LPOLLIN | LPOLLRDHUP);
+					if (ret) {
+						ERR("Failed to add new connection file descriptor to poll set");
+						goto error;
+					}
 					connection_ht_add(relay_connections_ht, conn);
 					DBG("Connection socket %d added", conn->sock->fd);
 				} else if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
@@ -2593,21 +3440,36 @@ restart:
 				assert(ctrl_conn->type == RELAY_CONTROL);
 
 				if (revents & LPOLLIN) {
-					ret = ctrl_conn->sock->ops->recvmsg(ctrl_conn->sock,
-							&recv_hdr, sizeof(recv_hdr), 0);
-					if (ret <= 0) {
-						/* Connection closed */
-						relay_thread_close_connection(&events, pollfd,
-								ctrl_conn);
-					} else {
-						ret = relay_process_control(&recv_hdr, ctrl_conn);
-						if (ret < 0) {
-							/* Clear the session on error. */
-							relay_thread_close_connection(&events,
-									pollfd, ctrl_conn);
+					enum relay_connection_status status;
+
+					status = relay_process_control(ctrl_conn);
+					if (status != RELAY_CONNECTION_STATUS_OK) {
+						/*
+						 * On socket error flag the session as aborted to force
+						 * the cleanup of its stream otherwise it can leak
+						 * during the lifetime of the relayd.
+						 *
+						 * This prevents situations in which streams can be
+						 * left opened because an index was received, the
+						 * control connection is closed, and the data
+						 * connection is closed (uncleanly) before the packet's
+						 * data provided.
+						 *
+						 * Since the control connection encountered an error,
+						 * it is okay to be conservative and close the
+						 * session right now as we can't rely on the protocol
+						 * being respected anymore.
+						 */
+						if (status == RELAY_CONNECTION_STATUS_ERROR) {
+							session_abort(ctrl_conn->session);
 						}
-						seen_control = 1;
+
+						/* Clear the connection on error or close. */
+						relay_thread_close_connection(&events,
+								pollfd,
+								ctrl_conn);
 					}
+					seen_control = 1;
 				} else if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
 					relay_thread_close_connection(&events,
 							pollfd, ctrl_conn);
@@ -2676,9 +3538,30 @@ restart:
 			assert(data_conn->type == RELAY_DATA);
 
 			if (revents & LPOLLIN) {
-				ret = relay_process_data(data_conn);
-				/* Connection closed */
-				if (ret < 0) {
+				enum relay_connection_status status;
+
+				status = relay_process_data(data_conn);
+				/* Connection closed or error. */
+				if (status != RELAY_CONNECTION_STATUS_OK) {
+					/*
+					 * On socket error flag the session as aborted to force
+					 * the cleanup of its stream otherwise it can leak
+					 * during the lifetime of the relayd.
+					 *
+					 * This prevents situations in which streams can be
+					 * left opened because an index was received, the
+					 * control connection is closed, and the data
+					 * connection is closed (uncleanly) before the packet's
+					 * data provided.
+					 *
+					 * Since the data connection encountered an error,
+					 * it is okay to be conservative and close the
+					 * session right now as we can't rely on the protocol
+					 * being respected anymore.
+					 */
+					if (status == RELAY_CONNECTION_STATUS_ERROR) {
+						session_abort(data_conn->session);
+					}
 					relay_thread_close_connection(&events, pollfd,
 							data_conn);
 					/*
@@ -2710,16 +3593,14 @@ restart:
 
 exit:
 error:
-	/* Cleanup reamaining connection object. */
+	/* Cleanup remaining connection object. */
 	rcu_read_lock();
 	cds_lfht_for_each_entry(relay_connections_ht->ht, &iter.iter,
 			destroy_conn,
 			sock_n.node) {
 		health_code_update();
 
-		if (session_abort(destroy_conn->session)) {
-			assert(0);
-		}
+		session_abort(destroy_conn->session);
 
 		/*
 		 * No need to grab another ref, because we own
@@ -2820,6 +3701,13 @@ int main(int argc, char **argv)
 		for (i = 3; i < sysconf(_SC_OPEN_MAX); i++) {
 			(void) close(i);
 		}
+	}
+
+	sessiond_trace_chunk_registry = sessiond_trace_chunk_registry_create();
+	if (!sessiond_trace_chunk_registry) {
+		ERR("Failed to initialize session daemon trace chunk registry");
+		retval = -1;
+		goto exit_sessiond_trace_chunk_registry;
 	}
 
 	/* Initialize thread health monitoring */
@@ -2971,7 +3859,9 @@ exit_health_quit_pipe:
 
 exit_init_data:
 	health_app_destroy(health_relayd);
+	sessiond_trace_chunk_registry_destroy(sessiond_trace_chunk_registry);
 exit_health_app_create:
+exit_sessiond_trace_chunk_registry:
 exit_options:
 	/*
 	 * Wait for all pending call_rcu work to complete before tearing

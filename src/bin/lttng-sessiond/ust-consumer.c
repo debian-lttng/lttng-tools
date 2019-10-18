@@ -35,73 +35,16 @@
 #include "lttng-sessiond.h"
 
 /*
- * Return allocated full pathname of the session using the consumer trace path
- * and subdir if available. On a successful allocation, the directory of the
- * trace is created with the session credentials.
- *
- * The caller can safely free(3) the returned value. On error, NULL is
- * returned.
- */
-static char *setup_trace_path(struct consumer_output *consumer,
-		struct ust_app_session *ua_sess)
-{
-	int ret;
-	char *pathname;
-
-	assert(consumer);
-	assert(ua_sess);
-
-	health_code_update();
-
-	/* Allocate our self the string to make sure we never exceed PATH_MAX. */
-	pathname = zmalloc(PATH_MAX);
-	if (!pathname) {
-		goto error;
-	}
-
-	/* Get correct path name destination */
-	if (consumer->type == CONSUMER_DST_LOCAL) {
-		/* Set application path to the destination path */
-		ret = snprintf(pathname, PATH_MAX, "%s%s%s",
-				consumer->dst.trace_path, consumer->subdir, ua_sess->path);
-		if (ret < 0) {
-			PERROR("snprintf channel path");
-			goto error;
-		}
-
-		/* Create directory. Ignore if exist. */
-		ret = run_as_mkdir_recursive(pathname, S_IRWXU | S_IRWXG,
-				ua_sess->euid, ua_sess->egid);
-		if (ret < 0) {
-			if (errno != EEXIST) {
-				ERR("Trace directory creation error");
-				goto error;
-			}
-		}
-	} else {
-		ret = snprintf(pathname, PATH_MAX, "%s%s", consumer->subdir,
-				ua_sess->path);
-		if (ret < 0) {
-			PERROR("snprintf channel path");
-			goto error;
-		}
-	}
-
-	return pathname;
-
-error:
-	free(pathname);
-	return NULL;
-}
-
-/*
  * Send a single channel to the consumer using command ASK_CHANNEL_CREATION.
  *
  * Consumer socket lock MUST be acquired before calling this.
  */
 static int ask_channel_creation(struct ust_app_session *ua_sess,
-		struct ust_app_channel *ua_chan, struct consumer_output *consumer,
-		struct consumer_socket *socket, struct ust_registry_session *registry)
+		struct ust_app_channel *ua_chan,
+		struct consumer_output *consumer,
+		struct consumer_socket *socket,
+		struct ust_registry_session *registry,
+		struct lttng_trace_chunk *trace_chunk)
 {
 	int ret, output;
 	uint32_t chan_id;
@@ -111,6 +54,7 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 	struct ust_registry_channel *chan_reg;
 	char shm_path[PATH_MAX] = "";
 	char root_shm_path[PATH_MAX] = "";
+	bool is_local_trace;
 
 	assert(ua_sess);
 	assert(ua_chan);
@@ -120,10 +64,34 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 
 	DBG2("Asking UST consumer for channel");
 
-	/* Get and create full trace path of session. */
-	if (ua_sess->output_traces) {
-		pathname = setup_trace_path(consumer, ua_sess);
-		if (!pathname) {
+	is_local_trace = consumer->net_seq_index == -1ULL;
+	/* Format the channel's path (relative to the current trace chunk). */
+	pathname = setup_channel_trace_path(consumer, ua_sess->path);
+	if (!pathname) {
+		ret = -1;
+		goto error;
+	}
+
+	if (is_local_trace && trace_chunk) {
+		enum lttng_trace_chunk_status chunk_status;
+		char *pathname_index;
+
+		ret = asprintf(&pathname_index, "%s/" DEFAULT_INDEX_DIR,
+				pathname);
+		if (ret < 0) {
+			ERR("Failed to format channel index directory");
+			ret = -1;
+			goto error;
+		}
+
+		/*
+		 * Create the index subdirectory which will take care
+		 * of implicitly creating the channel's path.
+		 */
+		chunk_status = lttng_trace_chunk_create_subdirectory(
+				trace_chunk, pathname_index);
+		free(pathname_index);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			ret = -1;
 			goto error;
 		}
@@ -181,8 +149,6 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 			ua_sess->tracing_id,
 			pathname,
 			ua_chan->name,
-			ua_sess->euid,
-			ua_sess->egid,
 			consumer->net_seq_index,
 			ua_chan->key,
 			registry->uuid,
@@ -191,9 +157,11 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 			ua_chan->tracefile_count,
 			ua_sess->id,
 			ua_sess->output_traces,
-			ua_sess->uid,
+			ua_sess->real_credentials.uid,
 			ua_chan->attr.blocking_timeout,
-			root_shm_path, shm_path);
+			root_shm_path, shm_path,
+			trace_chunk,
+			&ua_sess->effective_credentials);
 
 	health_code_update();
 
@@ -231,11 +199,13 @@ error:
  * Returns 0 on success else a negative value.
  */
 int ust_consumer_ask_channel(struct ust_app_session *ua_sess,
-		struct ust_app_channel *ua_chan, struct consumer_output *consumer,
-		struct consumer_socket *socket, struct ust_registry_session *registry)
+		struct ust_app_channel *ua_chan,
+		struct consumer_output *consumer,
+		struct consumer_socket *socket,
+		struct ust_registry_session *registry,
+		struct lttng_trace_chunk * trace_chunk)
 {
 	int ret;
-	struct ltt_session *session;
 
 	assert(ua_sess);
 	assert(ua_chan);
@@ -249,11 +219,9 @@ int ust_consumer_ask_channel(struct ust_app_session *ua_sess,
 		goto error;
 	}
 
-	session = session_find_by_id(ua_sess->tracing_id);
-	assert(session);
-
 	pthread_mutex_lock(socket->lock);
-	ret = ask_channel_creation(ua_sess, ua_chan, consumer, socket, registry);
+	ret = ask_channel_creation(ua_sess, ua_chan, consumer, socket, registry,
+			trace_chunk);
 	pthread_mutex_unlock(socket->lock);
 	if (ret < 0) {
 		ERR("ask_channel_creation consumer command failed");

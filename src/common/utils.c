@@ -33,16 +33,32 @@
 #include <unistd.h>
 
 #include <common/common.h>
+#include <common/readwrite.h>
 #include <common/runas.h>
 #include <common/compat/getenv.h>
 #include <common/compat/string.h>
 #include <common/compat/dirent.h>
+#include <common/compat/directory-handle.h>
 #include <common/dynamic-buffer.h>
+#include <common/string-utils/format.h>
 #include <lttng/constant.h>
 
 #include "utils.h"
 #include "defaults.h"
 #include "time.h"
+
+#define PROC_MEMINFO_PATH               "/proc/meminfo"
+#define PROC_MEMINFO_MEMAVAILABLE_LINE  "MemAvailable:"
+#define PROC_MEMINFO_MEMTOTAL_LINE      "MemTotal:"
+
+/* The length of the longest field of `/proc/meminfo`. */
+#define PROC_MEMINFO_FIELD_MAX_NAME_LEN	20
+
+#if (PROC_MEMINFO_FIELD_MAX_NAME_LEN == 20)
+#define MAX_NAME_LEN_SCANF_IS_A_BROKEN_API "19"
+#else
+#error MAX_NAME_LEN_SCANF_IS_A_BROKEN_API must be updated to match (PROC_MEMINFO_FIELD_MAX_NAME_LEN - 1)
+#endif
 
 /*
  * Return a partial realpath(3) of the path even if the full path does not
@@ -198,6 +214,106 @@ error:
 	return NULL;
 }
 
+static
+int expand_double_slashes_dot_and_dotdot(char *path)
+{
+	size_t expanded_path_len, path_len;
+	const char *curr_char, *path_last_char, *next_slash, *prev_slash;
+
+	path_len = strlen(path);
+	path_last_char = &path[path_len];
+
+	if (path_len == 0) {
+		goto error;
+	}
+
+	expanded_path_len = 0;
+
+	/* We iterate over the provided path to expand the "//", "../" and "./" */
+	for (curr_char = path; curr_char <= path_last_char; curr_char = next_slash + 1) {
+		/* Find the next forward slash. */
+		size_t curr_token_len;
+
+		if (curr_char == path_last_char) {
+			expanded_path_len++;
+			break;
+		}
+
+		next_slash = memchr(curr_char, '/', path_last_char - curr_char);
+		if (next_slash == NULL) {
+			/* Reached the end of the provided path. */
+			next_slash = path_last_char;
+		}
+
+		/* Compute how long is the previous token. */
+		curr_token_len = next_slash - curr_char;
+		switch(curr_token_len) {
+		case 0:
+			/*
+			 * The pointer has not move meaning that curr_char is
+			 * pointing to a slash. It that case there is no token
+			 * to copy, so continue the iteration to find the next
+			 * token
+			 */
+			continue;
+		case 1:
+			/*
+			 * The pointer moved 1 character. Check if that
+			 * character is a dot ('.'), if it is: omit it, else
+			 * copy the token to the normalized path.
+			 */
+			if (curr_char[0] == '.') {
+				continue;
+			}
+			break;
+		case 2:
+			/*
+			 * The pointer moved 2 characters. Check if these
+			 * characters are double dots ('..'). If that is the
+			 * case, we need to remove the last token of the
+			 * normalized path.
+			 */
+			if (curr_char[0] == '.' && curr_char[1] == '.') {
+				/*
+				 * Find the previous path component by
+				 * using the memrchr function to find the
+				 * previous forward slash and substract that
+				 * len to the resulting path.
+				 */
+				prev_slash = lttng_memrchr(path, '/', expanded_path_len);
+				/*
+				 * If prev_slash is NULL, we reached the
+				 * beginning of the path. We can't go back any
+				 * further.
+				 */
+				if (prev_slash != NULL) {
+					expanded_path_len = prev_slash - path;
+				}
+				continue;
+			}
+			break;
+		default:
+			break;
+		}
+
+		/*
+		 * Copy the current token which is neither a '.' nor a '..'.
+		 */
+		path[expanded_path_len++] = '/';
+		memcpy(&path[expanded_path_len], curr_char, curr_token_len);
+		expanded_path_len += curr_token_len;
+	}
+
+	if (expanded_path_len == 0) {
+		path[expanded_path_len++] = '/';
+	}
+
+	path[expanded_path_len] = '\0';
+	return 0;
+error:
+	return -1;
+}
+
 /*
  * Make a full resolution of the given path even if it doesn't exist.
  * This function uses the utils_partial_realpath function to resolve
@@ -209,11 +325,12 @@ error:
  * the responsibility of the caller to free this memory.
  */
 LTTNG_HIDDEN
-char *utils_expand_path(const char *path)
+char *_utils_expand_path(const char *path, bool keep_symlink)
 {
-	char *next, *previous, *slash, *start_path, *absolute_path = NULL;
+	int ret;
+	char *absolute_path = NULL;
 	char *last_token;
-	int is_dot, is_dotdot;
+	bool is_dot, is_dotdot;
 
 	/* Safety net */
 	if (path == NULL) {
@@ -221,67 +338,55 @@ char *utils_expand_path(const char *path)
 	}
 
 	/* Allocate memory for the absolute_path */
-	absolute_path = zmalloc(PATH_MAX);
+	absolute_path = zmalloc(LTTNG_PATH_MAX);
 	if (absolute_path == NULL) {
 		PERROR("zmalloc expand path");
 		goto error;
 	}
 
-	/*
-	 * If the path is not already absolute nor explicitly relative,
-	 * consider we're in the current directory
-	 */
-	if (*path != '/' && strncmp(path, "./", 2) != 0 &&
-			strncmp(path, "../", 3) != 0) {
-		snprintf(absolute_path, PATH_MAX, "./%s", path);
-	/* Else, we just copy the path */
+	if (path[0] == '/') {
+		ret = lttng_strncpy(absolute_path, path, LTTNG_PATH_MAX);
+		if (ret) {
+			ERR("Path exceeds maximal size of %i bytes", LTTNG_PATH_MAX);
+			goto error;
+		}
 	} else {
-		strncpy(absolute_path, path, PATH_MAX);
-	}
+		/*
+		 * This is a relative path. We need to get the present working
+		 * directory and start the path walk from there.
+		 */
+		char current_working_dir[LTTNG_PATH_MAX];
+		char *cwd_ret;
 
-	/* Resolve partially our path */
-	absolute_path = utils_partial_realpath(absolute_path,
-			absolute_path, PATH_MAX);
-
-	/* As long as we find '/./' in the working_path string */
-	while ((next = strstr(absolute_path, "/./"))) {
-
-		/* We prepare the start_path not containing it */
-		start_path = lttng_strndup(absolute_path, next - absolute_path);
-		if (!start_path) {
-			PERROR("lttng_strndup");
+		cwd_ret = getcwd(current_working_dir, sizeof(current_working_dir));
+		if (!cwd_ret) {
 			goto error;
 		}
-		/* And we concatenate it with the part after this string */
-		snprintf(absolute_path, PATH_MAX, "%s%s", start_path, next + 2);
-
-		free(start_path);
-	}
-
-	/* As long as we find '/../' in the working_path string */
-	while ((next = strstr(absolute_path, "/../"))) {
-		/* We find the last level of directory */
-		previous = absolute_path;
-		while ((slash = strpbrk(previous, "/")) && slash != next) {
-			previous = slash + 1;
-		}
-
-		/* Then we prepare the start_path not containing it */
-		start_path = lttng_strndup(absolute_path, previous - absolute_path);
-		if (!start_path) {
-			PERROR("lttng_strndup");
+		/*
+		 * Get the number of character in the CWD and allocate an array
+		 * to can hold it and the path provided by the caller.
+		 */
+		ret = snprintf(absolute_path, LTTNG_PATH_MAX, "%s/%s",
+				current_working_dir, path);
+		if (ret >= LTTNG_PATH_MAX) {
+			ERR("Concatenating current working directory %s and path %s exceeds maximal size of %i bytes",
+					current_working_dir, path, LTTNG_PATH_MAX);
 			goto error;
 		}
+	}
 
-		/* And we concatenate it with the part after the '/../' */
-		snprintf(absolute_path, PATH_MAX, "%s%s", start_path, next + 4);
-
-		/* We can free the memory used for the start path*/
-		free(start_path);
-
-		/* Then we verify for symlinks using partial_realpath */
+	if (keep_symlink) {
+		/* Resolve partially our path */
 		absolute_path = utils_partial_realpath(absolute_path,
-				absolute_path, PATH_MAX);
+				absolute_path, LTTNG_PATH_MAX);
+		if (!absolute_path) {
+			goto error;
+		}
+	}
+
+	ret = expand_double_slashes_dot_and_dotdot(absolute_path);
+	if (ret) {
+		goto error;
 	}
 
 	/* Identify the last token */
@@ -315,7 +420,17 @@ error:
 	free(absolute_path);
 	return NULL;
 }
+LTTNG_HIDDEN
+char *utils_expand_path(const char *path)
+{
+	return _utils_expand_path(path, true);
+}
 
+LTTNG_HIDDEN
+char *utils_expand_path_keep_symlink(const char *path)
+{
+	return _utils_expand_path(path, false);
+}
 /*
  * Create a pipe in dst.
  */
@@ -559,44 +674,6 @@ error:
 }
 
 /*
- * On some filesystems (e.g. nfs), mkdir will validate access rights before
- * checking for the existence of the path element. This means that on a setup
- * where "/home/" is a mounted NFS share, and running as an unpriviledged user,
- * recursively creating a path of the form "/home/my_user/trace/" will fail with
- * EACCES on mkdir("/home", ...).
- *
- * Performing a stat(...) on the path to check for existence allows us to
- * work around this behaviour.
- */
-static
-int mkdir_check_exists(const char *path, mode_t mode)
-{
-	int ret = 0;
-	struct stat st;
-
-	ret = stat(path, &st);
-	if (ret == 0) {
-		if (S_ISDIR(st.st_mode)) {
-			/* Directory exists, skip. */
-			goto end;
-		} else {
-			/* Exists, but is not a directory. */
-			errno = ENOTDIR;
-			ret = -1;
-			goto end;
-		}
-	}
-
-	/*
-	 * Let mkdir handle other errors as the caller expects mkdir
-	 * semantics.
-	 */
-	ret = mkdir(path, mode);
-end:
-	return ret;
-}
-
-/*
  * Create directory using the given path and mode.
  *
  * On success, return 0 else a negative error code.
@@ -605,82 +682,21 @@ LTTNG_HIDDEN
 int utils_mkdir(const char *path, mode_t mode, int uid, int gid)
 {
 	int ret;
+	struct lttng_directory_handle handle;
+	const struct lttng_credentials creds = {
+		.uid = (uid_t) uid,
+		.gid = (gid_t) gid,
+	};
 
-	if (uid < 0 || gid < 0) {
-		ret = mkdir_check_exists(path, mode);
-	} else {
-		ret = run_as_mkdir(path, mode, uid, gid);
+	ret = lttng_directory_handle_init(&handle, NULL);
+	if (ret) {
+		goto end;
 	}
-	if (ret < 0) {
-		if (errno != EEXIST) {
-			PERROR("mkdir %s, uid %d, gid %d", path ? path : "NULL",
-					uid, gid);
-		} else {
-			ret = 0;
-		}
-	}
-
-	return ret;
-}
-
-/*
- * Internal version of mkdir_recursive. Runs as the current user.
- * Don't call directly; use utils_mkdir_recursive().
- *
- * This function is ominously marked as "unsafe" since it should only
- * be called by a caller that has transitioned to the uid and gid under which
- * the directory creation should occur.
- */
-LTTNG_HIDDEN
-int _utils_mkdir_recursive_unsafe(const char *path, mode_t mode)
-{
-	char *p, tmp[PATH_MAX];
-	size_t len;
-	int ret;
-
-	assert(path);
-
-	ret = snprintf(tmp, sizeof(tmp), "%s", path);
-	if (ret < 0) {
-		PERROR("snprintf mkdir");
-		goto error;
-	}
-
-	len = ret;
-	if (tmp[len - 1] == '/') {
-		tmp[len - 1] = 0;
-	}
-
-	for (p = tmp + 1; *p; p++) {
-		if (*p == '/') {
-			*p = 0;
-			if (tmp[strlen(tmp) - 1] == '.' &&
-					tmp[strlen(tmp) - 2] == '.' &&
-					tmp[strlen(tmp) - 3] == '/') {
-				ERR("Using '/../' is not permitted in the trace path (%s)",
-						tmp);
-				ret = -1;
-				goto error;
-			}
-			ret = mkdir_check_exists(tmp, mode);
-			if (ret < 0) {
-				if (errno != EACCES) {
-					PERROR("mkdir recursive");
-					ret = -errno;
-					goto error;
-				}
-			}
-			*p = '/';
-		}
-	}
-
-	ret = mkdir_check_exists(tmp, mode);
-	if (ret < 0) {
-		PERROR("mkdir recursive last element");
-		ret = -errno;
-	}
-
-error:
+	ret = lttng_directory_handle_create_subdirectory_as_user(
+			&handle, path, mode,
+			(uid >= 0 || gid >= 0) ? &creds : NULL);
+	lttng_directory_handle_fini(&handle);
+end:
 	return ret;
 }
 
@@ -694,212 +710,63 @@ LTTNG_HIDDEN
 int utils_mkdir_recursive(const char *path, mode_t mode, int uid, int gid)
 {
 	int ret;
+	struct lttng_directory_handle handle;
+	const struct lttng_credentials creds = {
+		.uid = (uid_t) uid,
+		.gid = (gid_t) gid,
+	};
 
-	if (uid < 0 || gid < 0) {
-		/* Run as current user. */
-		ret = _utils_mkdir_recursive_unsafe(path, mode);
-	} else {
-		ret = run_as_mkdir_recursive(path, mode, uid, gid);
+	ret = lttng_directory_handle_init(&handle, NULL);
+	if (ret) {
+		goto end;
 	}
-	if (ret < 0) {
-		PERROR("mkdir %s, uid %d, gid %d", path ? path : "NULL",
-				uid, gid);
-	}
-
+	ret = lttng_directory_handle_create_subdirectory_recursive_as_user(
+			&handle, path, mode,
+			(uid >= 0 || gid >= 0) ? &creds : NULL);
+	lttng_directory_handle_fini(&handle);
+end:
 	return ret;
 }
 
 /*
- * path is the output parameter. It needs to be PATH_MAX len.
- *
- * Return 0 on success or else a negative value.
- */
-static int utils_stream_file_name(char *path,
-		const char *path_name, const char *file_name,
-		uint64_t size, uint64_t count,
-		const char *suffix)
-{
-	int ret;
-	char full_path[PATH_MAX];
-	char *path_name_suffix = NULL;
-	char *extra = NULL;
-
-	ret = snprintf(full_path, sizeof(full_path), "%s/%s",
-			path_name, file_name);
-	if (ret < 0) {
-		PERROR("snprintf create output file");
-		goto error;
-	}
-
-	/* Setup extra string if suffix or/and a count is needed. */
-	if (size > 0 && suffix) {
-		ret = asprintf(&extra, "_%" PRIu64 "%s", count, suffix);
-	} else if (size > 0) {
-		ret = asprintf(&extra, "_%" PRIu64, count);
-	} else if (suffix) {
-		ret = asprintf(&extra, "%s", suffix);
-	}
-	if (ret < 0) {
-		PERROR("Allocating extra string to name");
-		goto error;
-	}
-
-	/*
-	 * If we split the trace in multiple files, we have to add the count at
-	 * the end of the tracefile name.
-	 */
-	if (extra) {
-		ret = asprintf(&path_name_suffix, "%s%s", full_path, extra);
-		if (ret < 0) {
-			PERROR("Allocating path name with extra string");
-			goto error_free_suffix;
-		}
-		strncpy(path, path_name_suffix, PATH_MAX - 1);
-		path[PATH_MAX - 1] = '\0';
-	} else {
-		strncpy(path, full_path, PATH_MAX - 1);
-	}
-	path[PATH_MAX - 1] = '\0';
-	ret = 0;
-
-	free(path_name_suffix);
-error_free_suffix:
-	free(extra);
-error:
-	return ret;
-}
-
-/*
- * Create the stream file on disk.
+ * out_stream_path is the output parameter.
  *
  * Return 0 on success or else a negative value.
  */
 LTTNG_HIDDEN
-int utils_create_stream_file(const char *path_name, char *file_name, uint64_t size,
-		uint64_t count, int uid, int gid, char *suffix)
-{
-	int ret, flags, mode;
-	char path[PATH_MAX];
-
-	ret = utils_stream_file_name(path, path_name, file_name,
-			size, count, suffix);
-	if (ret < 0) {
-		goto error;
-	}
-
-	flags = O_WRONLY | O_CREAT | O_TRUNC;
-	/* Open with 660 mode */
-	mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
-
-	if (uid < 0 || gid < 0) {
-		ret = open(path, flags, mode);
-	} else {
-		ret = run_as_open(path, flags, mode, uid, gid);
-	}
-	if (ret < 0) {
-		PERROR("open stream path %s", path);
-	}
-error:
-	return ret;
-}
-
-/*
- * Unlink the stream tracefile from disk.
- *
- * Return 0 on success or else a negative value.
- */
-LTTNG_HIDDEN
-int utils_unlink_stream_file(const char *path_name, char *file_name, uint64_t size,
-		uint64_t count, int uid, int gid, char *suffix)
+int utils_stream_file_path(const char *path_name, const char *file_name,
+		uint64_t size, uint64_t count, const char *suffix,
+		char *out_stream_path, size_t stream_path_len)
 {
 	int ret;
-	char path[PATH_MAX];
+        char count_str[MAX_INT_DEC_LEN(count) + 1] = {};
+	const char *path_separator;
 
-	ret = utils_stream_file_name(path, path_name, file_name,
-			size, count, suffix);
-	if (ret < 0) {
-		goto error;
-	}
-	if (uid < 0 || gid < 0) {
-		ret = unlink(path);
+	if (path_name && path_name[strlen(path_name) - 1] == '/') {
+		path_separator = "";
 	} else {
-		ret = run_as_unlink(path, uid, gid);
+		path_separator = "/";
 	}
-	if (ret < 0) {
-		goto error;
+
+	path_name = path_name ? : "";
+	suffix = suffix ? : "";
+	if (size > 0) {
+		ret = snprintf(count_str, sizeof(count_str), "_%" PRIu64,
+				count);
+		assert(ret > 0 && ret < sizeof(count_str));
 	}
-error:
-	DBG("utils_unlink_stream_file %s returns %d", path, ret);
+
+        ret = snprintf(out_stream_path, stream_path_len, "%s%s%s%s%s",
+			path_name, path_separator, file_name, count_str,
+			suffix);
+	if (ret < 0 || ret >= stream_path_len) {
+		ERR("Truncation occurred while formatting stream path");
+		ret = -1;
+	} else {
+		ret = 0;
+	}
 	return ret;
 }
-
-/*
- * Change the output tracefile according to the given size and count The
- * new_count pointer is set during this operation.
- *
- * From the consumer, the stream lock MUST be held before calling this function
- * because we are modifying the stream status.
- *
- * Return 0 on success or else a negative value.
- */
-LTTNG_HIDDEN
-int utils_rotate_stream_file(char *path_name, char *file_name, uint64_t size,
-		uint64_t count, int uid, int gid, int out_fd, uint64_t *new_count,
-		int *stream_fd)
-{
-	int ret;
-
-	assert(stream_fd);
-
-	ret = close(out_fd);
-	if (ret < 0) {
-		PERROR("Closing tracefile");
-		goto error;
-	}
-	*stream_fd = -1;
-
-	if (count > 0) {
-		/*
-		 * In tracefile rotation, for the relay daemon we need
-		 * to unlink the old file if present, because it may
-		 * still be open in reading by the live thread, and we
-		 * need to ensure that we do not overwrite the content
-		 * between get_index and get_packet. Since we have no
-		 * way to verify integrity of the data content compared
-		 * to the associated index, we need to ensure the reader
-		 * has exclusive access to the file content, and that
-		 * the open of the data file is performed in get_index.
-		 * Unlinking the old file rather than overwriting it
-		 * achieves this.
-		 */
-		if (new_count) {
-			*new_count = (*new_count + 1) % count;
-		}
-		ret = utils_unlink_stream_file(path_name, file_name, size,
-				new_count ? *new_count : 0, uid, gid, 0);
-		if (ret < 0 && errno != ENOENT) {
-			goto error;
-		}
-	} else {
-		if (new_count) {
-			(*new_count)++;
-		}
-	}
-
-	ret = utils_create_stream_file(path_name, file_name, size,
-			new_count ? *new_count : 0, uid, gid, 0);
-	if (ret < 0) {
-		goto error;
-	}
-	*stream_fd = ret;
-
-	/* Success. */
-	ret = 0;
-
-error:
-	return ret;
-}
-
 
 /**
  * Parse a string that represents a size in human readable format. It
@@ -990,6 +857,134 @@ int utils_parse_size_suffix(const char * const str, uint64_t * const size)
 	/* Check for overflow */
 	if ((*size >> shift) != base_size) {
 		DBG("utils_parse_size_suffix: oops, overflow detected.");
+		ret = -1;
+		goto end;
+	}
+
+	ret = 0;
+end:
+	return ret;
+}
+
+/**
+ * Parse a string that represents a time in human readable format. It
+ * supports decimal integers suffixed by:
+ *     "us" for microsecond,
+ *     "ms" for millisecond,
+ *     "s"  for second,
+ *     "m"  for minute,
+ *     "h"  for hour
+ *
+ * The suffix multiply the integer by:
+ *     "us" : 1
+ *     "ms" : 1000
+ *     "s"  : 1000000
+ *     "m"  : 60000000
+ *     "h"  : 3600000000
+ *
+ * Note that unit-less numbers are assumed to be microseconds.
+ *
+ * @param str		The string to parse, assumed to be NULL-terminated.
+ * @param time_us	Pointer to a uint64_t that will be filled with the
+ *			resulting time in microseconds.
+ *
+ * @return 0 on success, -1 on failure.
+ */
+LTTNG_HIDDEN
+int utils_parse_time_suffix(char const * const str, uint64_t * const time_us)
+{
+	int ret;
+	uint64_t base_time;
+	uint64_t multiplier = 1;
+	const char *str_end;
+	char *num_end;
+
+	if (!str) {
+		DBG("utils_parse_time_suffix: received a NULL string.");
+		ret = -1;
+		goto end;
+	}
+
+	/* strtoull will accept a negative number, but we don't want to. */
+	if (strchr(str, '-') != NULL) {
+		DBG("utils_parse_time_suffix: invalid time string, should not contain '-'.");
+		ret = -1;
+		goto end;
+	}
+
+	/* str_end will point to the \0 */
+	str_end = str + strlen(str);
+	errno = 0;
+	base_time = strtoull(str, &num_end, 10);
+	if (errno != 0) {
+		PERROR("utils_parse_time_suffix strtoull on string \"%s\"", str);
+		ret = -1;
+		goto end;
+	}
+
+	if (num_end == str) {
+		/* strtoull parsed nothing, not good. */
+		DBG("utils_parse_time_suffix: strtoull had nothing good to parse.");
+		ret = -1;
+		goto end;
+	}
+
+	/* Check if a prefix is present. */
+	switch (*num_end) {
+	case 'u':
+		/*
+		 * Microsecond (us)
+		 *
+		 * Skip the "us" if the string matches the "us" suffix,
+		 * otherwise let the check for the end of the string handle
+		 * the error reporting.
+		 */
+		if (*(num_end + 1) == 's') {
+			num_end += 2;
+		}
+		break;
+	case 'm':
+		if (*(num_end + 1) == 's') {
+			/* Millisecond (ms) */
+			multiplier = USEC_PER_MSEC;
+			/* Skip the 's' */
+			num_end++;
+		} else {
+			/* Minute (m) */
+			multiplier = USEC_PER_MINUTE;
+		}
+		num_end++;
+		break;
+	case 's':
+		/* Second */
+		multiplier = USEC_PER_SEC;
+		num_end++;
+		break;
+	case 'h':
+		/* Hour */
+		multiplier = USEC_PER_HOURS;
+		num_end++;
+		break;
+	case '\0':
+		break;
+	default:
+		DBG("utils_parse_time_suffix: invalid suffix.");
+		ret = -1;
+		goto end;
+	}
+
+	/* Check for garbage after the valid input. */
+	if (num_end != str_end) {
+		DBG("utils_parse_time_suffix: Garbage after time string.");
+		ret = -1;
+		goto end;
+	}
+
+	*time_us = base_time * multiplier;
+
+	/* Check for overflow */
+	if ((*time_us / multiplier) != base_time) {
+		DBG("utils_parse_time_suffix: oops, overflow detected.");
 		ret = -1;
 		goto end;
 	}
@@ -1137,7 +1132,7 @@ int utils_get_count_order_u64(uint64_t x)
  * Otherwise returns the value of HOME.
  */
 LTTNG_HIDDEN
-char *utils_get_home_dir(void)
+const char *utils_get_home_dir(void)
 {
 	char *val = NULL;
 	struct passwd *pwd;
@@ -1357,79 +1352,16 @@ end:
 LTTNG_HIDDEN
 int utils_recursive_rmdir(const char *path)
 {
-	DIR *dir;
-	size_t path_len;
-	int dir_fd, ret = 0, closeret, is_empty = 1;
-	struct dirent *entry;
+	int ret;
+	struct lttng_directory_handle handle;
 
-	/* Open directory */
-	dir = opendir(path);
-	if (!dir) {
-		PERROR("Cannot open '%s' path", path);
-		return -1;
+	ret = lttng_directory_handle_init(&handle, NULL);
+	if (ret) {
+		goto end;
 	}
-	dir_fd = lttng_dirfd(dir);
-	if (dir_fd < 0) {
-		PERROR("lttng_dirfd");
-		return -1;
-	}
-
-	path_len = strlen(path);
-	while ((entry = readdir(dir))) {
-		struct stat st;
-		size_t name_len;
-		char filename[PATH_MAX];
-
-		if (!strcmp(entry->d_name, ".")
-				|| !strcmp(entry->d_name, "..")) {
-			continue;
-		}
-
-		name_len = strlen(entry->d_name);
-		if (path_len + name_len + 2 > sizeof(filename)) {
-			ERR("Failed to remove file: path name too long (%s/%s)",
-				path, entry->d_name);
-			continue;
-		}
-		if (snprintf(filename, sizeof(filename), "%s/%s",
-				path, entry->d_name) < 0) {
-			ERR("Failed to format path.");
-			continue;
-		}
-
-		if (stat(filename, &st)) {
-			PERROR("stat");
-			continue;
-		}
-
-		if (S_ISDIR(st.st_mode)) {
-			char subpath[PATH_MAX];
-
-			strncpy(subpath, path, PATH_MAX);
-			subpath[PATH_MAX - 1] = '\0';
-			strncat(subpath, "/",
-				PATH_MAX - strlen(subpath) - 1);
-			strncat(subpath, entry->d_name,
-				PATH_MAX - strlen(subpath) - 1);
-			if (utils_recursive_rmdir(subpath)) {
-				is_empty = 0;
-			}
-		} else if (S_ISREG(st.st_mode)) {
-			is_empty = 0;
-		} else {
-			ret = -EINVAL;
-			goto end;
-		}
-	}
+	ret = lttng_directory_handle_remove_subdirectory(&handle, path);
+	lttng_directory_handle_fini(&handle);
 end:
-	closeret = closedir(dir);
-	if (closeret) {
-		PERROR("closedir");
-	}
-	if (is_empty) {
-		DBG3("Attempting rmdir %s", path);
-		ret = rmdir(path);
-	}
 	return ret;
 }
 
@@ -1496,37 +1428,76 @@ end:
 	return ret;
 }
 
-LTTNG_HIDDEN
-int timespec_to_ms(struct timespec ts, unsigned long *ms)
+static
+int read_proc_meminfo_field(const char *field, size_t *value)
 {
-	unsigned long res, remain_ms;
+	int ret;
+	FILE *proc_meminfo;
+	char name[PROC_MEMINFO_FIELD_MAX_NAME_LEN] = {};
 
-	if (ts.tv_sec > ULONG_MAX / MSEC_PER_SEC) {
-		errno = EOVERFLOW;
-		return -1;	/* multiplication overflow */
+	proc_meminfo = fopen(PROC_MEMINFO_PATH, "r");
+	if (!proc_meminfo) {
+		PERROR("Failed to fopen() " PROC_MEMINFO_PATH);
+		ret = -1;
+		goto fopen_error;
+	 }
+
+	/*
+	 * Read the contents of /proc/meminfo line by line to find the right
+	 * field.
+	 */
+	while (!feof(proc_meminfo)) {
+		unsigned long value_kb;
+
+		ret = fscanf(proc_meminfo,
+				"%" MAX_NAME_LEN_SCANF_IS_A_BROKEN_API "s %lu kB\n",
+				name, &value_kb);
+		if (ret == EOF) {
+			/*
+			 * fscanf() returning EOF can indicate EOF or an error.
+			 */
+			if (ferror(proc_meminfo)) {
+				PERROR("Failed to parse " PROC_MEMINFO_PATH);
+			}
+			break;
+		}
+
+		if (ret == 2 && strcmp(name, field) == 0) {
+			/*
+			 * This number is displayed in kilo-bytes. Return the
+			 * number of bytes.
+			 */
+			*value = ((size_t) value_kb) * 1024;
+			ret = 0;
+			goto found;
+		}
 	}
-	res = ts.tv_sec * MSEC_PER_SEC;
-	remain_ms = ULONG_MAX - res;
-	if (ts.tv_nsec / NSEC_PER_MSEC > remain_ms) {
-		errno = EOVERFLOW;
-		return -1;	/* addition overflow */
-	}
-	res += ts.tv_nsec / NSEC_PER_MSEC;
-	*ms = res;
-	return 0;
+	/* Reached the end of the file without finding the right field. */
+	ret = -1;
+
+found:
+	fclose(proc_meminfo);
+fopen_error:
+	return ret;
 }
 
+/*
+ * Returns an estimate of the number of bytes of memory available based on the
+ * the information in `/proc/meminfo`. The number returned by this function is
+ * a best guess.
+ */
 LTTNG_HIDDEN
-struct timespec timespec_abs_diff(struct timespec t1, struct timespec t2)
+int utils_get_memory_available(size_t *value)
 {
-	uint64_t ts1 = (uint64_t) t1.tv_sec * (uint64_t) NSEC_PER_SEC +
-			(uint64_t) t1.tv_nsec;
-	uint64_t ts2 = (uint64_t) t2.tv_sec * (uint64_t) NSEC_PER_SEC +
-			(uint64_t) t2.tv_nsec;
-	uint64_t diff = max(ts1, ts2) - min(ts1, ts2);
-	struct timespec res;
+	return read_proc_meminfo_field(PROC_MEMINFO_MEMAVAILABLE_LINE, value);
+}
 
-	res.tv_sec = diff / (uint64_t) NSEC_PER_SEC;
-	res.tv_nsec = diff % (uint64_t) NSEC_PER_SEC;
-	return res;
+/*
+ * Returns the total size of the memory on the system in bytes based on the
+ * the information in `/proc/meminfo`.
+ */
+LTTNG_HIDDEN
+int utils_get_memory_total(size_t *value)
+{
+	return read_proc_meminfo_field(PROC_MEMINFO_MEMTOTAL_LINE, value);
 }

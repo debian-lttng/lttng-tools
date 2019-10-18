@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: lttng-stop
-.\"    Author: [see the "AUTHORS" section]
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 10/01/2019
+.\"      Date: 10/17/2019
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.10.8
+.\"    Source: LTTng 2.11.0
 .\"  Language: English
 .\"
-.TH "LTTNG\-STOP" "1" "10/01/2019" "LTTng 2\&.10\&.8" "LTTng Manual"
+.TH "LTTNG\-STOP" "1" "10/17/2019" "LTTng 2\&.11\&.0" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -45,6 +45,8 @@ A tracing session with no running tracers is said to be \fIinactive\fR\&. Inacti
 If \fISESSION\fR is omitted, the LTTng tracers are stopped for the current tracing session (see \fBlttng-create\fR(1) for more information about the current tracing session)\&. Otherwise, they are stopped for the existing tracing session named \fISESSION\fR\&. \fBlttng list\fR outputs all the existing tracing sessions (see \fBlttng-list\fR(1))\&.
 .sp
 By default, the \fBlttng stop\fR command ensures that the tracing session\(cqs trace data is valid before returning to the prompt\&. With the \fB--no-wait\fR option, the command finishes immediately, hence a local trace might not be valid when the command is done\&. In this case, there is no way to know when the trace becomes valid\&.
+.sp
+If at least one rotation occurred during the chosen tracing session\(cqs lifetime (see \fBlttng-rotate\fR(1) and \fBlttng-enable-rotation\fR(1)), the \fBlttng stop\fR command renames the current trace chunk subdirectory and prints the renamed path\&. Although it is safe to read the content of this renamed subdirectory while the tracing session remains inactive (until the next \fBlttng-start\fR(1)), it is NOT a trace chunk archive: you need to destroy the tracing session with \fBlttng-destroy\fR(1) or make a rotation with \fBlttng-rotate\fR(1) to archive it\&.
 .SH "OPTIONS"
 .sp
 General options are described in \fBlttng\fR(1)\&.
@@ -207,7 +209,7 @@ If you encounter any issue or usability problem, please report it on the LTTng b
 .sp -1
 .IP \(bu 2.3
 .\}
-LTTng project website <http://lttng.org>
+LTTng project website <https://lttng.org>
 .RE
 .sp
 .RS 4
@@ -218,7 +220,7 @@ LTTng project website <http://lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-LTTng documentation <http://lttng.org/docs>
+LTTng documentation <https://lttng.org/docs>
 .RE
 .sp
 .RS 4
@@ -290,11 +292,6 @@ LTTng\-tools is distributed under the GNU General Public License version 2 <http
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
 .sp
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
-.SH "AUTHORS"
-.sp
-LTTng\-tools was originally written by Mathieu Desnoyers, Julien Desfossez, and David Goulet\&. More people have since contributed to it\&.
-.sp
-LTTng\-tools is currently maintained by J\('er\('emie Galarneau <mailto:jeremie.galarneau@efficios.com>\&.
 .SH "SEE ALSO"
 .sp
 \fBlttng-start\fR(1), \fBlttng\fR(1)

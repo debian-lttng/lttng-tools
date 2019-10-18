@@ -23,6 +23,7 @@
 #include <inttypes.h>
 #include <urcu/ref.h>
 
+#include <common/trace-chunk.h>
 #include "ctf-index.h"
 
 struct lttng_index_file {
@@ -30,6 +31,7 @@ struct lttng_index_file {
 	uint32_t major;
 	uint32_t minor;
 	uint32_t element_len;
+	struct lttng_trace_chunk *trace_chunk;
 	struct urcu_ref ref;
 };
 
@@ -37,12 +39,17 @@ struct lttng_index_file {
  * create and open have refcount of 1. Use put to decrement the
  * refcount. Destroys when reaching 0. Use "get" to increment refcount.
  */
-struct lttng_index_file *lttng_index_file_create(char *path_name,
-		char *stream_name, int uid, int gid, uint64_t size,
-		uint64_t count, uint32_t major, uint32_t minor);
-struct lttng_index_file *lttng_index_file_open(const char *path_name,
-		const char *channel_name, uint64_t tracefile_count,
-		uint64_t tracefile_count_current);
+struct lttng_index_file *lttng_index_file_create_from_trace_chunk(
+		struct lttng_trace_chunk *chunk,
+		const char *channel_path, const char *stream_name,
+		uint64_t stream_file_size, uint64_t stream_count,
+		uint32_t index_major, uint32_t index_minor,
+		bool unlink_existing_file);
+struct lttng_index_file *lttng_index_file_create_from_trace_chunk_read_only(
+		struct lttng_trace_chunk *chunk,
+		const char *channel_path, const char *stream_name,
+		uint64_t stream_file_size, uint64_t stream_file_index,
+		uint32_t index_major, uint32_t index_minor);
 int lttng_index_file_write(const struct lttng_index_file *index_file,
 		const struct ctf_packet_index *element);
 int lttng_index_file_read(const struct lttng_index_file *index_file,

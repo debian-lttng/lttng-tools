@@ -17,6 +17,8 @@
 
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
+#include <lttng/condition/session-consumed-size-internal.h>
+#include <lttng/condition/session-rotation-internal.h>
 #include <common/macros.h>
 #include <common/error.h>
 #include <common/dynamic-buffer.h>
@@ -62,32 +64,29 @@ end:
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_serialize(const struct lttng_condition *condition,
-		char *buf)
+int lttng_condition_serialize(const struct lttng_condition *condition,
+		struct lttng_dynamic_buffer *buf)
 {
-	ssize_t ret, condition_size;
-	struct lttng_condition_comm condition_comm = {
-		.condition_type = (int8_t) (condition ?
-				condition->type : LTTNG_CONDITION_TYPE_UNKNOWN)
-	};
+	int ret;
+	struct lttng_condition_comm condition_comm = { 0 };
 
 	if (!condition) {
 		ret = -1;
 		goto end;
 	}
 
-	ret = sizeof(struct lttng_condition_comm);
-	if (buf) {
-		memcpy(buf, &condition_comm, ret);
-		buf += ret;
-	}
+	condition_comm.condition_type = (int8_t) condition->type;
 
-	condition_size = condition->serialize(condition, buf);
-	if (condition_size < 0) {
-		ret = condition_size;
+	ret = lttng_dynamic_buffer_append(buf, &condition_comm,
+			sizeof(condition_comm));
+	if (ret) {
 		goto end;
 	}
-	ret += condition_size;
+
+	ret = condition->serialize(condition, buf);
+	if (ret) {
+		goto end;
+	}
 end:
 	return ret;
 }
@@ -103,6 +102,11 @@ bool lttng_condition_is_equal(const struct lttng_condition *a,
 	}
 
 	if (a->type != b->type) {
+		goto end;
+	}
+
+	if (a == b) {
+		is_equal = true;
 		goto end;
 	}
 
@@ -135,6 +139,15 @@ ssize_t lttng_condition_create_from_buffer(
 		break;
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
 		create_from_buffer = lttng_condition_buffer_usage_high_create_from_buffer;
+		break;
+	case LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE:
+		create_from_buffer = lttng_condition_session_consumed_size_create_from_buffer;
+		break;
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING:
+		create_from_buffer = lttng_condition_session_rotation_ongoing_create_from_buffer;
+		break;
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED:
+		create_from_buffer = lttng_condition_session_rotation_completed_create_from_buffer;
 		break;
 	default:
 		ERR("Attempted to create condition of unknown type (%i)",

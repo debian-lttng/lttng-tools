@@ -21,6 +21,8 @@
 #include <inttypes.h>
 #include <urcu/list.h>
 #include <urcu/uatomic.h>
+#include <sys/stat.h>
+#include <stdio.h>
 
 #include <common/defaults.h>
 #include <common/common.h>
@@ -31,11 +33,18 @@
 #include <common/kernel-ctl/kernel-ctl.h>
 #include <common/dynamic-buffer.h>
 #include <common/buffer-view.h>
+#include <common/trace-chunk.h>
+#include <lttng/location-internal.h>
 #include <lttng/trigger/trigger-internal.h>
 #include <lttng/condition/condition.h>
 #include <lttng/action/action.h>
 #include <lttng/channel.h>
 #include <lttng/channel-internal.h>
+#include <lttng/rotate-internal.h>
+#include <lttng/location-internal.h>
+#include <lttng/session-internal.h>
+#include <lttng/userspace-probe-internal.h>
+#include <lttng/session-descriptor-internal.h>
 #include <common/string-utils/string-utils.h>
 
 #include "channel.h"
@@ -46,14 +55,51 @@
 #include "kernel-consumer.h"
 #include "lttng-sessiond.h"
 #include "utils.h"
-#include "syscall.h"
+#include "lttng-syscall.h"
 #include "agent.h"
 #include "buffer-registry.h"
 #include "notification-thread.h"
 #include "notification-thread-commands.h"
+#include "rotate.h"
+#include "rotation-thread.h"
+#include "timer.h"
 #include "agent-thread.h"
 
 #include "cmd.h"
+
+/* Sleep for 100ms between each check for the shm path's deletion. */
+#define SESSION_DESTROY_SHM_PATH_CHECK_DELAY_US 100000
+
+struct cmd_destroy_session_reply_context {
+	int reply_sock_fd;
+	bool implicit_rotation_on_destroy;
+	/*
+	 * Indicates whether or not an error occurred while launching the
+	 * destruction of a session.
+	 */
+	enum lttng_error_code destruction_status;
+};
+
+static enum lttng_error_code wait_on_path(void *path);
+
+/*
+ * Command completion handler that is used by the destroy command
+ * when a session that has a non-default shm_path is being destroyed.
+ *
+ * See comment in cmd_destroy_session() for the rationale.
+ */
+static struct destroy_completion_handler {
+	struct cmd_completion_handler handler;
+	char shm_path[member_sizeof(struct ltt_session, shm_path)];
+} destroy_completion_handler = {
+	.handler = {
+		.run = wait_on_path,
+		.data = destroy_completion_handler.shm_path
+	},
+	.shm_path = { 0 },
+};
+
+static struct cmd_completion_handler *current_completion_handler;
 
 /*
  * Used to keep a unique index for each relayd socket created where this value
@@ -66,7 +112,7 @@ static uint64_t relayd_net_seq_idx;
 
 static int validate_ust_event_name(const char *);
 static int cmd_enable_event_internal(struct ltt_session *session,
-		struct lttng_domain *domain,
+		const struct lttng_domain *domain,
 		char *channel_name, struct lttng_event *event,
 		char *filter_expression,
 		struct lttng_filter_bytecode *filter,
@@ -168,14 +214,14 @@ static int get_kernel_runtime_stats(struct ltt_session *session,
 		goto end;
 	}
 
-	ret = consumer_get_discarded_events(session->id, kchan->fd,
+	ret = consumer_get_discarded_events(session->id, kchan->key,
 			session->kernel_session->consumer,
 			discarded_events);
 	if (ret < 0) {
 		goto end;
 	}
 
-	ret = consumer_get_lost_packets(session->id, kchan->fd,
+	ret = consumer_get_lost_packets(session->id, kchan->key,
 			session->kernel_session->consumer,
 			lost_packets);
 	if (ret < 0) {
@@ -354,9 +400,13 @@ end:
 	}
 }
 
-static void increment_extended_len(const char *filter_expression,
-		struct lttng_event_exclusion *exclusion, size_t *extended_len)
+static int increment_extended_len(const char *filter_expression,
+		struct lttng_event_exclusion *exclusion,
+		const struct lttng_userspace_probe_location *probe_location,
+		size_t *extended_len)
 {
+	int ret = 0;
+
 	*extended_len += sizeof(struct lttcomm_event_extended_header);
 
 	if (filter_expression) {
@@ -366,14 +416,31 @@ static void increment_extended_len(const char *filter_expression,
 	if (exclusion) {
 		*extended_len += exclusion->count * LTTNG_SYMBOL_NAME_LEN;
 	}
+
+	if (probe_location) {
+		ret = lttng_userspace_probe_location_serialize(probe_location,
+				NULL, NULL);
+		if (ret < 0) {
+			goto end;
+		}
+		*extended_len += ret;
+	}
+	ret = 0;
+end:
+	return ret;
 }
 
-static void append_extended_info(const char *filter_expression,
-		struct lttng_event_exclusion *exclusion, void **extended_at)
+static int append_extended_info(const char *filter_expression,
+		struct lttng_event_exclusion *exclusion,
+		struct lttng_userspace_probe_location *probe_location,
+		void **extended_at)
 {
-	struct lttcomm_event_extended_header extended_header;
+	int ret = 0;
 	size_t filter_len = 0;
 	size_t nb_exclusions = 0;
+	size_t userspace_probe_location_len = 0;
+	struct lttng_dynamic_buffer location_buffer;
+	struct lttcomm_event_extended_header extended_header;
 
 	if (filter_expression) {
 		filter_len = strlen(filter_expression) + 1;
@@ -383,9 +450,21 @@ static void append_extended_info(const char *filter_expression,
 		nb_exclusions = exclusion->count;
 	}
 
+	if (probe_location) {
+		lttng_dynamic_buffer_init(&location_buffer);
+		ret = lttng_userspace_probe_location_serialize(probe_location,
+				&location_buffer, NULL);
+		if (ret < 0) {
+			ret = -1;
+			goto end;
+		}
+		userspace_probe_location_len = location_buffer.size;
+	}
+
 	/* Set header fields */
 	extended_header.filter_len = filter_len;
 	extended_header.nb_exclusions = nb_exclusions;
+	extended_header.userspace_probe_location_len = userspace_probe_location_len;
 
 	/* Copy header */
 	memcpy(*extended_at, &extended_header, sizeof(extended_header));
@@ -404,6 +483,15 @@ static void append_extended_info(const char *filter_expression,
 		memcpy(*extended_at, &exclusion->names, len);
 		*extended_at += len;
 	}
+
+	if (probe_location) {
+		memcpy(*extended_at, location_buffer.data, location_buffer.size);
+		*extended_at += location_buffer.size;
+		lttng_dynamic_buffer_reset(&location_buffer);
+	}
+	ret = 0;
+end:
+	return ret;
 }
 
 /*
@@ -417,7 +505,7 @@ static int list_lttng_agent_events(struct agent *agt,
 	int i = 0, ret = 0;
 	unsigned int nb_event = 0;
 	struct agent_event *event;
-	struct lttng_event *tmp_events;
+	struct lttng_event *tmp_events = NULL;
 	struct lttng_ht_iter iter;
 	size_t extended_len = 0;
 	void *extended_at;
@@ -445,8 +533,13 @@ static int list_lttng_agent_events(struct agent *agt,
 	 */
 	rcu_read_lock();
 	cds_lfht_for_each_entry(agt->events->ht, &iter.iter, event, node.node) {
-		increment_extended_len(event->filter_expression, NULL,
+		ret = increment_extended_len(event->filter_expression, NULL, NULL,
 				&extended_len);
+		if (ret) {
+			DBG("Error computing the length of extended info message");
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
 	}
 	rcu_read_unlock();
 
@@ -471,17 +564,25 @@ static int list_lttng_agent_events(struct agent *agt,
 		i++;
 
 		/* Append extended info */
-		append_extended_info(event->filter_expression, NULL,
+		ret = append_extended_info(event->filter_expression, NULL, NULL,
 				&extended_at);
+		if (ret) {
+			DBG("Error appending extended info message");
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
 	}
-	rcu_read_unlock();
 
 	*events = tmp_events;
 	ret = nb_event;
-
-error:
 	assert(nb_event == i);
+
+end:
+	rcu_read_unlock();
 	return ret;
+error:
+	free(tmp_events);
+	goto end;
 }
 
 /*
@@ -530,8 +631,13 @@ static int list_lttng_ust_global_events(char *channel_name,
 			continue;
 		}
 
-		increment_extended_len(uevent->filter_expression,
-			uevent->exclusion, &extended_len);
+		ret = increment_extended_len(uevent->filter_expression,
+			uevent->exclusion, NULL, &extended_len);
+		if (ret) {
+			DBG("Error computing the length of extended info message");
+			ret = -LTTNG_ERR_FATAL;
+			goto end;
+		}
 	}
 	if (nb_event == 0) {
 		/* All events are internal, skip. */
@@ -591,8 +697,13 @@ static int list_lttng_ust_global_events(char *channel_name,
 		i++;
 
 		/* Append extended info */
-		append_extended_info(uevent->filter_expression,
-			uevent->exclusion, &extended_at);
+		ret = append_extended_info(uevent->filter_expression,
+			uevent->exclusion, NULL, &extended_at);
+		if (ret) {
+			DBG("Error appending extended info message");
+			ret = -LTTNG_ERR_FATAL;
+			goto end;
+		}
 	}
 
 	ret = nb_event;
@@ -634,14 +745,20 @@ static int list_lttng_kernel_events(char *channel_name,
 
 	/* Compute required extended infos size */
 	cds_list_for_each_entry(event, &kchan->events_list.head, list) {
-		increment_extended_len(event->filter_expression, NULL,
+		ret = increment_extended_len(event->filter_expression, NULL,
+			event->userspace_probe_location,
 			&extended_len);
+		if (ret) {
+			DBG("Error computing the length of extended info message");
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
 	}
 
 	*total_size = nb_event * sizeof(struct lttng_event) + extended_len;
 	*events = zmalloc(*total_size);
 	if (*events == NULL) {
-		ret = LTTNG_ERR_FATAL;
+		ret = -LTTNG_ERR_FATAL;
 		goto error;
 	}
 
@@ -670,6 +787,9 @@ static int list_lttng_kernel_events(char *channel_name,
 			memcpy(&(*events)[i].attr.probe, &event->event->u.kprobe,
 					sizeof(struct lttng_kernel_kprobe));
 			break;
+		case LTTNG_KERNEL_UPROBE:
+			(*events)[i].type = LTTNG_EVENT_USERSPACE_PROBE;
+			break;
 		case LTTNG_KERNEL_FUNCTION:
 			(*events)[i].type = LTTNG_EVENT_FUNCTION;
 			memcpy(&((*events)[i].attr.ftrace), &event->event->u.ftrace,
@@ -682,14 +802,21 @@ static int list_lttng_kernel_events(char *channel_name,
 			(*events)[i].type = LTTNG_EVENT_SYSCALL;
 			break;
 		case LTTNG_KERNEL_ALL:
+			/* fall-through. */
+		default:
 			assert(0);
 			break;
 		}
 		i++;
 
 		/* Append extended info */
-		append_extended_info(event->filter_expression, NULL,
-			&extended_at);
+		ret = append_extended_info(event->filter_expression, NULL,
+			event->userspace_probe_location, &extended_at);
+		if (ret) {
+			DBG("Error appending extended info message");
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
 	}
 
 end:
@@ -704,34 +831,47 @@ error:
  * Add URI so the consumer output object. Set the correct path depending on the
  * domain adding the default trace directory.
  */
-static int add_uri_to_consumer(struct consumer_output *consumer,
-		struct lttng_uri *uri, enum lttng_domain_type domain,
-		const char *session_name)
+static enum lttng_error_code add_uri_to_consumer(
+		const struct ltt_session *session,
+		struct consumer_output *consumer,
+		struct lttng_uri *uri, enum lttng_domain_type domain)
 {
-	int ret = LTTNG_OK;
-	const char *default_trace_dir;
+	int ret;
+	enum lttng_error_code ret_code = LTTNG_OK;
 
 	assert(uri);
 
 	if (consumer == NULL) {
 		DBG("No consumer detected. Don't add URI. Stopping.");
-		ret = LTTNG_ERR_NO_CONSUMER;
+		ret_code = LTTNG_ERR_NO_CONSUMER;
 		goto error;
 	}
 
 	switch (domain) {
 	case LTTNG_DOMAIN_KERNEL:
-		default_trace_dir = DEFAULT_KERNEL_TRACE_DIR;
+		ret = lttng_strncpy(consumer->domain_subdir,
+				DEFAULT_KERNEL_TRACE_DIR,
+				sizeof(consumer->domain_subdir));
 		break;
 	case LTTNG_DOMAIN_UST:
-		default_trace_dir = DEFAULT_UST_TRACE_DIR;
+		ret = lttng_strncpy(consumer->domain_subdir,
+				DEFAULT_UST_TRACE_DIR,
+				sizeof(consumer->domain_subdir));
 		break;
 	default:
 		/*
-		 * This case is possible is we try to add the URI to the global tracing
-		 * session consumer object which in this case there is no subdir.
+		 * This case is possible is we try to add the URI to the global
+		 * tracing session consumer object which in this case there is
+		 * no subdir.
 		 */
-		default_trace_dir = "";
+		memset(consumer->domain_subdir, 0,
+				sizeof(consumer->domain_subdir));
+		ret = 0;
+	}
+	if (ret) {
+		ERR("Failed to initialize consumer output domain subdirectory");
+		ret_code = LTTNG_ERR_FATAL;
+		goto error;
 	}
 
 	switch (uri->dtype) {
@@ -744,67 +884,50 @@ static int add_uri_to_consumer(struct consumer_output *consumer,
 				consumer->dst.net.control_isset) ||
 				(uri->stype == LTTNG_STREAM_DATA &&
 				consumer->dst.net.data_isset)) {
-				ret = LTTNG_ERR_URL_EXIST;
+				ret_code = LTTNG_ERR_URL_EXIST;
 				goto error;
 			}
 		} else {
-			memset(&consumer->dst.net, 0, sizeof(consumer->dst.net));
+			memset(&consumer->dst, 0, sizeof(consumer->dst));
 		}
 
-		consumer->type = CONSUMER_DST_NET;
-
 		/* Set URI into consumer output object */
-		ret = consumer_set_network_uri(consumer, uri);
+		ret = consumer_set_network_uri(session, consumer, uri);
 		if (ret < 0) {
-			ret = -ret;
+			ret_code = -ret;
 			goto error;
 		} else if (ret == 1) {
 			/*
 			 * URI was the same in the consumer so we do not append the subdir
 			 * again so to not duplicate output dir.
 			 */
-			ret = LTTNG_OK;
+			ret_code = LTTNG_OK;
 			goto error;
 		}
-
-		if (uri->stype == LTTNG_STREAM_CONTROL && strlen(uri->subdir) == 0) {
-			ret = consumer_set_subdir(consumer, session_name);
-			if (ret < 0) {
-				ret = LTTNG_ERR_FATAL;
-				goto error;
-			}
-		}
-
-		if (uri->stype == LTTNG_STREAM_CONTROL) {
-			/* On a new subdir, reappend the default trace dir. */
-			strncat(consumer->subdir, default_trace_dir,
-					sizeof(consumer->subdir) - strlen(consumer->subdir) - 1);
-			DBG3("Append domain trace name to subdir %s", consumer->subdir);
-		}
-
 		break;
 	case LTTNG_DST_PATH:
-		DBG2("Setting trace directory path from URI to %s", uri->dst.path);
-		memset(consumer->dst.trace_path, 0,
-				sizeof(consumer->dst.trace_path));
-		/* Explicit length checks for strcpy and strcat. */
-		if (strlen(uri->dst.path) + strlen(default_trace_dir)
-				>= sizeof(consumer->dst.trace_path)) {
-			ret = LTTNG_ERR_FATAL;
+		if (*uri->dst.path != '/' || strstr(uri->dst.path, "../")) {
+			ret_code = LTTNG_ERR_INVALID;
 			goto error;
 		}
-		strcpy(consumer->dst.trace_path, uri->dst.path);
-		/* Append default trace dir */
-		strcat(consumer->dst.trace_path, default_trace_dir);
-		/* Flag consumer as local. */
+		DBG2("Setting trace directory path from URI to %s",
+				uri->dst.path);
+		memset(&consumer->dst, 0, sizeof(consumer->dst));
+
+		ret = lttng_strncpy(consumer->dst.session_root_path,
+				uri->dst.path,
+				sizeof(consumer->dst.session_root_path));
+		if (ret) {
+			ret_code = LTTNG_ERR_FATAL;
+			goto error;
+		}
 		consumer->type = CONSUMER_DST_LOCAL;
 		break;
 	}
 
-	ret = LTTNG_OK;
-
+	ret_code = LTTNG_OK;
 error:
-	return ret;
+	return ret_code;
 }
 
 /*
@@ -842,19 +965,20 @@ error:
  * Create a socket to the relayd using the URI.
  *
  * On success, the relayd_sock pointer is set to the created socket.
- * Else, it's stays untouched and a lttcomm error code is returned.
+ * Else, it remains untouched and an LTTng error code is returned.
  */
-static int create_connect_relayd(struct lttng_uri *uri,
+static enum lttng_error_code create_connect_relayd(struct lttng_uri *uri,
 		struct lttcomm_relayd_sock **relayd_sock,
 		struct consumer_output *consumer)
 {
 	int ret;
+	enum lttng_error_code status = LTTNG_OK;
 	struct lttcomm_relayd_sock *rsock;
 
 	rsock = lttcomm_alloc_relayd_sock(uri, RELAYD_VERSION_COMM_MAJOR,
 			RELAYD_VERSION_COMM_MINOR);
 	if (!rsock) {
-		ret = LTTNG_ERR_FATAL;
+		status = LTTNG_ERR_FATAL;
 		goto error;
 	}
 
@@ -868,7 +992,7 @@ static int create_connect_relayd(struct lttng_uri *uri,
 	health_poll_exit();
 	if (ret < 0) {
 		ERR("Unable to reach lttng-relayd");
-		ret = LTTNG_ERR_RELAYD_CONNECT_FAIL;
+		status = LTTNG_ERR_RELAYD_CONNECT_FAIL;
 		goto free_sock;
 	}
 
@@ -879,10 +1003,11 @@ static int create_connect_relayd(struct lttng_uri *uri,
 		/* Check relayd version */
 		ret = relayd_version_check(rsock);
 		if (ret == LTTNG_ERR_RELAYD_VERSION_FAIL) {
+			status = LTTNG_ERR_RELAYD_VERSION_FAIL;
 			goto close_sock;
 		} else if (ret < 0) {
 			ERR("Unable to reach lttng-relayd");
-			ret = LTTNG_ERR_RELAYD_CONNECT_FAIL;
+			status = LTTNG_ERR_RELAYD_CONNECT_FAIL;
 			goto close_sock;
 		}
 		consumer->relay_major_version = rsock->major;
@@ -892,13 +1017,13 @@ static int create_connect_relayd(struct lttng_uri *uri,
 	} else {
 		/* Command is not valid */
 		ERR("Relayd invalid stream type: %d", uri->stype);
-		ret = LTTNG_ERR_INVALID;
+		status = LTTNG_ERR_INVALID;
 		goto close_sock;
 	}
 
 	*relayd_sock = rsock;
 
-	return LTTNG_OK;
+	return status;
 
 close_sock:
 	/* The returned value is not useful since we are on an error path. */
@@ -906,26 +1031,34 @@ close_sock:
 free_sock:
 	free(rsock);
 error:
-	return ret;
+	return status;
 }
 
 /*
  * Connect to the relayd using URI and send the socket to the right consumer.
  *
  * The consumer socket lock must be held by the caller.
+ *
+ * Returns LTTNG_OK on success or an LTTng error code on failure.
  */
-static int send_consumer_relayd_socket(enum lttng_domain_type domain,
-		unsigned int session_id, struct lttng_uri *relayd_uri,
+static enum lttng_error_code send_consumer_relayd_socket(
+		unsigned int session_id,
+		struct lttng_uri *relayd_uri,
 		struct consumer_output *consumer,
 		struct consumer_socket *consumer_sock,
-		char *session_name, char *hostname, int session_live_timer)
+		const char *session_name, const char *hostname,
+		const char *base_path, int session_live_timer,
+	        const uint64_t *current_chunk_id,
+		time_t session_creation_time,
+		bool session_name_contains_creation_time)
 {
 	int ret;
 	struct lttcomm_relayd_sock *rsock = NULL;
+	enum lttng_error_code status;
 
 	/* Connect to relayd and make version check if uri is the control. */
-	ret = create_connect_relayd(relayd_uri, &rsock, consumer);
-	if (ret != LTTNG_OK) {
+	status = create_connect_relayd(relayd_uri, &rsock, consumer);
+	if (status != LTTNG_OK) {
 		goto relayd_comm_error;
 	}
 	assert(rsock);
@@ -945,9 +1078,11 @@ static int send_consumer_relayd_socket(enum lttng_domain_type domain,
 	/* Send relayd socket to consumer. */
 	ret = consumer_send_relayd_socket(consumer_sock, rsock, consumer,
 			relayd_uri->stype, session_id,
-			session_name, hostname, session_live_timer);
+			session_name, hostname, base_path,
+			session_live_timer, current_chunk_id,
+			session_creation_time, session_name_contains_creation_time);
 	if (ret < 0) {
-		ret = LTTNG_ERR_ENABLE_CONSUMER_FAIL;
+		status = LTTNG_ERR_ENABLE_CONSUMER_FAIL;
 		goto close_sock;
 	}
 
@@ -958,15 +1093,13 @@ static int send_consumer_relayd_socket(enum lttng_domain_type domain,
 		consumer_sock->data_sock_sent = 1;
 	}
 
-	ret = LTTNG_OK;
-
 	/*
 	 * Close socket which was dup on the consumer side. The session daemon does
 	 * NOT keep track of the relayd socket(s) once transfer to the consumer.
 	 */
 
 close_sock:
-	if (ret != LTTNG_OK) {
+	if (status != LTTNG_OK) {
 		/*
 		 * The consumer output for this session should not be used anymore
 		 * since the relayd connection failed thus making any tracing or/and
@@ -978,7 +1111,7 @@ close_sock:
 	free(rsock);
 
 relayd_comm_error:
-	return ret;
+	return status;
 }
 
 /*
@@ -987,39 +1120,48 @@ relayd_comm_error:
  * session.
  *
  * The consumer socket lock must be held by the caller.
+ *
+ * Returns LTTNG_OK, or an LTTng error code on failure.
  */
-static int send_consumer_relayd_sockets(enum lttng_domain_type domain,
+static enum lttng_error_code send_consumer_relayd_sockets(
+		enum lttng_domain_type domain,
 		unsigned int session_id, struct consumer_output *consumer,
-		struct consumer_socket *sock, char *session_name,
-		char *hostname, int session_live_timer)
+		struct consumer_socket *sock, const char *session_name,
+		const char *hostname, const char *base_path, int session_live_timer,
+		const uint64_t *current_chunk_id, time_t session_creation_time,
+		bool session_name_contains_creation_time)
 {
-	int ret = LTTNG_OK;
+	enum lttng_error_code status = LTTNG_OK;
 
 	assert(consumer);
 	assert(sock);
 
 	/* Sending control relayd socket. */
 	if (!sock->control_sock_sent) {
-		ret = send_consumer_relayd_socket(domain, session_id,
+		status = send_consumer_relayd_socket(session_id,
 				&consumer->dst.net.control, consumer, sock,
-				session_name, hostname, session_live_timer);
-		if (ret != LTTNG_OK) {
+				session_name, hostname, base_path, session_live_timer,
+				current_chunk_id, session_creation_time,
+				session_name_contains_creation_time);
+		if (status != LTTNG_OK) {
 			goto error;
 		}
 	}
 
 	/* Sending data relayd socket. */
 	if (!sock->data_sock_sent) {
-		ret = send_consumer_relayd_socket(domain, session_id,
+		status = send_consumer_relayd_socket(session_id,
 				&consumer->dst.net.data, consumer, sock,
-				session_name, hostname, session_live_timer);
-		if (ret != LTTNG_OK) {
+				session_name, hostname, base_path, session_live_timer,
+				current_chunk_id, session_creation_time,
+				session_name_contains_creation_time);
+		if (status != LTTNG_OK) {
 			goto error;
 		}
 	}
 
 error:
-	return ret;
+	return status;
 }
 
 /*
@@ -1034,13 +1176,27 @@ int cmd_setup_relayd(struct ltt_session *session)
 	struct ltt_kernel_session *ksess;
 	struct consumer_socket *socket;
 	struct lttng_ht_iter iter;
+        LTTNG_OPTIONAL(uint64_t) current_chunk_id = {};
 
-	assert(session);
+        assert(session);
 
 	usess = session->ust_session;
 	ksess = session->kernel_session;
 
 	DBG("Setting relayd for session %s", session->name);
+
+	if (session->current_trace_chunk) {
+		enum lttng_trace_chunk_status status = lttng_trace_chunk_get_id(
+				session->current_trace_chunk, &current_chunk_id.value);
+
+		if (status == LTTNG_TRACE_CHUNK_STATUS_OK) {
+			current_chunk_id.is_set = true;
+		} else {
+			ERR("Failed to get current trace chunk id");
+			ret = LTTNG_ERR_UNK;
+			goto error;
+		}
+	}
 
 	rcu_read_lock();
 
@@ -1053,7 +1209,11 @@ int cmd_setup_relayd(struct ltt_session *session)
 			ret = send_consumer_relayd_sockets(LTTNG_DOMAIN_UST, session->id,
 					usess->consumer, socket,
 					session->name, session->hostname,
-					session->live_timer);
+					session->base_path,
+					session->live_timer,
+					current_chunk_id.is_set ? &current_chunk_id.value : NULL,
+					session->creation_time,
+					session->name_contains_creation_time);
 			pthread_mutex_unlock(socket->lock);
 			if (ret != LTTNG_OK) {
 				goto error;
@@ -1075,7 +1235,11 @@ int cmd_setup_relayd(struct ltt_session *session)
 			ret = send_consumer_relayd_sockets(LTTNG_DOMAIN_KERNEL, session->id,
 					ksess->consumer, socket,
 					session->name, session->hostname,
-					session->live_timer);
+					session->base_path,
+					session->live_timer,
+					current_chunk_id.is_set ? &current_chunk_id.value : NULL,
+					session->creation_time,
+					session->name_contains_creation_time);
 			pthread_mutex_unlock(socket->lock);
 			if (ret != LTTNG_OK) {
 				goto error;
@@ -1097,7 +1261,7 @@ error:
 /*
  * Start a kernel session by opening all necessary streams.
  */
-static int start_kernel_session(struct ltt_kernel_session *ksess, int wpipe)
+static int start_kernel_session(struct ltt_kernel_session *ksess)
 {
 	int ret;
 	struct ltt_kernel_channel *kchan;
@@ -1149,7 +1313,7 @@ static int start_kernel_session(struct ltt_kernel_session *ksess, int wpipe)
 	}
 
 	/* Quiescent wait after starting trace */
-	kernel_wait_quiescent(kernel_tracer_fd);
+	kernel_wait_quiescent();
 
 	ksess->active = 1;
 
@@ -1181,7 +1345,7 @@ int cmd_disable_channel(struct ltt_session *session,
 			goto error;
 		}
 
-		kernel_wait_quiescent(kernel_tracer_fd);
+		kernel_wait_quiescent();
 		break;
 	}
 	case LTTNG_DOMAIN_UST:
@@ -1239,7 +1403,7 @@ int cmd_track_pid(struct ltt_session *session, enum lttng_domain_type domain,
 			goto error;
 		}
 
-		kernel_wait_quiescent(kernel_tracer_fd);
+		kernel_wait_quiescent();
 		break;
 	}
 	case LTTNG_DOMAIN_UST:
@@ -1290,7 +1454,7 @@ int cmd_untrack_pid(struct ltt_session *session, enum lttng_domain_type domain,
 			goto error;
 		}
 
-		kernel_wait_quiescent(kernel_tracer_fd);
+		kernel_wait_quiescent();
 		break;
 	}
 	case LTTNG_DOMAIN_UST:
@@ -1323,27 +1487,29 @@ error:
  * The wpipe arguments is used as a notifier for the kernel thread.
  */
 int cmd_enable_channel(struct ltt_session *session,
-		struct lttng_domain *domain, struct lttng_channel *attr, int wpipe)
+		const struct lttng_domain *domain, const struct lttng_channel *_attr, int wpipe)
 {
 	int ret;
 	struct ltt_ust_session *usess = session->ust_session;
 	struct lttng_ht *chan_ht;
 	size_t len;
+	struct lttng_channel attr;
 
 	assert(session);
-	assert(attr);
+	assert(_attr);
 	assert(domain);
 
-	len = lttng_strnlen(attr->name, sizeof(attr->name));
+	attr = *_attr;
+	len = lttng_strnlen(attr.name, sizeof(attr.name));
 
 	/* Validate channel name */
-	if (attr->name[0] == '.' ||
-		memchr(attr->name, '/', len) != NULL) {
+	if (attr.name[0] == '.' ||
+		memchr(attr.name, '/', len) != NULL) {
 		ret = LTTNG_ERR_INVALID_CHANNEL_NAME;
 		goto end;
 	}
 
-	DBG("Enabling channel %s for session %s", attr->name, session->name);
+	DBG("Enabling channel %s for session %s", attr.name, session->name);
 
 	rcu_read_lock();
 
@@ -1362,21 +1528,21 @@ int cmd_enable_channel(struct ltt_session *session,
 	 * beacons for inactive streams.
 	 */
 	if (session->live_timer > 0) {
-		attr->attr.live_timer_interval = session->live_timer;
-		attr->attr.switch_timer_interval = 0;
+		attr.attr.live_timer_interval = session->live_timer;
+		attr.attr.switch_timer_interval = 0;
 	}
 
 	/* Check for feature support */
 	switch (domain->type) {
 	case LTTNG_DOMAIN_KERNEL:
 	{
-		if (kernel_supports_ring_buffer_snapshot_sample_positions(kernel_tracer_fd) != 1) {
+		if (kernel_supports_ring_buffer_snapshot_sample_positions() != 1) {
 			/* Sampling position of buffer is not supported */
 			WARN("Kernel tracer does not support buffer monitoring. "
 					"Setting the monitor interval timer to 0 "
 					"(disabled) for channel '%s' of session '%s'",
-					attr-> name, session->name);
-			lttng_channel_set_monitor_timer_interval(attr, 0);
+					attr.name, session->name);
+			lttng_channel_set_monitor_timer_interval(&attr, 0);
 		}
 		break;
 	}
@@ -1401,11 +1567,16 @@ int cmd_enable_channel(struct ltt_session *session,
 	{
 		struct ltt_kernel_channel *kchan;
 
-		kchan = trace_kernel_get_channel_by_name(attr->name,
+		kchan = trace_kernel_get_channel_by_name(attr.name,
 				session->kernel_session);
 		if (kchan == NULL) {
-			ret = channel_kernel_create(session->kernel_session, attr, wpipe);
-			if (attr->name[0] != '\0') {
+			if (session->snapshot.nb_output > 0 ||
+					session->snapshot_mode) {
+				/* Enforce mmap output for snapshot sessions. */
+				attr.attr.output = LTTNG_EVENT_MMAP;
+			}
+			ret = channel_kernel_create(session->kernel_session, &attr, wpipe);
+			if (attr.name[0] != '\0') {
 				session->kernel_session->has_non_default_channel = 1;
 			}
 		} else {
@@ -1416,7 +1587,7 @@ int cmd_enable_channel(struct ltt_session *session,
 			goto error;
 		}
 
-		kernel_wait_quiescent(kernel_tracer_fd);
+		kernel_wait_quiescent();
 		break;
 	}
 	case LTTNG_DOMAIN_UST:
@@ -1435,19 +1606,19 @@ int cmd_enable_channel(struct ltt_session *session,
 		 * adhered to.
 		 */
 		if (domain->type == LTTNG_DOMAIN_JUL) {
-			if (strncmp(attr->name, DEFAULT_JUL_CHANNEL_NAME,
+			if (strncmp(attr.name, DEFAULT_JUL_CHANNEL_NAME,
 					LTTNG_SYMBOL_NAME_LEN)) {
 				ret = LTTNG_ERR_INVALID_CHANNEL_NAME;
 				goto error;
 			}
 		} else if (domain->type == LTTNG_DOMAIN_LOG4J) {
-			if (strncmp(attr->name, DEFAULT_LOG4J_CHANNEL_NAME,
+			if (strncmp(attr.name, DEFAULT_LOG4J_CHANNEL_NAME,
 					LTTNG_SYMBOL_NAME_LEN)) {
 				ret = LTTNG_ERR_INVALID_CHANNEL_NAME;
 				goto error;
 			}
 		} else if (domain->type == LTTNG_DOMAIN_PYTHON) {
-			if (strncmp(attr->name, DEFAULT_PYTHON_CHANNEL_NAME,
+			if (strncmp(attr.name, DEFAULT_PYTHON_CHANNEL_NAME,
 					LTTNG_SYMBOL_NAME_LEN)) {
 				ret = LTTNG_ERR_INVALID_CHANNEL_NAME;
 				goto error;
@@ -1456,10 +1627,10 @@ int cmd_enable_channel(struct ltt_session *session,
 
 		chan_ht = usess->domain_global.channels;
 
-		uchan = trace_ust_find_channel_by_name(chan_ht, attr->name);
+		uchan = trace_ust_find_channel_by_name(chan_ht, attr.name);
 		if (uchan == NULL) {
-			ret = channel_ust_create(usess, attr, domain->buf_type);
-			if (attr->name[0] != '\0') {
+			ret = channel_ust_create(usess, &attr, domain->buf_type);
+			if (attr.name[0] != '\0') {
 				usess->has_non_default_channel = 1;
 			}
 		} else {
@@ -1472,6 +1643,9 @@ int cmd_enable_channel(struct ltt_session *session,
 		goto error;
 	}
 
+	if (ret == LTTNG_OK && attr.attr.output != LTTNG_EVENT_MMAP) {
+		session->has_non_mmap_channel = true;
+	}
 error:
 	rcu_read_unlock();
 end:
@@ -1482,11 +1656,11 @@ end:
  * Command LTTNG_DISABLE_EVENT processed by the client thread.
  */
 int cmd_disable_event(struct ltt_session *session,
-		enum lttng_domain_type domain, char *channel_name,
-		struct lttng_event *event)
+		enum lttng_domain_type domain, const char *channel_name,
+		const struct lttng_event *event)
 {
 	int ret;
-	char *event_name;
+	const char *event_name;
 
 	DBG("Disable event command for event \'%s\'", event->name);
 
@@ -1548,7 +1722,7 @@ int cmd_disable_event(struct ltt_session *session,
 			goto error_unlock;
 		}
 
-		kernel_wait_quiescent(kernel_tracer_fd);
+		kernel_wait_quiescent();
 		break;
 	}
 	case LTTNG_DOMAIN_UST:
@@ -1659,7 +1833,7 @@ error:
  * Command LTTNG_ADD_CONTEXT processed by the client thread.
  */
 int cmd_add_context(struct ltt_session *session, enum lttng_domain_type domain,
-		char *channel_name, struct lttng_event_context *ctx, int kwpipe)
+		char *channel_name, const struct lttng_event_context *ctx, int kwpipe)
 {
 	int ret, chan_kern_created = 0, chan_ust_created = 0;
 	char *app_ctx_provider_name = NULL, *app_ctx_name = NULL;
@@ -1830,7 +2004,7 @@ end:
  * enable the events through which all "agent" events are funeled.
  */
 static int _cmd_enable_event(struct ltt_session *session,
-		struct lttng_domain *domain,
+		const struct lttng_domain *domain,
 		char *channel_name, struct lttng_event *event,
 		char *filter_expression,
 		struct lttng_filter_bytecode *filter,
@@ -1966,6 +2140,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 			break;
 		}
 		case LTTNG_EVENT_PROBE:
+		case LTTNG_EVENT_USERSPACE_PROBE:
 		case LTTNG_EVENT_FUNCTION:
 		case LTTNG_EVENT_FUNCTION_ENTRY:
 		case LTTNG_EVENT_TRACEPOINT:
@@ -1997,7 +2172,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 			goto error;
 		}
 
-		kernel_wait_quiescent(kernel_tracer_fd);
+		kernel_wait_quiescent();
 		break;
 	}
 	case LTTNG_DOMAIN_UST:
@@ -2063,8 +2238,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 			ret = validate_ust_event_name(event->name);
 			if (ret) {
 			        WARN("Userspace event name %s failed validation.",
-						event->name ?
-						event->name : "NULL");
+						event->name);
 				ret = LTTNG_ERR_INVALID_EVENT_NAME;
 				goto error;
 			}
@@ -2227,7 +2401,8 @@ error:
  * Command LTTNG_ENABLE_EVENT processed by the client thread.
  * We own filter, exclusion, and filter_expression.
  */
-int cmd_enable_event(struct ltt_session *session, struct lttng_domain *domain,
+int cmd_enable_event(struct ltt_session *session,
+		const struct lttng_domain *domain,
 		char *channel_name, struct lttng_event *event,
 		char *filter_expression,
 		struct lttng_filter_bytecode *filter,
@@ -2244,7 +2419,7 @@ int cmd_enable_event(struct ltt_session *session, struct lttng_domain *domain,
  * reserved names.
  */
 static int cmd_enable_event_internal(struct ltt_session *session,
-		struct lttng_domain *domain,
+		const struct lttng_domain *domain,
 		char *channel_name, struct lttng_event *event,
 		char *filter_expression,
 		struct lttng_filter_bytecode *filter,
@@ -2266,7 +2441,7 @@ ssize_t cmd_list_tracepoints(enum lttng_domain_type domain,
 
 	switch (domain) {
 	case LTTNG_DOMAIN_KERNEL:
-		nb_events = kernel_list_events(kernel_tracer_fd, events);
+		nb_events = kernel_list_events(events);
 		if (nb_events < 0) {
 			ret = LTTNG_ERR_KERN_LIST_FAIL;
 			goto error;
@@ -2393,7 +2568,7 @@ error:
  */
 int cmd_start_trace(struct ltt_session *session)
 {
-	int ret;
+	enum lttng_error_code ret;
 	unsigned long nb_chan = 0;
 	struct ltt_kernel_session *ksession;
 	struct ltt_ust_session *usess;
@@ -2425,9 +2600,28 @@ int cmd_start_trace(struct ltt_session *session)
 		goto error;
 	}
 
+	if (session->output_traces && !session->current_trace_chunk) {
+		struct lttng_trace_chunk *trace_chunk;
+
+		trace_chunk = session_create_new_trace_chunk(
+				session, NULL, NULL, NULL);
+		if (!trace_chunk) {
+			ret = LTTNG_ERR_CREATE_DIR_FAIL;
+			goto error;
+		}
+		assert(!session->current_trace_chunk);
+		ret = session_set_trace_chunk(session, trace_chunk, NULL);
+		lttng_trace_chunk_put(trace_chunk);
+		if (ret) {
+			ret = LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
+			goto error;
+		}
+	}
+
 	/* Kernel tracing */
 	if (ksession != NULL) {
-		ret = start_kernel_session(ksession, kernel_tracer_fd);
+		DBG("Start kernel tracing session %s", session->name);
+		ret = start_kernel_session(ksession);
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -2435,14 +2629,9 @@ int cmd_start_trace(struct ltt_session *session)
 
 	/* Flag session that trace should start automatically */
 	if (usess) {
-		/*
-		 * Even though the start trace might fail, flag this session active so
-		 * other application coming in are started by default.
-		 */
-		usess->active = 1;
+		int int_ret = ust_app_start_trace_all(usess);
 
-		ret = ust_app_start_trace_all(usess);
-		if (ret < 0) {
+		if (int_ret < 0) {
 			ret = LTTNG_ERR_UST_START_FAIL;
 			goto error;
 		}
@@ -2451,6 +2640,23 @@ int cmd_start_trace(struct ltt_session *session)
 	/* Flag this after a successful start. */
 	session->has_been_started = 1;
 	session->active = 1;
+
+	/*
+	 * Clear the flag that indicates that a rotation was done while the
+	 * session was stopped.
+	 */
+	session->rotated_after_last_stop = false;
+
+	if (session->rotate_timer_period) {
+		int int_ret = timer_session_rotation_schedule_timer_start(
+				session, session->rotate_timer_period);
+
+		if (int_ret < 0) {
+			ERR("Failed to enable rotate timer");
+			ret = LTTNG_ERR_UNK;
+			goto error;
+		}
+	}
 
 	ret = LTTNG_OK;
 
@@ -2467,9 +2673,11 @@ int cmd_stop_trace(struct ltt_session *session)
 	struct ltt_kernel_channel *kchan;
 	struct ltt_kernel_session *ksession;
 	struct ltt_ust_session *usess;
+	bool error_occurred = false;
 
 	assert(session);
 
+	DBG("Begin stop session %s (id %" PRIu64 ")", session->name, session->id);
 	/* Short cut */
 	ksession = session->kernel_session;
 	usess = session->ust_session;
@@ -2490,13 +2698,14 @@ int cmd_stop_trace(struct ltt_session *session)
 			goto error;
 		}
 
-		kernel_wait_quiescent(kernel_tracer_fd);
+		kernel_wait_quiescent();
 
 		/* Flush metadata after stopping (if exists) */
 		if (ksession->metadata_stream_fd >= 0) {
 			ret = kernel_metadata_flush_buffer(ksession->metadata_stream_fd);
 			if (ret < 0) {
 				ERR("Kernel metadata flush failed");
+				error_occurred = true;
 			}
 		}
 
@@ -2505,19 +2714,16 @@ int cmd_stop_trace(struct ltt_session *session)
 			ret = kernel_flush_buffer(kchan);
 			if (ret < 0) {
 				ERR("Kernel flush buffer error");
+				error_occurred = true;
 			}
 		}
 
 		ksession->active = 0;
+		DBG("Kernel session stopped %s (id %" PRIu64 ")", session->name,
+				session->id);
 	}
 
 	if (usess && usess->active) {
-		/*
-		 * Even though the stop trace might fail, flag this session inactive so
-		 * other application coming in are not started by default.
-		 */
-		usess->active = 0;
-
 		ret = ust_app_stop_trace_all(usess);
 		if (ret < 0) {
 			ret = LTTNG_ERR_UST_STOP_FAIL;
@@ -2527,7 +2733,7 @@ int cmd_stop_trace(struct ltt_session *session)
 
 	/* Flag inactive after a successful stop. */
 	session->active = 0;
-	ret = LTTNG_OK;
+	ret = !error_occurred ? LTTNG_OK : LTTNG_ERR_UNK;
 
 error:
 	return ret;
@@ -2555,8 +2761,9 @@ int cmd_set_consumer_uri(struct ltt_session *session, size_t nb_uri,
 
 	/* Set the "global" consumer URIs */
 	for (i = 0; i < nb_uri; i++) {
-		ret = add_uri_to_consumer(session->consumer,
-				&uris[i], 0, session->name);
+		ret = add_uri_to_consumer(session,
+				session->consumer,
+				&uris[i], LTTNG_DOMAIN_NONE);
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -2565,10 +2772,9 @@ int cmd_set_consumer_uri(struct ltt_session *session, size_t nb_uri,
 	/* Set UST session URIs */
 	if (session->ust_session) {
 		for (i = 0; i < nb_uri; i++) {
-			ret = add_uri_to_consumer(
+			ret = add_uri_to_consumer(session,
 					session->ust_session->consumer,
-					&uris[i], LTTNG_DOMAIN_UST,
-					session->name);
+					&uris[i], LTTNG_DOMAIN_UST);
 			if (ret != LTTNG_OK) {
 				goto error;
 			}
@@ -2578,10 +2784,9 @@ int cmd_set_consumer_uri(struct ltt_session *session, size_t nb_uri,
 	/* Set kernel session URIs */
 	if (session->kernel_session) {
 		for (i = 0; i < nb_uri; i++) {
-			ret = add_uri_to_consumer(
+			ret = add_uri_to_consumer(session,
 					session->kernel_session->consumer,
-					&uris[i], LTTNG_DOMAIN_KERNEL,
-					session->name);
+					&uris[i], LTTNG_DOMAIN_KERNEL);
 			if (ret != LTTNG_OK) {
 				goto error;
 			}
@@ -2608,142 +2813,338 @@ error:
 	return ret;
 }
 
-/*
- * Command LTTNG_CREATE_SESSION processed by the client thread.
- */
-int cmd_create_session_uri(char *name, struct lttng_uri *uris,
-		size_t nb_uri, lttng_sock_cred *creds, unsigned int live_timer)
+static
+enum lttng_error_code set_session_output_from_descriptor(
+		struct ltt_session *session,
+		const struct lttng_session_descriptor *descriptor)
 {
 	int ret;
-	struct ltt_session *session;
+	enum lttng_error_code ret_code = LTTNG_OK;
+	enum lttng_session_descriptor_type session_type =
+			lttng_session_descriptor_get_type(descriptor);
+	enum lttng_session_descriptor_output_type output_type =
+			lttng_session_descriptor_get_output_type(descriptor);
+	struct lttng_uri uris[2] = {};
+	size_t uri_count = 0;
 
-	assert(name);
-	assert(creds);
-
-	/*
-	 * Verify if the session already exist
-	 *
-	 * XXX: There is no need for the session lock list here since the caller
-	 * (process_client_msg) is holding it. We might want to change that so a
-	 * single command does not lock the entire session list.
-	 */
-	session = session_find_by_name(name);
-	if (session != NULL) {
-		ret = LTTNG_ERR_EXIST_SESS;
-		goto find_error;
-	}
-
-	/* Create tracing session in the registry */
-	ret = session_create(name, LTTNG_SOCK_GET_UID_CRED(creds),
-			LTTNG_SOCK_GET_GID_CRED(creds));
-	if (ret != LTTNG_OK) {
-		goto session_error;
-	}
-
-	/*
-	 * Get the newly created session pointer back
-	 *
-	 * XXX: There is no need for the session lock list here since the caller
-	 * (process_client_msg) is holding it. We might want to change that so a
-	 * single command does not lock the entire session list.
-	 */
-	session = session_find_by_name(name);
-	assert(session);
-
-	session->live_timer = live_timer;
-	/* Create default consumer output for the session not yet created. */
-	session->consumer = consumer_create_output(CONSUMER_DST_LOCAL);
-	if (session->consumer == NULL) {
-		ret = LTTNG_ERR_FATAL;
-		goto consumer_error;
-	}
-
-	if (uris) {
-		ret = cmd_set_consumer_uri(session, nb_uri, uris);
-		if (ret != LTTNG_OK) {
-			goto consumer_error;
-		}
-		session->output_traces = 1;
-	} else {
-		session->output_traces = 0;
-		DBG2("Session %s created with no output", session->name);
-	}
-
-	session->consumer->enabled = 1;
-
-	return LTTNG_OK;
-
-consumer_error:
-	session_destroy(session);
-session_error:
-find_error:
-	return ret;
-}
-
-/*
- * Command LTTNG_CREATE_SESSION_SNAPSHOT processed by the client thread.
- */
-int cmd_create_session_snapshot(char *name, struct lttng_uri *uris,
-		size_t nb_uri, lttng_sock_cred *creds)
-{
-	int ret;
-	struct ltt_session *session;
-	struct snapshot_output *new_output = NULL;
-
-	assert(name);
-	assert(creds);
-
-	/*
-	 * Create session in no output mode with URIs set to NULL. The uris we've
-	 * received are for a default snapshot output if one.
-	 */
-	ret = cmd_create_session_uri(name, NULL, 0, creds, 0);
-	if (ret != LTTNG_OK) {
-		goto error;
-	}
-
-	/* Get the newly created session pointer back. This should NEVER fail. */
-	session = session_find_by_name(name);
-	assert(session);
-
-	/* Flag session for snapshot mode. */
-	session->snapshot_mode = 1;
-
-	/* Skip snapshot output creation if no URI is given. */
-	if (nb_uri == 0) {
+	switch (output_type) {
+	case LTTNG_SESSION_DESCRIPTOR_OUTPUT_TYPE_NONE:
+		goto end;
+	case LTTNG_SESSION_DESCRIPTOR_OUTPUT_TYPE_LOCAL:
+		lttng_session_descriptor_get_local_output_uri(descriptor,
+				&uris[0]);
+		uri_count = 1;
+		break;
+	case LTTNG_SESSION_DESCRIPTOR_OUTPUT_TYPE_NETWORK:
+		lttng_session_descriptor_get_network_output_uris(descriptor,
+				&uris[0], &uris[1]);
+		uri_count = 2;
+		break;
+	default:
+		ret_code = LTTNG_ERR_INVALID;
 		goto end;
 	}
 
-	new_output = snapshot_output_alloc();
-	if (!new_output) {
-		ret = LTTNG_ERR_NOMEM;
-		goto error_snapshot_alloc;
-	}
+	switch (session_type) {
+	case LTTNG_SESSION_DESCRIPTOR_TYPE_SNAPSHOT:
+	{
+		struct snapshot_output *new_output = NULL;
 
-	ret = snapshot_output_init_with_uri(DEFAULT_SNAPSHOT_MAX_SIZE, NULL,
-			uris, nb_uri, session->consumer, new_output, &session->snapshot);
-	if (ret < 0) {
-		if (ret == -ENOMEM) {
-			ret = LTTNG_ERR_NOMEM;
-		} else {
-			ret = LTTNG_ERR_INVALID;
+		new_output = snapshot_output_alloc();
+		if (!new_output) {
+			ret_code = LTTNG_ERR_NOMEM;
+			goto end;
 		}
-		goto error_snapshot;
+
+		ret = snapshot_output_init_with_uri(session,
+				DEFAULT_SNAPSHOT_MAX_SIZE,
+				NULL, uris, uri_count, session->consumer,
+				new_output, &session->snapshot);
+		if (ret < 0) {
+			ret_code = (ret == -ENOMEM) ?
+					LTTNG_ERR_NOMEM : LTTNG_ERR_INVALID;
+			snapshot_output_destroy(new_output);
+			goto end;
+		}
+		snapshot_add_output(&session->snapshot, new_output);
+		break;
+	}
+	case LTTNG_SESSION_DESCRIPTOR_TYPE_REGULAR:
+	case LTTNG_SESSION_DESCRIPTOR_TYPE_LIVE:
+	{
+		ret_code = cmd_set_consumer_uri(session, uri_count, uris);
+		break;
+	}
+	default:
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
+	}
+end:
+	return ret_code;
+}
+
+static
+enum lttng_error_code cmd_create_session_from_descriptor(
+		struct lttng_session_descriptor *descriptor,
+		const lttng_sock_cred *creds,
+		const char *home_path)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	const char *session_name;
+	struct ltt_session *new_session = NULL;
+	enum lttng_session_descriptor_status descriptor_status;
+	const char *base_path;
+
+	session_lock_list();
+	if (home_path) {
+		if (*home_path != '/') {
+			ERR("Home path provided by client is not absolute");
+			ret_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
 	}
 
-	rcu_read_lock();
-	snapshot_add_output(&session->snapshot, new_output);
-	rcu_read_unlock();
+	descriptor_status = lttng_session_descriptor_get_session_name(
+			descriptor, &session_name);
+	switch (descriptor_status) {
+	case LTTNG_SESSION_DESCRIPTOR_STATUS_OK:
+		break;
+	case LTTNG_SESSION_DESCRIPTOR_STATUS_UNSET:
+		session_name = NULL;
+		break;
+	default:
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
+	}
+	ret = lttng_session_descriptor_get_base_path(descriptor, &base_path);
+	if (ret) {
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
+	}
+	ret_code = session_create(session_name, creds->uid, creds->gid,
+			base_path, &new_session);
+	if (ret_code != LTTNG_OK) {
+		goto end;
+	}
 
+	if (!session_name) {
+		ret = lttng_session_descriptor_set_session_name(descriptor,
+				new_session->name);
+		if (ret) {
+			ret_code = LTTNG_ERR_SESSION_FAIL;
+			goto end;
+		}
+	}
+
+	if (!lttng_session_descriptor_is_output_destination_initialized(
+			descriptor)) {
+		/*
+		 * Only include the session's creation time in the output
+		 * destination if the name of the session itself was
+		 * not auto-generated.
+		 */
+		ret_code = lttng_session_descriptor_set_default_output(
+				descriptor,
+				session_name ? &new_session->creation_time : NULL,
+				home_path);
+		if (ret_code != LTTNG_OK) {
+			goto end;
+		}
+	} else {
+		new_session->has_user_specified_directory =
+				lttng_session_descriptor_has_output_directory(
+					descriptor);
+	}
+
+	switch (lttng_session_descriptor_get_type(descriptor)) {
+	case LTTNG_SESSION_DESCRIPTOR_TYPE_SNAPSHOT:
+		new_session->snapshot_mode = 1;
+		break;
+	case LTTNG_SESSION_DESCRIPTOR_TYPE_LIVE:
+		new_session->live_timer =
+				lttng_session_descriptor_live_get_timer_interval(
+					descriptor);
+		break;
+	default:
+		break;
+	}
+
+	ret_code = set_session_output_from_descriptor(new_session, descriptor);
+	if (ret_code != LTTNG_OK) {
+		goto end;
+	}
+	new_session->consumer->enabled = 1;
+	ret_code = LTTNG_OK;
 end:
-	return LTTNG_OK;
+	/* Release reference provided by the session_create function. */
+	session_put(new_session);
+	if (ret_code != LTTNG_OK && new_session) {
+		/* Release the global reference on error. */
+		session_destroy(new_session);
+	}
+	session_unlock_list();
+	return ret_code;
+}
 
-error_snapshot:
-	snapshot_output_destroy(new_output);
-error_snapshot_alloc:
-	session_destroy(session);
+enum lttng_error_code cmd_create_session(struct command_ctx *cmd_ctx, int sock,
+		struct lttng_session_descriptor **return_descriptor)
+{
+	int ret;
+	size_t payload_size;
+	struct lttng_dynamic_buffer payload;
+	struct lttng_buffer_view home_dir_view;
+	struct lttng_buffer_view session_descriptor_view;
+	struct lttng_session_descriptor *session_descriptor = NULL;
+	enum lttng_error_code ret_code;
+
+	lttng_dynamic_buffer_init(&payload);
+	if (cmd_ctx->lsm->u.create_session.home_dir_size >=
+			LTTNG_PATH_MAX) {
+		ret_code = LTTNG_ERR_INVALID;
+		goto error;
+	}
+	if (cmd_ctx->lsm->u.create_session.session_descriptor_size >
+			LTTNG_SESSION_DESCRIPTOR_MAX_LEN) {
+		ret_code = LTTNG_ERR_INVALID;
+		goto error;
+	}
+
+	payload_size = cmd_ctx->lsm->u.create_session.home_dir_size +
+			cmd_ctx->lsm->u.create_session.session_descriptor_size;
+	ret = lttng_dynamic_buffer_set_size(&payload, payload_size);
+	if (ret) {
+		ret_code = LTTNG_ERR_NOMEM;
+		goto error;
+	}
+
+	ret = lttcomm_recv_unix_sock(sock, payload.data, payload.size);
+	if (ret <= 0) {
+		ERR("Reception of session descriptor failed, aborting.");
+		ret_code = LTTNG_ERR_SESSION_FAIL;
+		goto error;
+	}
+
+	home_dir_view = lttng_buffer_view_from_dynamic_buffer(
+			&payload,
+			0,
+			cmd_ctx->lsm->u.create_session.home_dir_size);
+	session_descriptor_view = lttng_buffer_view_from_dynamic_buffer(
+			&payload,
+			cmd_ctx->lsm->u.create_session.home_dir_size,
+			cmd_ctx->lsm->u.create_session.session_descriptor_size);
+
+	ret = lttng_session_descriptor_create_from_buffer(
+			&session_descriptor_view, &session_descriptor);
+	if (ret < 0) {
+		ERR("Failed to create session descriptor from payload of \"create session\" command");
+		ret_code = LTTNG_ERR_INVALID;
+		goto error;
+	}
+
+	/*
+	 * Sets the descriptor's auto-generated properties (name, output) if
+	 * needed.
+	 */
+	ret_code = cmd_create_session_from_descriptor(session_descriptor,
+			&cmd_ctx->creds,
+			home_dir_view.size ? home_dir_view.data : NULL);
+	if (ret_code != LTTNG_OK) {
+		goto error;
+	}
+
+	ret_code = LTTNG_OK;
+	*return_descriptor = session_descriptor;
+	session_descriptor = NULL;
 error:
-	return ret;
+	lttng_dynamic_buffer_reset(&payload);
+	lttng_session_descriptor_destroy(session_descriptor);
+	return ret_code;
+}
+
+static
+void cmd_destroy_session_reply(const struct ltt_session *session,
+		void *_reply_context)
+{
+	int ret;
+	ssize_t comm_ret;
+	const struct cmd_destroy_session_reply_context *reply_context =
+			_reply_context;
+	struct lttng_dynamic_buffer payload;
+	struct lttcomm_session_destroy_command_header cmd_header;
+	struct lttng_trace_archive_location *location = NULL;
+	struct lttcomm_lttng_msg llm = {
+		.cmd_type = LTTNG_DESTROY_SESSION,
+		.ret_code = reply_context->destruction_status,
+		.pid = UINT32_MAX,
+		.cmd_header_size =
+			sizeof(struct lttcomm_session_destroy_command_header),
+		.data_size = 0,
+	};
+	size_t payload_size_before_location;
+
+	lttng_dynamic_buffer_init(&payload);
+
+	ret = lttng_dynamic_buffer_append(&payload, &llm, sizeof(llm));
+        if (ret) {
+		ERR("Failed to append session destruction message");
+		goto error;
+        }
+
+	cmd_header.rotation_state =
+			(int32_t) (reply_context->implicit_rotation_on_destroy ?
+				session->rotation_state :
+				LTTNG_ROTATION_STATE_NO_ROTATION);
+	ret = lttng_dynamic_buffer_append(&payload, &cmd_header,
+			sizeof(cmd_header));
+	if (ret) {
+		ERR("Failed to append session destruction command header");
+		goto error;
+	}
+
+	if (!reply_context->implicit_rotation_on_destroy) {
+		DBG("No implicit rotation performed during the destruction of session \"%s\", sending reply",
+				session->name);
+		goto send_reply;
+	}
+	if (session->rotation_state != LTTNG_ROTATION_STATE_COMPLETED) {
+		DBG("Rotation state of session \"%s\" is not \"completed\", sending session destruction reply",
+				session->name);
+		goto send_reply;
+	}
+
+	location = session_get_trace_archive_location(session);
+	if (!location) {
+		ERR("Failed to get the location of the trace archive produced during the destruction of session \"%s\"",
+				session->name);
+		goto error;
+	}
+
+	payload_size_before_location = payload.size;
+	comm_ret = lttng_trace_archive_location_serialize(location,
+			&payload);
+	if (comm_ret < 0) {
+		ERR("Failed to serialize the location of the trace archive produced during the destruction of session \"%s\"",
+				session->name);
+		goto error;
+	}
+	/* Update the message to indicate the location's length. */
+	((struct lttcomm_lttng_msg *) payload.data)->data_size =
+			payload.size - payload_size_before_location;
+send_reply:
+	comm_ret = lttcomm_send_unix_sock(reply_context->reply_sock_fd,
+			payload.data, payload.size);
+	if (comm_ret != (ssize_t) payload.size) {
+		ERR("Failed to send result of the destruction of session \"%s\" to client",
+				session->name);
+	}
+error:
+	ret = close(reply_context->reply_sock_fd);
+	if (ret) {
+		PERROR("Failed to close client socket in deferred session destroy reply");
+	}
+	lttng_dynamic_buffer_reset(&payload);
+	free(_reply_context);
 }
 
 /*
@@ -2751,47 +3152,162 @@ error:
  *
  * Called with session lock held.
  */
-int cmd_destroy_session(struct ltt_session *session, int wpipe)
+int cmd_destroy_session(struct ltt_session *session,
+		struct notification_thread_handle *notification_thread_handle,
+		int *sock_fd)
 {
 	int ret;
-	struct ltt_ust_session *usess;
-	struct ltt_kernel_session *ksess;
+	enum lttng_error_code destruction_last_error = LTTNG_OK;
+	struct cmd_destroy_session_reply_context *reply_context = NULL;
+
+	if (sock_fd) {
+		reply_context = zmalloc(sizeof(*reply_context));
+		if (!reply_context) {
+			ret = LTTNG_ERR_NOMEM;
+			goto end;
+		}
+		reply_context->reply_sock_fd = *sock_fd;
+	}
 
 	/* Safety net */
 	assert(session);
 
-	usess = session->ust_session;
-	ksess = session->kernel_session;
-
-	/* Clean kernel session teardown */
-	kernel_destroy_session(ksess);
-
-	/* UST session teardown */
-	if (usess) {
-		/* Close any relayd session */
-		consumer_output_send_destroy_relayd(usess->consumer);
-
-		/* Destroy every UST application related to this session. */
-		ret = ust_app_destroy_trace_all(usess);
-		if (ret) {
-			ERR("Error in ust_app_destroy_trace_all");
+	DBG("Begin destroy session %s (id %" PRIu64 ")", session->name,
+			session->id);
+	if (session->active) {
+		DBG("Session \"%s\" is active, attempting to stop it before destroying it",
+				session->name);
+		ret = cmd_stop_trace(session);
+		if (ret != LTTNG_OK && ret != LTTNG_ERR_TRACE_ALREADY_STOPPED) {
+			/* Carry on with the destruction of the session. */
+			ERR("Failed to stop session \"%s\" as part of its destruction: %s",
+					session->name, lttng_strerror(-ret));
+			destruction_last_error = ret;
 		}
+	}
 
-		/* Clean up the rest. */
-		trace_ust_destroy_session(usess);
+	if (session->rotation_schedule_timer_enabled) {
+		if (timer_session_rotation_schedule_timer_stop(
+				session)) {
+			ERR("Failed to stop the \"rotation schedule\" timer of session %s",
+					session->name);
+			destruction_last_error = LTTNG_ERR_TIMER_STOP_ERROR;
+		}
+	}
+
+	if (session->rotate_size) {
+		unsubscribe_session_consumed_size_rotation(session, notification_thread_handle);
+		session->rotate_size = 0;
+	}
+
+	if (session->most_recent_chunk_id.is_set &&
+			session->most_recent_chunk_id.value != 0 &&
+			session->current_trace_chunk && session->output_traces) {
+		/*
+		 * Perform a last rotation on destruction if rotations have
+		 * occurred during the session's lifetime.
+		 */
+		ret = cmd_rotate_session(session, NULL, false);
+		if (ret != LTTNG_OK) {
+			ERR("Failed to perform an implicit rotation as part of the destruction of session \"%s\": %s",
+					session->name, lttng_strerror(-ret));
+			destruction_last_error = -ret;
+		}
+                if (reply_context) {
+			reply_context->implicit_rotation_on_destroy = true;
+                }
+        } else if (session->has_been_started && session->current_trace_chunk) {
+		/*
+		 * The user has not triggered a session rotation. However, to
+		 * ensure all data has been consumed, the session is rotated
+		 * to a 'null' trace chunk before it is destroyed.
+		 *
+		 * This is a "quiet" rotation meaning that no notification is
+		 * emitted and no renaming of the current trace chunk takes
+		 * place.
+		 */
+		ret = cmd_rotate_session(session, NULL, true);
+		if (ret != LTTNG_OK) {
+			ERR("Failed to perform a quiet rotation as part of the destruction of session \"%s\": %s",
+					session->name, lttng_strerror(-ret));
+			destruction_last_error = -ret;
+		}
+	}
+
+	if (session->shm_path[0]) {
+		/*
+		 * When a session is created with an explicit shm_path,
+		 * the consumer daemon will create its shared memory files
+		 * at that location and will *not* unlink them. This is normal
+		 * as the intention of that feature is to make it possible
+		 * to retrieve the content of those files should a crash occur.
+		 *
+		 * To ensure the content of those files can be used, the
+		 * sessiond daemon will replicate the content of the metadata
+		 * cache in a metadata file.
+		 *
+		 * On clean-up, it is expected that the consumer daemon will
+		 * unlink the shared memory files and that the session daemon
+		 * will unlink the metadata file. Then, the session's directory
+		 * in the shm path can be removed.
+		 *
+		 * Unfortunately, a flaw in the design of the sessiond's and
+		 * consumerd's tear down of channels makes it impossible to
+		 * determine when the sessiond _and_ the consumerd have both
+		 * destroyed their representation of a channel. For one, the
+		 * unlinking, close, and rmdir happen in deferred 'call_rcu'
+		 * callbacks in both daemons.
+		 *
+		 * However, it is also impossible for the sessiond to know when
+		 * the consumer daemon is done destroying its channel(s) since
+		 * it occurs as a reaction to the closing of the channel's file
+		 * descriptor. There is no resulting communication initiated
+		 * from the consumerd to the sessiond to confirm that the
+		 * operation is completed (and was successful).
+		 *
+		 * Until this is all fixed, the session daemon checks for the
+		 * removal of the session's shm path which makes it possible
+		 * to safely advertise a session as having been destroyed.
+		 *
+		 * Prior to this fix, it was not possible to reliably save
+		 * a session making use of the --shm-path option, destroy it,
+		 * and load it again. This is because the creation of the
+		 * session would fail upon seeing the session's shm path
+		 * already in existence.
+		 *
+		 * Note that none of the error paths in the check for the
+		 * directory's existence return an error. This is normal
+		 * as there isn't much that can be done. The session will
+		 * be destroyed properly, except that we can't offer the
+		 * guarantee that the same session can be re-created.
+		 */
+		current_completion_handler = &destroy_completion_handler.handler;
+		ret = lttng_strncpy(destroy_completion_handler.shm_path,
+				session->shm_path,
+				sizeof(destroy_completion_handler.shm_path));
+		assert(!ret);
 	}
 
 	/*
-	 * Must notify the kernel thread here to update it's poll set in order to
-	 * remove the channel(s)' fd just destroyed.
+	 * The session is destroyed. However, note that the command context
+	 * still holds a reference to the session, thus delaying its destruction
+	 * _at least_ up to the point when that reference is released.
 	 */
-	ret = notify_thread_pipe(wpipe);
-	if (ret < 0) {
-		PERROR("write kernel poll pipe");
-	}
-
-	ret = session_destroy(session);
-
+	session_destroy(session);
+	if (reply_context) {
+		reply_context->destruction_status = destruction_last_error;
+		ret = session_add_destroy_notifier(session,
+				cmd_destroy_session_reply,
+				(void *) reply_context);
+		if (ret) {
+			ret = LTTNG_ERR_FATAL;
+			goto end;
+		} else {
+			*sock_fd = -1;
+		}
+        }
+        ret = LTTNG_OK;
+end:
 	return ret;
 }
 
@@ -3080,13 +3596,15 @@ error:
  * The session list lock MUST be acquired before calling this function. Use
  * session_lock_list() and session_unlock_list().
  */
-void cmd_list_lttng_sessions(struct lttng_session *sessions, uid_t uid,
-		gid_t gid)
+void cmd_list_lttng_sessions(struct lttng_session *sessions,
+		size_t session_count, uid_t uid, gid_t gid)
 {
 	int ret;
 	unsigned int i = 0;
 	struct ltt_session *session;
 	struct ltt_session_list *list = session_get_list();
+        struct lttng_session_extended *extended =
+			(typeof(extended)) (&sessions[session_count]);
 
 	DBG("Getting all available session for UID %d GID %d",
 			uid, gid);
@@ -3095,10 +3613,15 @@ void cmd_list_lttng_sessions(struct lttng_session *sessions, uid_t uid,
 	 * the buffer.
 	 */
 	cds_list_for_each_entry(session, &list->head, list) {
+		if (!session_get(session)) {
+			continue;
+		}
 		/*
 		 * Only list the sessions the user can control.
 		 */
-		if (!session_access_ok(session, uid, gid)) {
+		if (!session_access_ok(session, uid, gid) ||
+				session->destroyed) {
+			session_put(session);
 			continue;
 		}
 
@@ -3112,10 +3635,11 @@ void cmd_list_lttng_sessions(struct lttng_session *sessions, uid_t uid,
 					sizeof(sessions[i].path), session);
 		} else {
 			ret = snprintf(sessions[i].path, sizeof(sessions[i].path), "%s",
-					session->consumer->dst.trace_path);
+					session->consumer->dst.session_root_path);
 		}
 		if (ret < 0) {
 			PERROR("snprintf session path");
+			session_put(session);
 			continue;
 		}
 
@@ -3124,7 +3648,10 @@ void cmd_list_lttng_sessions(struct lttng_session *sessions, uid_t uid,
 		sessions[i].enabled = session->active;
 		sessions[i].snapshot_mode = session->snapshot_mode;
 		sessions[i].live_timer_interval = session->live_timer;
+		extended[i].creation_time.value = (uint64_t) session->creation_time;
+		extended[i].creation_time.is_set = 1;
 		i++;
+		session_put(session);
 	}
 }
 
@@ -3139,6 +3666,8 @@ int cmd_data_pending(struct ltt_session *session)
 	struct ltt_ust_session *usess = session->ust_session;
 
 	assert(session);
+
+	DBG("Data pending for session %s", session->name);
 
 	/* Session MUST be stopped to ask for data availability. */
 	if (session->active) {
@@ -3159,6 +3688,13 @@ int cmd_data_pending(struct ltt_session *session)
 			ret = 0;
 			goto error;
 		}
+	}
+
+	/* A rotation is still pending, we have to wait. */
+	if (session->rotation_state == LTTNG_ROTATION_STATE_ONGOING) {
+		DBG("Rotate still pending for session %s", session->name);
+		ret = 1;
+		goto error;
 	}
 
 	if (ksess && ksess->consumer) {
@@ -3190,7 +3726,7 @@ error:
  * Return LTTNG_OK on success or else a LTTNG_ERR code.
  */
 int cmd_snapshot_add_output(struct ltt_session *session,
-		struct lttng_snapshot_output *output, uint32_t *id)
+		const struct lttng_snapshot_output *output, uint32_t *id)
 {
 	int ret;
 	struct snapshot_output *new_output;
@@ -3208,6 +3744,11 @@ int cmd_snapshot_add_output(struct ltt_session *session,
 		goto error;
 	}
 
+	if (session->has_non_mmap_channel) {
+		ret = LTTNG_ERR_SNAPSHOT_UNSUPPORTED;
+		goto error;
+	}
+
 	/* Only one output is allowed until we have the "tee" feature. */
 	if (session->snapshot.nb_output == 1) {
 		ret = LTTNG_ERR_SNAPSHOT_OUTPUT_EXIST;
@@ -3220,7 +3761,7 @@ int cmd_snapshot_add_output(struct ltt_session *session,
 		goto error;
 	}
 
-	ret = snapshot_output_init(output->max_size, output->name,
+	ret = snapshot_output_init(session, output->max_size, output->name,
 			output->ctrl_url, output->data_url, session->consumer, new_output,
 			&session->snapshot);
 	if (ret < 0) {
@@ -3253,7 +3794,7 @@ error:
  * Return LTTNG_OK on success or else a LTTNG_ERR code.
  */
 int cmd_snapshot_del_output(struct ltt_session *session,
-		struct lttng_snapshot_output *output)
+		const struct lttng_snapshot_output *output)
 {
 	int ret;
 	struct snapshot_output *sout = NULL;
@@ -3349,7 +3890,7 @@ ssize_t cmd_snapshot_list_outputs(struct ltt_session *session,
 		}
 		if (output->consumer->type == CONSUMER_DST_LOCAL) {
 			if (lttng_strncpy(list[idx].ctrl_url,
-					output->consumer->dst.trace_path,
+					output->consumer->dst.session_root_path,
 					sizeof(list[idx].ctrl_url))) {
 				ret = -LTTNG_ERR_INVALID;
 				goto error;
@@ -3711,24 +4252,51 @@ end:
  * Send relayd sockets from snapshot output to consumer. Ignore request if the
  * snapshot output is *not* set with a remote destination.
  *
- * Return 0 on success or a LTTNG_ERR code.
+ * Return LTTNG_OK on success or a LTTNG_ERR code.
  */
-static int set_relayd_for_snapshot(struct consumer_output *consumer,
-		struct snapshot_output *snap_output, struct ltt_session *session)
+static enum lttng_error_code set_relayd_for_snapshot(
+		struct consumer_output *output,
+		const struct ltt_session *session)
 {
-	int ret = LTTNG_OK;
+	enum lttng_error_code status = LTTNG_OK;
 	struct lttng_ht_iter iter;
 	struct consumer_socket *socket;
+	LTTNG_OPTIONAL(uint64_t) current_chunk_id = {};
+	const char *base_path;
 
-	assert(consumer);
-	assert(snap_output);
+	assert(output);
 	assert(session);
 
 	DBG2("Set relayd object from snapshot output");
 
+	if (session->current_trace_chunk) {
+		enum lttng_trace_chunk_status chunk_status =
+				lttng_trace_chunk_get_id(
+						session->current_trace_chunk,
+						&current_chunk_id.value);
+
+		if (chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK) {
+			current_chunk_id.is_set = true;
+		} else {
+			ERR("Failed to get current trace chunk id");
+			status = LTTNG_ERR_UNK;
+			goto error;
+		}
+	}
+
 	/* Ignore if snapshot consumer output is not network. */
-	if (snap_output->consumer->type != CONSUMER_DST_NET) {
+	if (output->type != CONSUMER_DST_NET) {
 		goto error;
+	}
+
+	/*
+	 * The snapshot record URI base path overrides the session
+	 * base path.
+	 */
+	if (output->dst.net.control.subdir[0] != '\0') {
+		base_path = output->dst.net.control.subdir;
+	} else {
+		base_path = session->base_path;
 	}
 
 	/*
@@ -3736,15 +4304,19 @@ static int set_relayd_for_snapshot(struct consumer_output *consumer,
 	 * snapshot output.
 	 */
 	rcu_read_lock();
-	cds_lfht_for_each_entry(snap_output->consumer->socks->ht, &iter.iter,
+	cds_lfht_for_each_entry(output->socks->ht, &iter.iter,
 			socket, node.node) {
 		pthread_mutex_lock(socket->lock);
-		ret = send_consumer_relayd_sockets(0, session->id,
-				snap_output->consumer, socket,
+		status = send_consumer_relayd_sockets(0, session->id,
+				output, socket,
 				session->name, session->hostname,
-				session->live_timer);
+				base_path,
+				session->live_timer,
+				current_chunk_id.is_set ? &current_chunk_id.value : NULL,
+				session->creation_time,
+				session->name_contains_creation_time);
 		pthread_mutex_unlock(socket->lock);
-		if (ret != LTTNG_OK) {
+		if (status != LTTNG_OK) {
 			rcu_read_unlock();
 			goto error;
 		}
@@ -3752,7 +4324,7 @@ static int set_relayd_for_snapshot(struct consumer_output *consumer,
 	rcu_read_unlock();
 
 error:
-	return ret;
+	return status;
 }
 
 /*
@@ -3760,111 +4332,54 @@ error:
  *
  * Return LTTNG_OK on success or a LTTNG_ERR code.
  */
-static int record_kernel_snapshot(struct ltt_kernel_session *ksess,
-		struct snapshot_output *output, struct ltt_session *session,
+static enum lttng_error_code record_kernel_snapshot(
+		struct ltt_kernel_session *ksess,
+		const struct consumer_output *output,
+		const struct ltt_session *session,
 		int wait, uint64_t nb_packets_per_stream)
 {
-	int ret;
+	enum lttng_error_code status;
 
 	assert(ksess);
 	assert(output);
 	assert(session);
 
-
-	/*
-	 * Copy kernel session sockets so we can communicate with the right
-	 * consumer for the snapshot record command.
-	 */
-	ret = consumer_copy_sockets(output->consumer, ksess->consumer);
-	if (ret < 0) {
-		ret = LTTNG_ERR_NOMEM;
-		goto error;
-	}
-
-	ret = set_relayd_for_snapshot(ksess->consumer, output, session);
-	if (ret != LTTNG_OK) {
-		goto error_snapshot;
-	}
-
-	ret = kernel_snapshot_record(ksess, output, wait, nb_packets_per_stream);
-	if (ret != LTTNG_OK) {
-		goto error_snapshot;
-	}
-
-	ret = LTTNG_OK;
-	goto end;
-
-error_snapshot:
-	/* Clean up copied sockets so this output can use some other later on. */
-	consumer_destroy_output_sockets(output->consumer);
-error:
-end:
-	return ret;
+	status = kernel_snapshot_record(
+			ksess, output, wait, nb_packets_per_stream);
+	return status;
 }
 
 /*
  * Record a UST snapshot.
  *
- * Return 0 on success or a LTTNG_ERR error code.
+ * Returns LTTNG_OK on success or a LTTNG_ERR error code.
  */
-static int record_ust_snapshot(struct ltt_ust_session *usess,
-		struct snapshot_output *output, struct ltt_session *session,
+static enum lttng_error_code record_ust_snapshot(struct ltt_ust_session *usess,
+		const struct consumer_output *output,
+		const struct ltt_session *session,
 		int wait, uint64_t nb_packets_per_stream)
 {
-	int ret;
+	enum lttng_error_code status;
 
 	assert(usess);
 	assert(output);
 	assert(session);
 
-	/*
-	 * Copy UST session sockets so we can communicate with the right
-	 * consumer for the snapshot record command.
-	 */
-	ret = consumer_copy_sockets(output->consumer, usess->consumer);
-	if (ret < 0) {
-		ret = LTTNG_ERR_NOMEM;
-		goto error;
-	}
-
-	ret = set_relayd_for_snapshot(usess->consumer, output, session);
-	if (ret != LTTNG_OK) {
-		goto error_snapshot;
-	}
-
-	ret = ust_app_snapshot_record(usess, output, wait, nb_packets_per_stream);
-	if (ret < 0) {
-		switch (-ret) {
-		case EINVAL:
-			ret = LTTNG_ERR_INVALID;
-			break;
-		default:
-			ret = LTTNG_ERR_SNAPSHOT_FAIL;
-			break;
-		}
-		goto error_snapshot;
-	}
-
-	ret = LTTNG_OK;
-	goto end;
-
-error_snapshot:
-	/* Clean up copied sockets so this output can use some other later on. */
-	consumer_destroy_output_sockets(output->consumer);
-error:
-end:
-	return ret;
+	status = ust_app_snapshot_record(
+			usess, output, wait, nb_packets_per_stream);
+	return status;
 }
 
 static
-uint64_t get_session_size_one_more_packet_per_stream(struct ltt_session *session,
-	uint64_t cur_nr_packets)
+uint64_t get_session_size_one_more_packet_per_stream(
+		const struct ltt_session *session, uint64_t cur_nr_packets)
 {
 	uint64_t tot_size = 0;
 
 	if (session->kernel_session) {
 		struct ltt_kernel_channel *chan;
-		struct ltt_kernel_session *ksess = session->kernel_session;
+		const struct ltt_kernel_session *ksess =
+				session->kernel_session;
 
 		cds_list_for_each_entry(chan, &ksess->channel_list.head, list) {
 			if (cur_nr_packets >= chan->channel->attr.num_subbuf) {
@@ -3880,7 +4395,7 @@ uint64_t get_session_size_one_more_packet_per_stream(struct ltt_session *session
 	}
 
 	if (session->ust_session) {
-		struct ltt_ust_session *usess = session->ust_session;
+		const struct ltt_ust_session *usess = session->ust_session;
 
 		tot_size += ust_app_get_size_one_more_packet_per_stream(usess,
 				cur_nr_packets);
@@ -3910,7 +4425,8 @@ uint64_t get_session_size_one_more_packet_per_stream(struct ltt_session *session
  * in between this call and actually grabbing data.
  */
 static
-int64_t get_session_nb_packets_per_stream(struct ltt_session *session, uint64_t max_size)
+int64_t get_session_nb_packets_per_stream(const struct ltt_session *session,
+		uint64_t max_size)
 {
 	int64_t size_left;
 	uint64_t cur_nb_packets = 0;
@@ -3923,8 +4439,8 @@ int64_t get_session_nb_packets_per_stream(struct ltt_session *session, uint64_t 
 	for (;;) {
 		uint64_t one_more_packet_tot_size;
 
-		one_more_packet_tot_size = get_session_size_one_more_packet_per_stream(session,
-					cur_nb_packets);
+		one_more_packet_tot_size = get_session_size_one_more_packet_per_stream(
+				session, cur_nb_packets);
 		if (!one_more_packet_tot_size) {
 			/* We are already grabbing all packets. */
 			break;
@@ -3942,6 +4458,161 @@ int64_t get_session_nb_packets_per_stream(struct ltt_session *session, uint64_t 
 	return cur_nb_packets;
 }
 
+static
+enum lttng_error_code snapshot_record(struct ltt_session *session,
+		const struct snapshot_output *snapshot_output, int wait)
+{
+	int64_t nb_packets_per_stream;
+	char snapshot_chunk_name[LTTNG_NAME_MAX];
+	int ret;
+	enum lttng_error_code ret_code = LTTNG_OK;
+	struct lttng_trace_chunk *snapshot_trace_chunk;
+	struct consumer_output *original_ust_consumer_output = NULL;
+	struct consumer_output *original_kernel_consumer_output = NULL;
+	struct consumer_output *snapshot_ust_consumer_output = NULL;
+	struct consumer_output *snapshot_kernel_consumer_output = NULL;
+
+	ret = snprintf(snapshot_chunk_name, sizeof(snapshot_chunk_name),
+			"%s-%s-%" PRIu64,
+			snapshot_output->name,
+			snapshot_output->datetime,
+			snapshot_output->nb_snapshot);
+	if (ret < 0 || ret >= sizeof(snapshot_chunk_name)) {
+		ERR("Failed to format snapshot name");
+		ret_code = LTTNG_ERR_INVALID;
+		goto error;
+	}
+	DBG("Recording snapshot \"%s\" for session \"%s\" with chunk name \"%s\"",
+			snapshot_output->name, session->name,
+			snapshot_chunk_name);
+	if (!session->kernel_session && !session->ust_session) {
+		ERR("Failed to record snapshot as no channels exist");
+		ret_code = LTTNG_ERR_NO_CHANNEL;
+		goto error;
+	}
+
+	if (session->kernel_session) {
+		original_kernel_consumer_output =
+				session->kernel_session->consumer;
+		snapshot_kernel_consumer_output =
+				consumer_copy_output(snapshot_output->consumer);
+		strcpy(snapshot_kernel_consumer_output->chunk_path,
+			snapshot_chunk_name);
+		ret = consumer_copy_sockets(snapshot_kernel_consumer_output,
+				original_kernel_consumer_output);
+		if (ret < 0) {
+			ERR("Failed to copy consumer sockets from snapshot output configuration");
+			ret_code = LTTNG_ERR_NOMEM;
+			goto error;
+		}
+		ret_code = set_relayd_for_snapshot(
+				snapshot_kernel_consumer_output, session);
+		if (ret_code != LTTNG_OK) {
+			ERR("Failed to setup relay daemon for kernel tracer snapshot");
+			goto error;
+		}
+		session->kernel_session->consumer =
+				snapshot_kernel_consumer_output;
+	}
+	if (session->ust_session) {
+		original_ust_consumer_output = session->ust_session->consumer;
+		snapshot_ust_consumer_output =
+				consumer_copy_output(snapshot_output->consumer);
+		strcpy(snapshot_ust_consumer_output->chunk_path,
+			snapshot_chunk_name);
+		ret = consumer_copy_sockets(snapshot_ust_consumer_output,
+				original_ust_consumer_output);
+		if (ret < 0) {
+			ERR("Failed to copy consumer sockets from snapshot output configuration");
+			ret_code = LTTNG_ERR_NOMEM;
+			goto error;
+		}
+		ret_code = set_relayd_for_snapshot(
+				snapshot_ust_consumer_output, session);
+		if (ret_code != LTTNG_OK) {
+			ERR("Failed to setup relay daemon for userspace tracer snapshot");
+			goto error;
+		}
+		session->ust_session->consumer =
+				snapshot_ust_consumer_output;
+	}
+
+	snapshot_trace_chunk = session_create_new_trace_chunk(session,
+			snapshot_kernel_consumer_output ?:
+					snapshot_ust_consumer_output,
+			consumer_output_get_base_path(
+					snapshot_output->consumer),
+			snapshot_chunk_name);
+	if (!snapshot_trace_chunk) {
+		ERR("Failed to create temporary trace chunk to record a snapshot of session \"%s\"",
+				session->name);
+		ret_code = LTTNG_ERR_CREATE_DIR_FAIL;
+		goto error;
+	}
+	assert(!session->current_trace_chunk);
+	ret = session_set_trace_chunk(session, snapshot_trace_chunk, NULL);
+	lttng_trace_chunk_put(snapshot_trace_chunk);
+	snapshot_trace_chunk = NULL;
+	if (ret) {
+		ERR("Failed to set temporary trace chunk to record a snapshot of session \"%s\"",
+				session->name);
+		ret_code = LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+
+	nb_packets_per_stream = get_session_nb_packets_per_stream(session,
+			snapshot_output->max_size);
+	if (nb_packets_per_stream < 0) {
+		ret_code = LTTNG_ERR_MAX_SIZE_INVALID;
+		goto error;
+	}
+
+	if (session->kernel_session) {
+		ret_code = record_kernel_snapshot(session->kernel_session,
+				snapshot_kernel_consumer_output, session,
+				wait, nb_packets_per_stream);
+		if (ret_code != LTTNG_OK) {
+			goto error;
+		}
+	}
+
+	if (session->ust_session) {
+		ret_code = record_ust_snapshot(session->ust_session,
+				snapshot_ust_consumer_output, session,
+				wait, nb_packets_per_stream);
+		if (ret_code != LTTNG_OK) {
+			goto error;
+		}
+	}
+
+	if (session_close_trace_chunk(
+			    session, session->current_trace_chunk, NULL, NULL)) {
+		/*
+		 * Don't goto end; make sure the chunk is closed for the session
+		 * to allow future snapshots.
+		 */
+		ERR("Failed to close snapshot trace chunk of session \"%s\"",
+				session->name);
+		ret_code = LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
+	}
+	if (session_set_trace_chunk(session, NULL, NULL)) {
+		ERR("Failed to release the current trace chunk of session \"%s\"",
+				session->name);
+		ret_code = LTTNG_ERR_UNK;
+	}
+error:
+	if (original_ust_consumer_output) {
+		session->ust_session->consumer = original_ust_consumer_output;
+	}
+	if (original_kernel_consumer_output) {
+		session->kernel_session->consumer =
+				original_kernel_consumer_output;
+	}
+	consumer_output_put(snapshot_ust_consumer_output);
+	consumer_output_put(snapshot_kernel_consumer_output);
+	return ret_code;
+}
+
 /*
  * Command LTTNG_SNAPSHOT_RECORD from lib lttng ctl.
  *
@@ -3951,13 +4622,13 @@ int64_t get_session_nb_packets_per_stream(struct ltt_session *session, uint64_t 
  * Return LTTNG_OK on success or else a LTTNG_ERR code.
  */
 int cmd_snapshot_record(struct ltt_session *session,
-		struct lttng_snapshot_output *output, int wait)
+		const struct lttng_snapshot_output *output, int wait)
 {
-	int ret = LTTNG_OK;
-	unsigned int use_tmp_output = 0;
-	struct snapshot_output tmp_output;
+	enum lttng_error_code cmd_ret = LTTNG_OK;
+	int ret;
 	unsigned int snapshot_success = 0;
 	char datetime[16];
+	struct snapshot_output *tmp_output = NULL;
 
 	assert(session);
 	assert(output);
@@ -3968,7 +4639,7 @@ int cmd_snapshot_record(struct ltt_session *session,
 	ret = utils_get_current_time_str("%Y%m%d-%H%M%S", datetime,
 			sizeof(datetime));
 	if (!ret) {
-		ret = LTTNG_ERR_INVALID;
+		cmd_ret = LTTNG_ERR_INVALID;
 		goto error;
 	}
 
@@ -3977,65 +4648,46 @@ int cmd_snapshot_record(struct ltt_session *session,
 	 * set in no output mode.
 	 */
 	if (session->output_traces) {
-		ret = LTTNG_ERR_NOT_SNAPSHOT_SESSION;
+		cmd_ret = LTTNG_ERR_NOT_SNAPSHOT_SESSION;
 		goto error;
 	}
 
 	/* The session needs to be started at least once. */
 	if (!session->has_been_started) {
-		ret = LTTNG_ERR_START_SESSION_ONCE;
+		cmd_ret = LTTNG_ERR_START_SESSION_ONCE;
 		goto error;
 	}
 
 	/* Use temporary output for the session. */
 	if (*output->ctrl_url != '\0') {
-		ret = snapshot_output_init(output->max_size, output->name,
-				output->ctrl_url, output->data_url, session->consumer,
-				&tmp_output, NULL);
+		tmp_output = snapshot_output_alloc();
+		if (!tmp_output) {
+			cmd_ret = LTTNG_ERR_NOMEM;
+			goto error;
+		}
+
+		ret = snapshot_output_init(session, output->max_size,
+				output->name,
+				output->ctrl_url, output->data_url,
+				session->consumer,
+				tmp_output, NULL);
 		if (ret < 0) {
 			if (ret == -ENOMEM) {
-				ret = LTTNG_ERR_NOMEM;
+				cmd_ret = LTTNG_ERR_NOMEM;
 			} else {
-				ret = LTTNG_ERR_INVALID;
+				cmd_ret = LTTNG_ERR_INVALID;
 			}
 			goto error;
 		}
 		/* Use the global session count for the temporary snapshot. */
-		tmp_output.nb_snapshot = session->snapshot.nb_snapshot;
+		tmp_output->nb_snapshot = session->snapshot.nb_snapshot;
 
 		/* Use the global datetime */
-		memcpy(tmp_output.datetime, datetime, sizeof(datetime));
-		use_tmp_output = 1;
-	}
-
-	if (use_tmp_output) {
-		int64_t nb_packets_per_stream;
-
-		nb_packets_per_stream = get_session_nb_packets_per_stream(session,
-				tmp_output.max_size);
-		if (nb_packets_per_stream < 0) {
-			ret = LTTNG_ERR_MAX_SIZE_INVALID;
+		memcpy(tmp_output->datetime, datetime, sizeof(datetime));
+		cmd_ret = snapshot_record(session, tmp_output, wait);
+		if (cmd_ret != LTTNG_OK) {
 			goto error;
 		}
-
-		if (session->kernel_session) {
-			ret = record_kernel_snapshot(session->kernel_session,
-					&tmp_output, session,
-					wait, nb_packets_per_stream);
-			if (ret != LTTNG_OK) {
-				goto error;
-			}
-		}
-
-		if (session->ust_session) {
-			ret = record_ust_snapshot(session->ust_session,
-					&tmp_output, session,
-					wait, nb_packets_per_stream);
-			if (ret != LTTNG_OK) {
-				goto error;
-			}
-		}
-
 		snapshot_success = 1;
 	} else {
 		struct snapshot_output *sout;
@@ -4044,58 +4696,38 @@ int cmd_snapshot_record(struct ltt_session *session,
 		rcu_read_lock();
 		cds_lfht_for_each_entry(session->snapshot.output_ht->ht,
 				&iter.iter, sout, node.node) {
-			int64_t nb_packets_per_stream;
+			struct snapshot_output output_copy;
 
 			/*
-			 * Make a local copy of the output and assign the possible
-			 * temporary value given by the caller.
+			 * Make a local copy of the output and override output
+			 * parameters with those provided as part of the
+			 * command.
 			 */
-			memset(&tmp_output, 0, sizeof(tmp_output));
-			memcpy(&tmp_output, sout, sizeof(tmp_output));
+			memcpy(&output_copy, sout, sizeof(output_copy));
 
 			if (output->max_size != (uint64_t) -1ULL) {
-				tmp_output.max_size = output->max_size;
+				output_copy.max_size = output->max_size;
 			}
 
-			nb_packets_per_stream = get_session_nb_packets_per_stream(session,
-					tmp_output.max_size);
-			if (nb_packets_per_stream < 0) {
-				ret = LTTNG_ERR_MAX_SIZE_INVALID;
-				rcu_read_unlock();
-				goto error;
-			}
+			output_copy.nb_snapshot = session->snapshot.nb_snapshot;
+			memcpy(output_copy.datetime, datetime,
+					sizeof(datetime));
 
 			/* Use temporary name. */
 			if (*output->name != '\0') {
-				if (lttng_strncpy(tmp_output.name, output->name,
-						sizeof(tmp_output.name))) {
-					ret = LTTNG_ERR_INVALID;
+				if (lttng_strncpy(output_copy.name,
+						output->name,
+						sizeof(output_copy.name))) {
+					cmd_ret = LTTNG_ERR_INVALID;
 					rcu_read_unlock();
 					goto error;
 				}
 			}
 
-			tmp_output.nb_snapshot = session->snapshot.nb_snapshot;
-			memcpy(tmp_output.datetime, datetime, sizeof(datetime));
-
-			if (session->kernel_session) {
-				ret = record_kernel_snapshot(session->kernel_session,
-						&tmp_output, session,
-						wait, nb_packets_per_stream);
-				if (ret != LTTNG_OK) {
-					rcu_read_unlock();
-					goto error;
-				}
-			}
-
-			if (session->ust_session) {
-				ret = record_ust_snapshot(session->ust_session,
-						&tmp_output, session,
-						wait, nb_packets_per_stream);
-				if (ret != LTTNG_OK) {
-					rcu_read_unlock();
-					goto error;
-				}
+			cmd_ret = snapshot_record(session, &output_copy, wait);
+			if (cmd_ret != LTTNG_OK) {
+				rcu_read_unlock();
+				goto error;
 			}
 			snapshot_success = 1;
 		}
@@ -4105,11 +4737,14 @@ int cmd_snapshot_record(struct ltt_session *session,
 	if (snapshot_success) {
 		session->snapshot.nb_snapshot++;
 	} else {
-		ret = LTTNG_ERR_SNAPSHOT_FAIL;
+		cmd_ret = LTTNG_ERR_SNAPSHOT_FAIL;
 	}
 
 error:
-	return ret;
+	if (tmp_output) {
+		snapshot_output_destroy(tmp_output);
+	}
+	return cmd_ret;
 }
 
 /*
@@ -4133,6 +4768,514 @@ int cmd_set_session_shm_path(struct ltt_session *session,
 	session->shm_path[sizeof(session->shm_path) - 1] = '\0';
 
 	return 0;
+}
+
+/*
+ * Command LTTNG_ROTATE_SESSION from the lttng-ctl library.
+ *
+ * Ask the consumer to rotate the session output directory.
+ * The session lock must be held.
+ *
+ * Returns LTTNG_OK on success or else a negative LTTng error code.
+ */
+int cmd_rotate_session(struct ltt_session *session,
+		struct lttng_rotate_session_return *rotate_return,
+		bool quiet_rotation)
+{
+	int ret;
+	uint64_t ongoing_rotation_chunk_id;
+	enum lttng_error_code cmd_ret = LTTNG_OK;
+	struct lttng_trace_chunk *chunk_being_archived = NULL;
+	struct lttng_trace_chunk *new_trace_chunk = NULL;
+	enum lttng_trace_chunk_status chunk_status;
+	bool failed_to_rotate = false;
+	enum lttng_error_code rotation_fail_code = LTTNG_OK;
+
+	assert(session);
+
+	if (!session->has_been_started) {
+		cmd_ret = LTTNG_ERR_START_SESSION_ONCE;
+		goto end;
+	}
+
+	/*
+	 * Explicit rotation is not supported for live sessions.
+	 * However, live sessions can perform a quiet rotation on
+	 * destroy.
+	 * Rotation is not supported for snapshot traces (no output).
+	 */
+	if ((!quiet_rotation && session->live_timer) ||
+			!session->output_traces) {
+		cmd_ret = LTTNG_ERR_ROTATION_NOT_AVAILABLE;
+		goto end;
+	}
+
+	/* Unsupported feature in lttng-relayd before 2.11. */
+	if (!quiet_rotation && session->consumer->type == CONSUMER_DST_NET &&
+			(session->consumer->relay_major_version == 2 &&
+			session->consumer->relay_minor_version < 11)) {
+		cmd_ret = LTTNG_ERR_ROTATION_NOT_AVAILABLE_RELAY;
+		goto end;
+	}
+
+	if (session->rotation_state == LTTNG_ROTATION_STATE_ONGOING) {
+		DBG("Refusing to launch a rotation; a rotation is already in progress for session %s",
+				session->name);
+		cmd_ret = LTTNG_ERR_ROTATION_PENDING;
+		goto end;
+	}
+
+	/*
+	 * After a stop, we only allow one rotation to occur, the other ones are
+	 * useless until a new start.
+	 */
+	if (session->rotated_after_last_stop) {
+		DBG("Session \"%s\" was already rotated after stop, refusing rotation",
+				session->name);
+		cmd_ret = LTTNG_ERR_ROTATION_MULTIPLE_AFTER_STOP;
+		goto end;
+	}
+
+	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
+
+	if (session->active) {
+		new_trace_chunk = session_create_new_trace_chunk(session, NULL,
+				NULL, NULL);
+		if (!new_trace_chunk) {
+			cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
+			goto error;
+		}
+        }
+
+	/*
+	 * The current trace chunk becomes the chunk being archived.
+	 *
+	 * After this point, "chunk_being_archived" must absolutely
+	 * be closed on the consumer(s), otherwise it will never be
+	 * cleaned-up, which will result in a leak.
+	 */
+	ret = session_set_trace_chunk(session, new_trace_chunk,
+			&chunk_being_archived);
+	if (ret) {
+		cmd_ret = LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+
+	assert(chunk_being_archived);
+	chunk_status = lttng_trace_chunk_get_id(chunk_being_archived,
+			&ongoing_rotation_chunk_id);
+	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+
+	if (session->kernel_session) {
+		cmd_ret = kernel_rotate_session(session);
+		if (cmd_ret != LTTNG_OK) {
+			failed_to_rotate = true;
+			rotation_fail_code = cmd_ret;
+		}
+	}
+	if (session->ust_session) {
+		cmd_ret = ust_app_rotate_session(session);
+		if (cmd_ret != LTTNG_OK) {
+			failed_to_rotate = true;
+			rotation_fail_code = cmd_ret;
+		}
+	}
+
+	ret = session_close_trace_chunk(session, chunk_being_archived,
+			quiet_rotation ?
+					NULL :
+					&((enum lttng_trace_chunk_command_type){
+							LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED}),
+			session->last_chunk_path);
+	if (ret) {
+		cmd_ret = LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+
+	if (failed_to_rotate) {
+		cmd_ret = rotation_fail_code;
+		goto error;
+	}
+
+	session->quiet_rotation = quiet_rotation;
+	ret = timer_session_rotation_pending_check_start(session,
+			DEFAULT_ROTATE_PENDING_TIMER);
+	if (ret) {
+		cmd_ret = LTTNG_ERR_UNK;
+		goto error;
+	}
+
+	if (!session->active) {
+		session->rotated_after_last_stop = true;
+	}
+
+	if (rotate_return) {
+		rotate_return->rotation_id = ongoing_rotation_chunk_id;
+	}
+
+	session->chunk_being_archived = chunk_being_archived;
+	chunk_being_archived = NULL;
+	if (!quiet_rotation) {
+		ret = notification_thread_command_session_rotation_ongoing(
+				notification_thread_handle,
+				session->name, session->uid, session->gid,
+				ongoing_rotation_chunk_id);
+		if (ret != LTTNG_OK) {
+			ERR("Failed to notify notification thread that a session rotation is ongoing for session %s",
+					session->name);
+			cmd_ret = ret;
+		}
+	}
+
+	DBG("Cmd rotate session %s, archive_id %" PRIu64 " sent",
+			session->name, ongoing_rotation_chunk_id);
+end:
+	lttng_trace_chunk_put(new_trace_chunk);
+	lttng_trace_chunk_put(chunk_being_archived);
+	ret = (cmd_ret == LTTNG_OK) ? cmd_ret : -((int) cmd_ret);
+	return ret;
+error:
+	if (session_reset_rotation_state(session,
+			LTTNG_ROTATION_STATE_ERROR)) {
+		ERR("Failed to reset rotation state of session \"%s\"",
+				session->name);
+	}
+	goto end;
+}
+
+/*
+ * Command LTTNG_ROTATION_GET_INFO from the lttng-ctl library.
+ *
+ * Check if the session has finished its rotation.
+ *
+ * Return LTTNG_OK on success or else an LTTNG_ERR code.
+ */
+int cmd_rotate_get_info(struct ltt_session *session,
+		struct lttng_rotation_get_info_return *info_return,
+		uint64_t rotation_id)
+{
+	enum lttng_error_code cmd_ret = LTTNG_OK;
+	enum lttng_rotation_state rotation_state;
+
+	DBG("Cmd rotate_get_info session %s, rotation id %" PRIu64, session->name,
+			session->most_recent_chunk_id.value);
+
+	if (session->chunk_being_archived) {
+		enum lttng_trace_chunk_status chunk_status;
+		uint64_t chunk_id;
+
+		chunk_status = lttng_trace_chunk_get_id(
+				session->chunk_being_archived,
+				&chunk_id);
+		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+
+		rotation_state = rotation_id == chunk_id ?
+				LTTNG_ROTATION_STATE_ONGOING :
+				LTTNG_ROTATION_STATE_EXPIRED;
+	} else {
+		if (session->last_archived_chunk_id.is_set &&
+				rotation_id != session->last_archived_chunk_id.value) {
+			rotation_state = LTTNG_ROTATION_STATE_EXPIRED;
+		} else {
+			rotation_state = session->rotation_state;
+		}
+	}
+
+	switch (rotation_state) {
+	case LTTNG_ROTATION_STATE_NO_ROTATION:
+		DBG("Reporting that no rotation has occured within the lifetime of session \"%s\"",
+				session->name);
+		goto end;
+	case LTTNG_ROTATION_STATE_EXPIRED:
+		DBG("Reporting that the rotation state of rotation id %" PRIu64 " of session \"%s\" has expired",
+				rotation_id, session->name);
+		break;
+	case LTTNG_ROTATION_STATE_ONGOING:
+		DBG("Reporting that rotation id %" PRIu64 " of session \"%s\" is still pending",
+				rotation_id, session->name);
+		break;
+	case LTTNG_ROTATION_STATE_COMPLETED:
+	{
+		int fmt_ret;
+		char *chunk_path;
+		char *current_tracing_path_reply;
+		size_t current_tracing_path_reply_len;
+
+		DBG("Reporting that rotation id %" PRIu64 " of session \"%s\" is completed",
+				rotation_id, session->name);
+
+		switch (session_get_consumer_destination_type(session)) {
+		case CONSUMER_DST_LOCAL:
+			current_tracing_path_reply =
+					info_return->location.local.absolute_path;
+			current_tracing_path_reply_len =
+					sizeof(info_return->location.local.absolute_path);
+			info_return->location_type =
+					(int8_t) LTTNG_TRACE_ARCHIVE_LOCATION_TYPE_LOCAL;
+			fmt_ret = asprintf(&chunk_path,
+					"%s/" DEFAULT_ARCHIVED_TRACE_CHUNKS_DIRECTORY "/%s",
+					session_get_base_path(session),
+					session->last_archived_chunk_name);
+			if (fmt_ret == -1) {
+				PERROR("Failed to format the path of the last archived trace chunk");
+				info_return->status = LTTNG_ROTATION_STATUS_ERROR;
+				cmd_ret = LTTNG_ERR_UNK;
+				goto end;
+			}
+			break;
+		case CONSUMER_DST_NET:
+		{
+			uint16_t ctrl_port, data_port;
+
+			current_tracing_path_reply =
+					info_return->location.relay.relative_path;
+			current_tracing_path_reply_len =
+					sizeof(info_return->location.relay.relative_path);
+			/* Currently the only supported relay protocol. */
+			info_return->location.relay.protocol =
+					(int8_t) LTTNG_TRACE_ARCHIVE_LOCATION_RELAY_PROTOCOL_TYPE_TCP;
+
+			fmt_ret = lttng_strncpy(info_return->location.relay.host,
+					session_get_net_consumer_hostname(session),
+					sizeof(info_return->location.relay.host));
+			if (fmt_ret) {
+				ERR("Failed to copy host name to rotate_get_info reply");
+				info_return->status = LTTNG_ROTATION_STATUS_ERROR;
+				cmd_ret = LTTNG_ERR_SET_URL;
+				goto end;
+			}
+
+			session_get_net_consumer_ports(session, &ctrl_port, &data_port);
+			info_return->location.relay.ports.control = ctrl_port;
+			info_return->location.relay.ports.data = data_port;
+			info_return->location_type =
+					(int8_t) LTTNG_TRACE_ARCHIVE_LOCATION_TYPE_RELAY;
+			chunk_path = strdup(session->last_chunk_path);
+			if (!chunk_path) {
+				ERR("Failed to allocate the path of the last archived trace chunk");
+				info_return->status = LTTNG_ROTATION_STATUS_ERROR;
+				cmd_ret = LTTNG_ERR_UNK;
+				goto end;
+			}
+			break;
+		}
+		default:
+			abort();
+		}
+
+		fmt_ret = lttng_strncpy(current_tracing_path_reply,
+				chunk_path, current_tracing_path_reply_len);
+		free(chunk_path);
+		if (fmt_ret) {
+			ERR("Failed to copy path of the last archived trace chunk to rotate_get_info reply");
+			info_return->status = LTTNG_ROTATION_STATUS_ERROR;
+			cmd_ret = LTTNG_ERR_UNK;
+			goto end;
+		}
+
+		break;
+	}
+	case LTTNG_ROTATION_STATE_ERROR:
+		DBG("Reporting that an error occurred during rotation %" PRIu64 " of session \"%s\"",
+				rotation_id, session->name);
+		break;
+	default:
+		abort();
+	}
+
+	cmd_ret = LTTNG_OK;
+end:
+	info_return->status = (int32_t) rotation_state;
+	return cmd_ret;
+}
+
+/*
+ * Command LTTNG_ROTATION_SET_SCHEDULE from the lttng-ctl library.
+ *
+ * Configure the automatic rotation parameters.
+ * 'activate' to true means activate the rotation schedule type with 'new_value'.
+ * 'activate' to false means deactivate the rotation schedule and validate that
+ * 'new_value' has the same value as the currently active value.
+ *
+ * Return 0 on success or else a positive LTTNG_ERR code.
+ */
+int cmd_rotation_set_schedule(struct ltt_session *session,
+		bool activate, enum lttng_rotation_schedule_type schedule_type,
+		uint64_t new_value,
+		struct notification_thread_handle *notification_thread_handle)
+{
+	int ret;
+	uint64_t *parameter_value;
+
+	assert(session);
+
+	DBG("Cmd rotate set schedule session %s", session->name);
+
+	if (session->live_timer || !session->output_traces) {
+		DBG("Failing ROTATION_SET_SCHEDULE command as the rotation feature is not available for this session");
+		ret = LTTNG_ERR_ROTATION_NOT_AVAILABLE;
+		goto end;
+	}
+
+	switch (schedule_type) {
+	case LTTNG_ROTATION_SCHEDULE_TYPE_SIZE_THRESHOLD:
+		parameter_value = &session->rotate_size;
+		break;
+	case LTTNG_ROTATION_SCHEDULE_TYPE_PERIODIC:
+		parameter_value = &session->rotate_timer_period;
+		if (new_value >= UINT_MAX) {
+			DBG("Failing ROTATION_SET_SCHEDULE command as the value requested for a periodic rotation schedule is invalid: %" PRIu64 " > %u (UINT_MAX)",
+					new_value, UINT_MAX);
+			ret = LTTNG_ERR_INVALID;
+			goto end;
+		}
+		break;
+	default:
+		WARN("Failing ROTATION_SET_SCHEDULE command on unknown schedule type");
+		ret = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	/* Improper use of the API. */
+	if (new_value == -1ULL) {
+		WARN("Failing ROTATION_SET_SCHEDULE command as the value requested is -1");
+		ret = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	/*
+	 * As indicated in struct ltt_session's comments, a value of == 0 means
+	 * this schedule rotation type is not in use.
+	 *
+	 * Reject the command if we were asked to activate a schedule that was
+	 * already active.
+	 */
+	if (activate && *parameter_value != 0) {
+		DBG("Failing ROTATION_SET_SCHEDULE (activate) command as the schedule is already active");
+		ret = LTTNG_ERR_ROTATION_SCHEDULE_SET;
+		goto end;
+	}
+
+	/*
+	 * Reject the command if we were asked to deactivate a schedule that was
+	 * not active.
+	 */
+	if (!activate && *parameter_value == 0) {
+		DBG("Failing ROTATION_SET_SCHEDULE (deactivate) command as the schedule is already inactive");
+		ret = LTTNG_ERR_ROTATION_SCHEDULE_NOT_SET;
+		goto end;
+	}
+
+	/*
+	 * Reject the command if we were asked to deactivate a schedule that
+	 * doesn't exist.
+	 */
+	if (!activate && *parameter_value != new_value) {
+		DBG("Failing ROTATION_SET_SCHEDULE (deactivate) command as an inexistant schedule was provided");
+		ret = LTTNG_ERR_ROTATION_SCHEDULE_NOT_SET;
+		goto end;
+	}
+
+	*parameter_value = activate ? new_value : 0;
+
+	switch (schedule_type) {
+	case LTTNG_ROTATION_SCHEDULE_TYPE_PERIODIC:
+		if (activate && session->active) {
+			/*
+			 * Only start the timer if the session is active,
+			 * otherwise it will be started when the session starts.
+			 */
+			ret = timer_session_rotation_schedule_timer_start(
+					session, new_value);
+			if (ret) {
+				ERR("Failed to enable session rotation timer in ROTATION_SET_SCHEDULE command");
+				ret = LTTNG_ERR_UNK;
+				goto end;
+			}
+		} else {
+			ret = timer_session_rotation_schedule_timer_stop(
+					session);
+			if (ret) {
+				ERR("Failed to disable session rotation timer in ROTATION_SET_SCHEDULE command");
+				ret = LTTNG_ERR_UNK;
+				goto end;
+			}
+		}
+		break;
+	case LTTNG_ROTATION_SCHEDULE_TYPE_SIZE_THRESHOLD:
+		if (activate) {
+			ret = subscribe_session_consumed_size_rotation(session,
+					new_value, notification_thread_handle);
+			if (ret) {
+				ERR("Failed to enable consumed-size notification in ROTATION_SET_SCHEDULE command");
+				ret = LTTNG_ERR_UNK;
+				goto end;
+			}
+		} else {
+			ret = unsubscribe_session_consumed_size_rotation(session,
+					notification_thread_handle);
+			if (ret) {
+				ERR("Failed to disable consumed-size notification in ROTATION_SET_SCHEDULE command");
+				ret = LTTNG_ERR_UNK;
+				goto end;
+			}
+
+		}
+		break;
+	default:
+		/* Would have been caught before. */
+		abort();
+	}
+
+	ret = LTTNG_OK;
+
+	goto end;
+
+end:
+	return ret;
+}
+
+/* Wait for a given path to be removed before continuing. */
+static enum lttng_error_code wait_on_path(void *path_data)
+{
+	const char *shm_path = path_data;
+
+	DBG("Waiting for the shm path at %s to be removed before completing session destruction",
+			shm_path);
+	while (true) {
+		int ret;
+		struct stat st;
+
+		ret = stat(shm_path, &st);
+		if (ret) {
+			if (errno != ENOENT) {
+				PERROR("stat() returned an error while checking for the existence of the shm path");
+			} else {
+				DBG("shm path no longer exists, completing the destruction of session");
+			}
+			break;
+		} else {
+			if (!S_ISDIR(st.st_mode)) {
+				ERR("The type of shm path %s returned by stat() is not a directory; aborting the wait for shm path removal",
+						shm_path);
+				break;
+			}
+		}
+		usleep(SESSION_DESTROY_SHM_PATH_CHECK_DELAY_US);
+	}
+	return LTTNG_OK;
+}
+
+/*
+ * Returns a pointer to a handler to run on completion of a command.
+ * Returns NULL if no handler has to be run for the last command executed.
+ */
+const struct cmd_completion_handler *cmd_pop_completion_handler(void)
+{
+	struct cmd_completion_handler *handler = current_completion_handler;
+
+	current_completion_handler = NULL;
+	return handler;
 }
 
 /*

@@ -22,18 +22,36 @@
 #include <string.h>
 #include <unistd.h>
 #include <inttypes.h>
+#include <sys/types.h>
 
 #include <common/common.h>
+#include <common/trace-chunk.h>
 #include <common/kernel-ctl/kernel-ctl.h>
 #include <common/kernel-ctl/kernel-ioctl.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 
+#include "lttng-sessiond.h"
+#include "lttng-syscall.h"
 #include "consumer.h"
 #include "kernel.h"
 #include "kernel-consumer.h"
 #include "kern-modules.h"
 #include "utils.h"
+#include "rotate.h"
+#include "modprobe.h"
 
+/*
+ * Key used to reference a channel between the sessiond and the consumer. This
+ * is only read and updated with the session_list lock held.
+ */
+static uint64_t next_kernel_channel_key;
+
+static const char *module_proc_lttng = "/proc/lttng";
+
+static int kernel_tracer_fd = -1;
+
+#include <lttng/userspace-probe.h>
+#include <lttng/userspace-probe-internal.h>
 /*
  * Add context on a kernel channel.
  *
@@ -82,7 +100,7 @@ error:
  * Create a new kernel session, register it to the kernel tracer and add it to
  * the session daemon session.
  */
-int kernel_create_session(struct ltt_session *session, int tracer_fd)
+int kernel_create_session(struct ltt_session *session)
 {
 	int ret;
 	struct ltt_kernel_session *lks;
@@ -97,7 +115,7 @@ int kernel_create_session(struct ltt_session *session, int tracer_fd)
 	}
 
 	/* Kernel tracer session creation */
-	ret = kernctl_create_session(tracer_fd);
+	ret = kernctl_create_session(kernel_tracer_fd);
 	if (ret < 0) {
 		PERROR("ioctl kernel create session");
 		goto error;
@@ -116,11 +134,32 @@ int kernel_create_session(struct ltt_session *session, int tracer_fd)
 
 	DBG("Kernel session created (fd: %d)", lks->fd);
 
+	/*
+	 * This is necessary since the creation time is present in the session
+	 * name when it is generated.
+	 */
+	if (session->has_auto_generated_name) {
+		ret = kernctl_session_set_name(lks->fd, DEFAULT_SESSION_NAME);
+	} else {
+		ret = kernctl_session_set_name(lks->fd, session->name);
+	}
+	if (ret) {
+		WARN("Could not set kernel session name for session %" PRIu64 " name: %s",
+			session->id, session->name);
+	}
+
+	ret = kernctl_session_set_creation_time(lks->fd, session->creation_time);
+	if (ret) {
+		WARN("Could not set kernel session creation time for session %" PRIu64 " name: %s",
+			session->id, session->name);
+	}
+
 	return 0;
 
 error:
 	if (lks) {
 		trace_kernel_destroy_session(lks);
+		trace_kernel_free_session(lks);
 	}
 	return ret;
 }
@@ -169,8 +208,10 @@ int kernel_create_channel(struct ltt_kernel_session *session,
 	cds_list_add(&lkc->list, &session->channel_list.head);
 	session->channel_count++;
 	lkc->session = session;
+	lkc->key = ++next_kernel_channel_key;
 
-	DBG("Kernel channel %s created (fd: %d)", lkc->channel->name, lkc->fd);
+	DBG("Kernel channel %s created (fd: %d, key: %" PRIu64 ")",
+			lkc->channel->name, lkc->fd, lkc->key);
 
 	return 0;
 
@@ -183,6 +224,236 @@ error:
 }
 
 /*
+ * Compute the offset of the instrumentation byte in the binary based on the
+ * function probe location using the ELF lookup method.
+ *
+ * Returns 0 on success and set the offset out parameter to the offset of the
+ * elf symbol
+ * Returns -1 on error
+ */
+static
+int extract_userspace_probe_offset_function_elf(
+		const struct lttng_userspace_probe_location *probe_location,
+		struct ltt_kernel_session *session, uint64_t *offset)
+{
+	int fd;
+	int ret = 0;
+	const char *symbol = NULL;
+	const struct lttng_userspace_probe_location_lookup_method *lookup = NULL;
+	enum lttng_userspace_probe_location_lookup_method_type lookup_method_type;
+
+	assert(lttng_userspace_probe_location_get_type(probe_location) ==
+			LTTNG_USERSPACE_PROBE_LOCATION_TYPE_FUNCTION);
+
+	lookup = lttng_userspace_probe_location_get_lookup_method(
+			probe_location);
+	if (!lookup) {
+		ret = -1;
+		goto end;
+	}
+
+	lookup_method_type =
+			lttng_userspace_probe_location_lookup_method_get_type(lookup);
+
+	assert(lookup_method_type ==
+			LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF);
+
+	symbol = lttng_userspace_probe_location_function_get_function_name(
+			probe_location);
+	if (!symbol) {
+		ret = -1;
+		goto end;
+	}
+
+	fd = lttng_userspace_probe_location_function_get_binary_fd(probe_location);
+	if (fd < 0) {
+		ret = -1;
+		goto end;
+	}
+
+	ret = run_as_extract_elf_symbol_offset(fd, symbol, session->uid,
+			session->gid, offset);
+	if (ret < 0) {
+		DBG("userspace probe offset calculation failed for "
+				"function %s", symbol);
+		goto end;
+	}
+
+	DBG("userspace probe elf offset for %s is 0x%jd", symbol, (intmax_t)(*offset));
+end:
+	return ret;
+}
+
+/*
+ * Compute the offsets of the instrumentation bytes in the binary based on the
+ * tracepoint probe location using the SDT lookup method. This function
+ * allocates the offsets buffer, the caller must free it.
+ *
+ * Returns 0 on success and set the offset out parameter to the offsets of the
+ * SDT tracepoint.
+ * Returns -1 on error.
+ */
+static
+int extract_userspace_probe_offset_tracepoint_sdt(
+		const struct lttng_userspace_probe_location *probe_location,
+		struct ltt_kernel_session *session, uint64_t **offsets,
+		uint32_t *offsets_count)
+{
+	enum lttng_userspace_probe_location_lookup_method_type lookup_method_type;
+	const struct lttng_userspace_probe_location_lookup_method *lookup = NULL;
+	const char *probe_name = NULL, *provider_name = NULL;
+	int ret = 0;
+	int fd, i;
+
+	assert(lttng_userspace_probe_location_get_type(probe_location) ==
+			LTTNG_USERSPACE_PROBE_LOCATION_TYPE_TRACEPOINT);
+
+	lookup = lttng_userspace_probe_location_get_lookup_method(probe_location);
+	if (!lookup) {
+		ret = -1;
+		goto end;
+	}
+
+	lookup_method_type =
+			lttng_userspace_probe_location_lookup_method_get_type(lookup);
+
+	assert(lookup_method_type ==
+			LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_TRACEPOINT_SDT);
+
+
+	probe_name = lttng_userspace_probe_location_tracepoint_get_probe_name(
+			probe_location);
+	if (!probe_name) {
+		ret = -1;
+		goto end;
+	}
+
+	provider_name = lttng_userspace_probe_location_tracepoint_get_provider_name(
+			probe_location);
+	if (!provider_name) {
+		ret = -1;
+		goto end;
+	}
+
+	fd = lttng_userspace_probe_location_tracepoint_get_binary_fd(probe_location);
+	if (fd < 0) {
+		ret = -1;
+		goto end;
+	}
+
+	ret = run_as_extract_sdt_probe_offsets(fd, provider_name, probe_name,
+			session->uid, session->gid, offsets, offsets_count);
+	if (ret < 0) {
+		DBG("userspace probe offset calculation failed for sdt "
+				"probe %s:%s", provider_name, probe_name);
+		goto end;
+	}
+
+	if (*offsets_count == 0) {
+		DBG("no userspace probe offset found");
+		goto end;
+	}
+
+	DBG("%u userspace probe SDT offsets found for %s:%s at:",
+			*offsets_count, provider_name, probe_name);
+	for (i = 0; i < *offsets_count; i++) {
+		DBG("\t0x%jd", (intmax_t)((*offsets)[i]));
+	}
+end:
+	return ret;
+}
+
+/*
+ * Extract the offsets of the instrumentation point for the different lookup
+ * methods.
+ */
+static
+int userspace_probe_add_callsites(struct lttng_event *ev,
+			struct ltt_kernel_session *session, int fd)
+{
+	const struct lttng_userspace_probe_location_lookup_method *lookup_method = NULL;
+	enum lttng_userspace_probe_location_lookup_method_type type;
+	const struct lttng_userspace_probe_location *location = NULL;
+	int ret;
+
+	assert(ev);
+	assert(ev->type == LTTNG_EVENT_USERSPACE_PROBE);
+
+	location = lttng_event_get_userspace_probe_location(ev);
+	if (!location) {
+		ret = -1;
+		goto end;
+	}
+	lookup_method =
+			lttng_userspace_probe_location_get_lookup_method(location);
+	if (!lookup_method) {
+		ret = -1;
+		goto end;
+	}
+
+	type = lttng_userspace_probe_location_lookup_method_get_type(lookup_method);
+	switch (type) {
+	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF:
+	{
+		struct lttng_kernel_event_callsite callsite;
+		uint64_t offset;
+
+		ret = extract_userspace_probe_offset_function_elf(location, session, &offset);
+		if (ret) {
+			ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
+			goto end;
+		}
+
+		callsite.u.uprobe.offset = offset;
+		ret = kernctl_add_callsite(fd, &callsite);
+		if (ret) {
+			WARN("Adding callsite to userspace probe "
+					"event %s failed.", ev->name);
+			ret = LTTNG_ERR_KERN_ENABLE_FAIL;
+			goto end;
+		}
+		break;
+	}
+	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_TRACEPOINT_SDT:
+	{
+		int i;
+		uint64_t *offsets = NULL;
+		uint32_t offsets_count;
+		struct lttng_kernel_event_callsite callsite;
+
+		/*
+		 * This call allocates the offsets buffer. This buffer must be freed
+		 * by the caller
+		 */
+		ret = extract_userspace_probe_offset_tracepoint_sdt(location, session,
+				&offsets, &offsets_count);
+		if (ret) {
+			ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
+			goto end;
+		}
+		for (i = 0; i < offsets_count; i++) {
+			callsite.u.uprobe.offset = offsets[i];
+			ret = kernctl_add_callsite(fd, &callsite);
+			if (ret) {
+				WARN("Adding callsite to userspace probe "
+						"event %s failed.", ev->name);
+				ret = LTTNG_ERR_KERN_ENABLE_FAIL;
+				free(offsets);
+				goto end;
+			}
+		}
+		free(offsets);
+		break;
+	}
+	default:
+		ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
+		goto end;
+	}
+end:
+	return ret;
+}
+
+/*
  * Create a kernel event, enable it to the kernel tracer and add it to the
  * channel event list of the kernel session.
  * We own filter_expression and filter.
@@ -192,60 +463,80 @@ int kernel_create_event(struct lttng_event *ev,
 		char *filter_expression,
 		struct lttng_filter_bytecode *filter)
 {
-	int ret;
+	int err, fd;
+	enum lttng_error_code ret;
 	struct ltt_kernel_event *event;
 
 	assert(ev);
 	assert(channel);
 
 	/* We pass ownership of filter_expression and filter */
-	event = trace_kernel_create_event(ev, filter_expression,
-			filter);
-	if (event == NULL) {
-		ret = -1;
+	ret = trace_kernel_create_event(ev, filter_expression,
+			filter, &event);
+	if (ret != LTTNG_OK) {
 		goto error;
 	}
 
-	ret = kernctl_create_event(channel->fd, event->event);
-	if (ret < 0) {
-		switch (-ret) {
+	fd = kernctl_create_event(channel->fd, event->event);
+	if (fd < 0) {
+		switch (-fd) {
 		case EEXIST:
+			ret = LTTNG_ERR_KERN_EVENT_EXIST;
 			break;
 		case ENOSYS:
 			WARN("Event type not implemented");
+			ret = LTTNG_ERR_KERN_EVENT_ENOSYS;
 			break;
 		case ENOENT:
 			WARN("Event %s not found!", ev->name);
+			ret = LTTNG_ERR_KERN_ENABLE_FAIL;
 			break;
 		default:
+			ret = LTTNG_ERR_KERN_ENABLE_FAIL;
 			PERROR("create event ioctl");
 		}
 		goto free_event;
 	}
 
 	event->type = ev->type;
-	event->fd = ret;
+	event->fd = fd;
 	/* Prevent fd duplication after execlp() */
-	ret = fcntl(event->fd, F_SETFD, FD_CLOEXEC);
-	if (ret < 0) {
+	err = fcntl(event->fd, F_SETFD, FD_CLOEXEC);
+	if (err < 0) {
 		PERROR("fcntl session fd");
 	}
 
 	if (filter) {
-		ret = kernctl_filter(event->fd, filter);
-		if (ret) {
+		err = kernctl_filter(event->fd, filter);
+		if (err < 0) {
+			switch (-err) {
+			case ENOMEM:
+				ret = LTTNG_ERR_FILTER_NOMEM;
+				break;
+			default:
+				ret = LTTNG_ERR_FILTER_INVAL;
+				break;
+			}
 			goto filter_error;
 		}
 	}
 
-	ret = kernctl_enable(event->fd);
-	if (ret < 0) {
-		switch (-ret) {
+	if (ev->type == LTTNG_EVENT_USERSPACE_PROBE) {
+		ret = userspace_probe_add_callsites(ev, channel->session, event->fd);
+		if (ret) {
+			goto add_callsite_error;
+		}
+	}
+
+	err = kernctl_enable(event->fd);
+	if (err < 0) {
+		switch (-err) {
 		case EEXIST:
 			ret = LTTNG_ERR_KERN_EVENT_EXIST;
 			break;
 		default:
 			PERROR("enable kernel event");
+			ret = LTTNG_ERR_KERN_ENABLE_FAIL;
 			break;
 		}
 		goto enable_error;
@@ -259,6 +550,7 @@ int kernel_create_event(struct lttng_event *ev,
 
 	return 0;
 
+add_callsite_error:
 enable_error:
 filter_error:
 	{
@@ -291,7 +583,8 @@ int kernel_disable_channel(struct ltt_kernel_channel *chan)
 	}
 
 	chan->enabled = 0;
-	DBG("Kernel channel %s disabled (fd: %d)", chan->channel->name, chan->fd);
+	DBG("Kernel channel %s disabled (fd: %d, key: %" PRIu64 ")",
+			chan->channel->name, chan->fd, chan->key);
 
 	return 0;
 
@@ -315,7 +608,8 @@ int kernel_enable_channel(struct ltt_kernel_channel *chan)
 	}
 
 	chan->enabled = 1;
-	DBG("Kernel channel %s enabled (fd: %d)", chan->channel->name, chan->fd);
+	DBG("Kernel channel %s enabled (fd: %d, key: %" PRIu64 ")",
+			chan->channel->name, chan->fd, chan->key);
 
 	return 0;
 
@@ -525,6 +819,7 @@ int kernel_open_metadata(struct ltt_kernel_session *session)
 	}
 
 	lkm->fd = ret;
+	lkm->key = ++next_kernel_channel_key;
 	/* Prevent fd duplication after execlp() */
 	ret = fcntl(lkm->fd, F_SETFD, FD_CLOEXEC);
 	if (ret < 0) {
@@ -569,9 +864,10 @@ error:
 /*
  * Make a kernel wait to make sure in-flight probe have completed.
  */
-void kernel_wait_quiescent(int fd)
+void kernel_wait_quiescent(void)
 {
 	int ret;
+	int fd = kernel_tracer_fd;
 
 	DBG("Kernel quiescent wait on %d", fd);
 
@@ -730,7 +1026,7 @@ error:
 /*
  * Get the event list from the kernel tracer and return the number of elements.
  */
-ssize_t kernel_list_events(int tracer_fd, struct lttng_event **events)
+ssize_t kernel_list_events(struct lttng_event **events)
 {
 	int fd, ret;
 	char *event;
@@ -740,7 +1036,7 @@ ssize_t kernel_list_events(int tracer_fd, struct lttng_event **events)
 
 	assert(events);
 
-	fd = kernctl_tracepoint_list(tracer_fd);
+	fd = kernctl_tracepoint_list(kernel_tracer_fd);
 	if (fd < 0) {
 		PERROR("kernel tracepoint list");
 		goto error;
@@ -814,38 +1110,37 @@ error:
 /*
  * Get kernel version and validate it.
  */
-int kernel_validate_version(int tracer_fd)
+int kernel_validate_version(struct lttng_kernel_tracer_version *version,
+		struct lttng_kernel_tracer_abi_version *abi_version)
 {
 	int ret;
-	struct lttng_kernel_tracer_version version;
-	struct lttng_kernel_tracer_abi_version abi_version;
 
-	ret = kernctl_tracer_version(tracer_fd, &version);
+	ret = kernctl_tracer_version(kernel_tracer_fd, version);
 	if (ret < 0) {
 		ERR("Failed to retrieve the lttng-modules version");
 		goto error;
 	}
 
 	/* Validate version */
-	if (version.major != VERSION_MAJOR) {
+	if (version->major != VERSION_MAJOR) {
 		ERR("Kernel tracer major version (%d) is not compatible with lttng-tools major version (%d)",
-			version.major, VERSION_MAJOR);
+			version->major, VERSION_MAJOR);
 		goto error_version;
 	}
-	ret = kernctl_tracer_abi_version(tracer_fd, &abi_version);
+	ret = kernctl_tracer_abi_version(kernel_tracer_fd, abi_version);
 	if (ret < 0) {
 		ERR("Failed to retrieve lttng-modules ABI version");
 		goto error;
 	}
-	if (abi_version.major != LTTNG_MODULES_ABI_MAJOR_VERSION) {
+	if (abi_version->major != LTTNG_MODULES_ABI_MAJOR_VERSION) {
 		ERR("Kernel tracer ABI version (%d.%d) does not match the expected ABI major version (%d.*)",
-			abi_version.major, abi_version.minor,
+			abi_version->major, abi_version->minor,
 			LTTNG_MODULES_ABI_MAJOR_VERSION);
 		goto error;
 	}
 	DBG2("Kernel tracer version validated (%d.%d, ABI %d.%d)",
-			version.major, version.minor,
-			abi_version.major, abi_version.minor);
+			version->major, version->minor,
+			abi_version->major, abi_version->minor);
 	return 0;
 
 error_version:
@@ -890,16 +1185,19 @@ end_boot_id:
 }
 
 /*
- * Complete teardown of a kernel session.
+ * Teardown of a kernel session, keeping data required by destroy notifiers.
  */
 void kernel_destroy_session(struct ltt_kernel_session *ksess)
 {
+	struct lttng_trace_chunk *trace_chunk;
+
 	if (ksess == NULL) {
 		DBG3("No kernel session when tearing down session");
 		return;
 	}
 
 	DBG("Tearing down kernel session");
+	trace_chunk = ksess->current_trace_chunk;
 
 	/*
 	 * Destroy channels on the consumer if at least one FD has been sent and we
@@ -933,6 +1231,16 @@ void kernel_destroy_session(struct ltt_kernel_session *ksess)
 	consumer_output_send_destroy_relayd(ksess->consumer);
 
 	trace_kernel_destroy_session(ksess);
+	lttng_trace_chunk_put(trace_chunk);
+}
+
+/* Teardown of data required by destroy notifiers. */
+void kernel_free_session(struct ltt_kernel_session *ksess)
+{
+	if (ksess == NULL) {
+		return;
+	}
+	trace_kernel_free_session(ksess);
 }
 
 /*
@@ -968,16 +1276,19 @@ void kernel_destroy_channel(struct ltt_kernel_channel *kchan)
 /*
  * Take a snapshot for a given kernel session.
  *
- * Return 0 on success or else return a LTTNG_ERR code.
+ * Return LTTNG_OK on success or else return a LTTNG_ERR code.
  */
-int kernel_snapshot_record(struct ltt_kernel_session *ksess,
-		struct snapshot_output *output, int wait,
+enum lttng_error_code kernel_snapshot_record(
+		struct ltt_kernel_session *ksess,
+		const struct consumer_output *output, int wait,
 		uint64_t nb_packets_per_stream)
 {
 	int err, ret, saved_metadata_fd;
+	enum lttng_error_code status = LTTNG_OK;
 	struct consumer_socket *socket;
 	struct lttng_ht_iter iter;
 	struct ltt_kernel_metadata *saved_metadata;
+	char *trace_path = NULL;
 
 	assert(ksess);
 	assert(ksess->consumer);
@@ -993,48 +1304,43 @@ int kernel_snapshot_record(struct ltt_kernel_session *ksess,
 
 	ret = kernel_open_metadata(ksess);
 	if (ret < 0) {
-		ret = LTTNG_ERR_KERN_META_FAIL;
+		status = LTTNG_ERR_KERN_META_FAIL;
 		goto error;
 	}
 
 	ret = kernel_open_metadata_stream(ksess);
 	if (ret < 0) {
-		ret = LTTNG_ERR_KERN_META_FAIL;
+		status = LTTNG_ERR_KERN_META_FAIL;
 		goto error_open_stream;
 	}
 
+	trace_path = setup_channel_trace_path(ksess->consumer,
+			DEFAULT_KERNEL_TRACE_DIR);
+	if (!trace_path) {
+		status = LTTNG_ERR_INVALID;
+		goto error;
+	}
 	/* Send metadata to consumer and snapshot everything. */
-	cds_lfht_for_each_entry(ksess->consumer->socks->ht, &iter.iter,
+	cds_lfht_for_each_entry(output->socks->ht, &iter.iter,
 			socket, node.node) {
-		struct consumer_output *saved_output;
 		struct ltt_kernel_channel *chan;
-
-		/*
-		 * Temporarly switch consumer output for our snapshot output. As long
-		 * as the session lock is taken, this is safe.
-		 */
-		saved_output = ksess->consumer;
-		ksess->consumer = output->consumer;
 
 		pthread_mutex_lock(socket->lock);
 		/* This stream must not be monitored by the consumer. */
 		ret = kernel_consumer_add_metadata(socket, ksess, 0);
 		pthread_mutex_unlock(socket->lock);
-		/* Put back the saved consumer output into the session. */
-		ksess->consumer = saved_output;
 		if (ret < 0) {
-			ret = LTTNG_ERR_KERN_META_FAIL;
+			status = LTTNG_ERR_KERN_META_FAIL;
 			goto error_consumer;
 		}
 
 		/* For each channel, ask the consumer to snapshot it. */
 		cds_list_for_each_entry(chan, &ksess->channel_list.head, list) {
-			ret = consumer_snapshot_channel(socket, chan->fd, output, 0,
+			status = consumer_snapshot_channel(socket, chan->key, output, 0,
 					ksess->uid, ksess->gid,
-					DEFAULT_KERNEL_TRACE_DIR, wait,
+					trace_path, wait,
 					nb_packets_per_stream);
-			if (ret < 0) {
-				ret = LTTNG_ERR_KERN_CONSUMER_FAIL;
+			if (status != LTTNG_OK) {
 				(void) kernel_consumer_destroy_metadata(socket,
 						ksess->metadata);
 				goto error_consumer;
@@ -1042,11 +1348,9 @@ int kernel_snapshot_record(struct ltt_kernel_session *ksess,
 		}
 
 		/* Snapshot metadata, */
-		ret = consumer_snapshot_channel(socket, ksess->metadata->fd, output,
-				1, ksess->uid, ksess->gid,
-				DEFAULT_KERNEL_TRACE_DIR, wait, 0);
-		if (ret < 0) {
-			ret = LTTNG_ERR_KERN_CONSUMER_FAIL;
+		status = consumer_snapshot_channel(socket, ksess->metadata->key, output,
+				1, ksess->uid, ksess->gid, trace_path, wait, 0);
+		if (status != LTTNG_OK) {
 			goto error_consumer;
 		}
 
@@ -1056,8 +1360,6 @@ int kernel_snapshot_record(struct ltt_kernel_session *ksess,
 		 */
 		(void) kernel_consumer_destroy_metadata(socket, ksess->metadata);
 	}
-
-	ret = LTTNG_OK;
 
 error_consumer:
 	/* Close newly opened metadata stream. It's now on the consumer side. */
@@ -1072,9 +1374,9 @@ error:
 	/* Restore metadata state.*/
 	ksess->metadata = saved_metadata;
 	ksess->metadata_stream_fd = saved_metadata_fd;
-
 	rcu_read_unlock();
-	return ret;
+	free(trace_path);
+	return status;
 }
 
 /*
@@ -1098,12 +1400,12 @@ int kernel_syscall_mask(int chan_fd, char **syscall_mask, uint32_t *nr_bits)
  * Return 1 on success, 0 when feature is not supported, negative value in case
  * of errors.
  */
-int kernel_supports_ring_buffer_snapshot_sample_positions(int tracer_fd)
+int kernel_supports_ring_buffer_snapshot_sample_positions(void)
 {
 	int ret = 0; // Not supported by default
 	struct lttng_kernel_tracer_abi_version abi;
 
-	ret = kernctl_tracer_abi_version(tracer_fd, &abi);
+	ret = kernctl_tracer_abi_version(kernel_tracer_fd, &abi);
 	if (ret < 0) {
 		ERR("Failed to retrieve lttng-modules ABI version");
 		goto error;
@@ -1121,4 +1423,194 @@ int kernel_supports_ring_buffer_snapshot_sample_positions(int tracer_fd)
 	}
 error:
 	return ret;
+}
+
+/*
+ * Rotate a kernel session.
+ *
+ * Return LTTNG_OK on success or else an LTTng error code.
+ */
+enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
+{
+	int ret;
+	enum lttng_error_code status = LTTNG_OK;
+	struct consumer_socket *socket;
+	struct lttng_ht_iter iter;
+	struct ltt_kernel_session *ksess = session->kernel_session;
+
+	assert(ksess);
+	assert(ksess->consumer);
+
+	DBG("Rotate kernel session %s started (session %" PRIu64 ")",
+			session->name, session->id);
+
+	rcu_read_lock();
+
+	/*
+	 * Note that this loop will end after one iteration given that there is
+	 * only one kernel consumer.
+	 */
+	cds_lfht_for_each_entry(ksess->consumer->socks->ht, &iter.iter,
+			socket, node.node) {
+		struct ltt_kernel_channel *chan;
+
+                /* For each channel, ask the consumer to rotate it. */
+		cds_list_for_each_entry(chan, &ksess->channel_list.head, list) {
+			DBG("Rotate kernel channel %" PRIu64 ", session %s",
+					chan->key, session->name);
+			ret = consumer_rotate_channel(socket, chan->key,
+					ksess->uid, ksess->gid, ksess->consumer,
+					/* is_metadata_channel */ false);
+			if (ret < 0) {
+				status = LTTNG_ERR_KERN_CONSUMER_FAIL;
+				goto error;
+			}
+		}
+
+		/*
+		 * Rotate the metadata channel.
+		 */
+		ret = consumer_rotate_channel(socket, ksess->metadata->key,
+				ksess->uid, ksess->gid, ksess->consumer,
+				/* is_metadata_channel */ true);
+		if (ret < 0) {
+			status = LTTNG_ERR_KERN_CONSUMER_FAIL;
+			goto error;
+		}
+	}
+
+error:
+	rcu_read_unlock();
+	return status;
+}
+
+enum lttng_error_code kernel_create_channel_subdirectories(
+		const struct ltt_kernel_session *ksess)
+{
+	enum lttng_error_code ret = LTTNG_OK;
+	enum lttng_trace_chunk_status chunk_status;
+
+	rcu_read_lock();
+	assert(ksess->current_trace_chunk);
+
+	/*
+	 * Create the index subdirectory which will take care
+	 * of implicitly creating the channel's path.
+	 */
+	chunk_status = lttng_trace_chunk_create_subdirectory(
+			ksess->current_trace_chunk,
+			DEFAULT_KERNEL_TRACE_DIR "/" DEFAULT_INDEX_DIR);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ret = LTTNG_ERR_CREATE_DIR_FAIL;
+		goto error;
+	}
+error:
+	rcu_read_unlock();
+	return ret;
+}
+
+/*
+ * Setup necessary data for kernel tracer action.
+ */
+LTTNG_HIDDEN
+int init_kernel_tracer(void)
+{
+	int ret;
+	bool is_root = !getuid();
+
+	/* Modprobe lttng kernel modules */
+	ret = modprobe_lttng_control();
+	if (ret < 0) {
+		goto error;
+	}
+
+	/* Open debugfs lttng */
+	kernel_tracer_fd = open(module_proc_lttng, O_RDWR);
+	if (kernel_tracer_fd < 0) {
+		DBG("Failed to open %s", module_proc_lttng);
+		goto error_open;
+	}
+
+	/* Validate kernel version */
+	ret = kernel_validate_version(&kernel_tracer_version,
+			&kernel_tracer_abi_version);
+	if (ret < 0) {
+		goto error_version;
+	}
+
+	ret = modprobe_lttng_data();
+	if (ret < 0) {
+		goto error_modules;
+	}
+
+	ret = kernel_supports_ring_buffer_snapshot_sample_positions();
+	if (ret < 0) {
+		goto error_modules;
+	}
+
+	if (ret < 1) {
+		WARN("Kernel tracer does not support buffer monitoring. "
+			"The monitoring timer of channels in the kernel domain "
+			"will be set to 0 (disabled).");
+	}
+
+	DBG("Kernel tracer fd %d", kernel_tracer_fd);
+
+	ret = syscall_init_table(kernel_tracer_fd);
+	if (ret < 0) {
+		ERR("Unable to populate syscall table. Syscall tracing won't "
+			"work for this session daemon.");
+	}
+	return 0;
+
+error_version:
+	modprobe_remove_lttng_control();
+	ret = close(kernel_tracer_fd);
+	if (ret) {
+		PERROR("close");
+	}
+	kernel_tracer_fd = -1;
+	return LTTNG_ERR_KERN_VERSION;
+
+error_modules:
+	ret = close(kernel_tracer_fd);
+	if (ret) {
+		PERROR("close");
+	}
+
+error_open:
+	modprobe_remove_lttng_control();
+
+error:
+	WARN("No kernel tracer available");
+	kernel_tracer_fd = -1;
+	if (!is_root) {
+		return LTTNG_ERR_NEED_ROOT_SESSIOND;
+	} else {
+		return LTTNG_ERR_KERN_NA;
+	}
+}
+
+LTTNG_HIDDEN
+void cleanup_kernel_tracer(void)
+{
+	int ret;
+
+	DBG2("Closing kernel fd");
+	if (kernel_tracer_fd >= 0) {
+		ret = close(kernel_tracer_fd);
+		if (ret) {
+			PERROR("close");
+		}
+		kernel_tracer_fd = -1;
+	}
+	DBG("Unloading kernel modules");
+	modprobe_remove_lttng_all();
+	free(syscall_table);
+}
+
+LTTNG_HIDDEN
+bool kernel_tracer_is_initialized(void)
+{
+	return kernel_tracer_fd >= 0;
 }

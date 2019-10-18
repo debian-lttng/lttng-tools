@@ -1,7 +1,7 @@
 SUBDIRS = tools kernel ust
 
-LOG_DRIVER_FLAGS='--merge'
-LOG_DRIVER = env AM_TAP_AWK='$(AWK)' $(SHELL) \
+LOG_DRIVER_FLAGS = --merge --post-script $(top_srcdir)/tests/utils/warn_processes.sh
+LOG_DRIVER = env PGREP='$(PGREP)' AM_TAP_AWK='$(AWK)' $(SHELL) \
 	$(top_srcdir)/config/tap-driver.sh
 
 TESTS = tools/filtering/test_invalid_filter \
@@ -27,7 +27,12 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/regen-statedump/test_ust \
 	tools/notification/test_notification_ust \
 	tools/notification/test_notification_kernel \
-	tools/notification/test_notification_multi_app
+	tools/notification/test_notification_multi_app \
+	tools/rotation/test_ust \
+	tools/rotation/test_kernel \
+	tools/rotation/test_save_load_mi \
+	tools/rotation/test_schedule_api \
+	tools/metadata/test_kernel
 
 if HAVE_LIBLTTNG_UST_CTL
 SUBDIRS += ust
@@ -44,7 +49,10 @@ TESTS += ust/before-after/test_before_after \
 	ust/test_event_basic \
 	ust/test_event_tracef \
 	ust/test_event_perf \
-	ust/blocking/test_blocking
+	ust/blocking/test_blocking \
+	ust/multi-lib/test_multi_lib \
+	ust/rotation-destroy-flush/test_rotation_destroy_flush \
+	tools/metadata/test_ust
 endif # HAVE_LIBLTTNG_UST_CTL
 
 if PYTHON_BINDING

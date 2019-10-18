@@ -25,12 +25,49 @@
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/compat/poll.h>
 #include <common/compat/socket.h>
+#include <common/compat/uuid.h>
 
 #include "session.h"
 #include "ust-app.h"
-#include "version.h"
 #include "notification-thread.h"
 #include "sessiond-config.h"
+
+/*
+ * Consumer daemon state which is changed when spawning it, killing it or in
+ * case of a fatal error.
+ */
+enum consumerd_state {
+	CONSUMER_STARTED = 1,
+	CONSUMER_STOPPED = 2,
+	CONSUMER_ERROR   = 3,
+};
+
+/* Unique identifier of a session daemon instance. */
+extern lttng_uuid sessiond_uuid;
+
+/*
+ * This consumer daemon state is used to validate if a client command will be
+ * able to reach the consumer. If not, the client is informed. For instance,
+ * doing a "lttng start" when the consumer state is set to ERROR will return an
+ * error to the client.
+ *
+ * The following example shows a possible race condition of this scheme:
+ *
+ * consumer thread error happens
+ *                                    client cmd arrives
+ *                                    client cmd checks state -> still OK
+ * consumer thread exit, sets error
+ *                                    client cmd try to talk to consumer
+ *                                    ...
+ *
+ * However, since the consumer is a different daemon, we have no way of making
+ * sure the command will reach it safely even with this state flag. This is why
+ * we consider that up to the state validation during command processing, the
+ * command is safe. After that, we can not guarantee the correctness of the
+ * client request vis-a-vis the consumer.
+ */
+extern enum consumerd_state ust_consumerd_state;
+extern enum consumerd_state kernel_consumerd_state;
 
 extern const char default_home_dir[],
 	default_tracing_group[],
@@ -38,8 +75,10 @@ extern const char default_home_dir[],
 	default_global_apps_pipe[];
 
 /* Set in main.c at boot time of the daemon */
-extern int kernel_tracer_fd;
+extern struct lttng_kernel_tracer_version kernel_tracer_version;
+extern struct lttng_kernel_tracer_abi_version kernel_tracer_abi_version;
 
+/* Notification thread handle. */
 extern struct notification_thread_handle *notification_thread_handle;
 
 /*
@@ -47,7 +86,6 @@ extern struct notification_thread_handle *notification_thread_handle;
  * session daemon from the lttng client.
  */
 struct command_ctx {
-	int ust_sock;
 	unsigned int lttng_msg_size;
 	struct ltt_session *session;
 	struct lttcomm_lttng_msg *llm;
@@ -90,12 +128,6 @@ struct ust_reg_wait_node {
 };
 
 /*
- * This pipe is used to inform the thread managing application notify
- * communication that a command is queued and ready to be processed.
- */
-extern int apps_cmd_notify_pipe[2];
-
-/*
  * Used to notify that a hash table needs to be destroyed by dedicated
  * thread. Required by design because we don't want to move destroy
  * paths outside of large RCU read-side lock paths, and destroy cannot
@@ -104,27 +136,43 @@ extern int apps_cmd_notify_pipe[2];
  */
 extern int ht_cleanup_pipe[2];
 
+extern int kernel_poll_pipe[2];
+
 /*
  * Populated when the daemon starts with the current page size of the system.
+ * Set in main() with the current page size.
  */
 extern long page_size;
 
 /* Application health monitoring */
 extern struct health_app *health_sessiond;
 
-/*
- * Section name to look for in the daemon configuration file.
- */
-extern const char * const config_section_name;
-
-/* Is this daemon root or not. */
-extern int is_root;
-
 extern struct sessiond_config config;
 
+extern int ust_consumerd64_fd, ust_consumerd32_fd;
+
+/* Parent PID for --sig-parent option */
+extern pid_t ppid;
+/* Internal parent PID use with daemonize. */
+extern pid_t child_ppid;
+
+/* Consumer daemon specific control data. */
+extern struct consumer_data ustconsumer32_data;
+extern struct consumer_data ustconsumer64_data;
+extern struct consumer_data kconsumer_data;
+
+int sessiond_init_thread_quit_pipe(void);
 int sessiond_check_thread_quit_pipe(int fd, uint32_t events);
+int sessiond_wait_for_quit_pipe(int timeout_ms);
+int sessiond_notify_quit_pipe(void);
+void sessiond_close_quit_pipe(void);
+
 int sessiond_set_thread_pollset(struct lttng_poll_event *events, size_t size);
-void sessiond_notify_ready(void);
 void sessiond_signal_parents(void);
+
+void sessiond_set_client_thread_state(bool running);
+void sessiond_wait_client_thread_stopped(void);
+
+void *thread_manage_consumer(void *data);
 
 #endif /* _LTT_SESSIOND_H */

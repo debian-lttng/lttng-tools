@@ -1,5 +1,5 @@
 AC_PREREQ([2.64])
-AC_INIT([lttng-tools],[2.10.8],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
+AC_INIT([lttng-tools],[2.11.0],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
 
 AC_CONFIG_HEADERS([include/config.h])
 AC_CONFIG_AUX_DIR([config])
@@ -21,6 +21,12 @@ AC_USE_SYSTEM_EXTENSIONS
 AC_SYS_LARGEFILE
 AC_PROG_CC
 AC_PROG_CC_STDC
+AC_PROG_CXX
+RW_PROG_CXX_WORKS
+AM_CONDITIONAL([CXX_WORKS], [test "x$rw_cv_prog_cxx_works" = "xyes"])
+
+LTTNG_CHECK_SDT_WORKS
+AM_CONDITIONAL([SDT_WORKS], [test "x$lttng_cv_sdt_works" = "xyes"])
 
 # Checks for programs.
 AC_PROG_GREP
@@ -112,6 +118,10 @@ AS_IF([test "x$ax_cv___attribute__" = "xyes"],
 
 AX_PTHREAD(,[AC_MSG_ERROR([Could not configure pthreads support])])
 
+# Check if linker has the -no-pie option.
+AX_CHECK_LINK_FLAG([-no-pie], [linker_have_no_pie_option=yes])
+AM_CONDITIONAL([LINKER_HAVE_NO_PIE_OPTION], [test "x$linker_have_no_pie_option" = "xyes"])
+
 AX_LIB_SOCKET_NSL
 
 LT_NO_UNDEFINED=""
@@ -146,8 +156,8 @@ AC_DEFINE_UNQUOTED([VERSION_MAJOR], $major_version, [LTTng-Tools major version n
 AC_DEFINE_UNQUOTED([VERSION_MINOR], $minor_version, [LTTng-Tools minor version number])
 AC_DEFINE_UNQUOTED([VERSION_PATCHLEVEL], $patchlevel_version, [LTTng-Tools patchlevel version number])
 
-version_name="KeKriek"
-version_description='From Brasserie Dunham, a sour mashed golden wheat ale fermented with local sour cherries from Tougas orchards. Fresh sweet cherry notes with some tartness, lively carbonation with a dry finish.'
+version_name="Lafontaine"
+version_description="A modern Saison beer from Montréal's Oshlag microbrewery, Lafontaine is a refreshing, zesty, rice beer with hints of fruit and spices."
 version_description_c=$(echo $version_description | $SED 's/"/\\"/g')
 
 AC_DEFINE_UNQUOTED([VERSION_NAME], ["$version_name"], "")
@@ -184,13 +194,15 @@ AC_CHECK_HEADERS([ \
 	signal.h stdlib.h sys/un.h sys/socket.h stdlib.h stdio.h \
 	getopt.h sys/ipc.h sys/shm.h popt.h grp.h arpa/inet.h \
 	netdb.h netinet/in.h paths.h stddef.h sys/file.h sys/ioctl.h \
-	sys/mount.h sys/param.h sys/time.h
+	sys/mount.h sys/param.h sys/time.h elf.h
 ])
+
+AM_CONDITIONAL([HAVE_ELF_H], [test x$ac_cv_header_elf_h = xyes])
 
 # Basic functions check
 AC_CHECK_FUNCS([ \
 	atexit bzero clock_gettime dup2 fdatasync fls ftruncate \
-	gethostbyname gethostname getpagesize localtime_r memchr memset \
+	gethostbyname gethostname getpagesize localtime_r memchr memrchr memset \
 	mkdir munmap putenv realpath rmdir socket strchr strcspn strdup \
 	strncasecmp strndup strnlen strpbrk strrchr strstr strtol strtoul \
 	strtoull dirfd gethostbyname2 getipnodebyname epoll_create1 \
@@ -374,6 +386,8 @@ _AC_DEFINE_QUOTED_AND_SUBST([DEFAULT_AGENT_BIND_ADDRESS], [localhost])
 _AC_DEFINE_QUOTED_AND_SUBST([DEFAULT_NETWORK_CONTROL_BIND_ADDRESS], [0.0.0.0])
 _AC_DEFINE_QUOTED_AND_SUBST([DEFAULT_NETWORK_DATA_BIND_ADDRESS], [0.0.0.0])
 _AC_DEFINE_QUOTED_AND_SUBST([DEFAULT_NETWORK_VIEWER_BIND_ADDRESS], [localhost])
+_AC_DEFINE_AND_SUBST([DEFAULT_NETWORK_RELAYD_CTRL_MAX_PAYLOAD_SIZE], [134217728])
+_AC_DEFINE_AND_SUBST([DEFAULT_ROTATE_PENDING_TIMER], [500000])
 
 # Command short descriptions
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ADD_CONTEXT], [Add context fields to a channel])
@@ -381,18 +395,24 @@ _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_CREATE], [Create a tracing session])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_DESTROY], [Tear down tracing sessions])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_DISABLE_CHANNEL], [Disable tracing channels])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_DISABLE_EVENT], [Disable event rules])
+_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_DISABLE_ROTATION], [Unset a rotation schedule])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ENABLE_CHANNEL], [Create or enable tracing channels])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ENABLE_EVENT], [Create or enable event rules])
+_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ENABLE_ROTATION], [Set a rotation schedule])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_HELP], [Display help information about a command])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_LIST], [List tracing sessions, domains, channels, and events])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_LOAD], [Load tracing session configurations])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_REGENERATE], [Manage an LTTng tracing session's data regeneration])
+_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ROTATE], [Archive a tracing session's current trace chunk])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_SAVE], [Save tracing session configurations])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_SET_SESSION], [Set current tracing session])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_SNAPSHOT], [Snapshot buffers of current tracing session])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_START], [Start tracing])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_STATUS], [Get the status of the current tracing session])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_STOP], [Stop tracing])
+_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_DISABLE_ROTATION], [Unset a rotation schedule])
+_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ENABLE_ROTATION], [Set a rotation schedule])
+_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ROTATE], [Archive a tracing session’s current trace chunk])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_TRACK], [Track specific system resources])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_UNTRACK], [Untrack specific system resources])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_VERSION], [Show version information])
@@ -405,7 +425,7 @@ CONFDIR=`eval echo $sysconfdir`
 AC_SUBST(CONFDIR)
 AC_DEFINE_UNQUOTED([CONFIG_LTTNG_SYSTEM_CONFIGDIR],"$CONFDIR", [LTTng system configuration directory.])
 
-AC_DEFINE_DIR([CONFIG_LTTNG_SYSTEM_DATADIR],[datadir], [LTTng system data directory.])
+AX_DEFINE_DIR([CONFIG_LTTNG_SYSTEM_DATADIR], [datadir], [LTTng system data directory.])
 
 # Check libpopt
 PKG_CHECK_MODULES([POPT], [popt],
@@ -473,7 +493,7 @@ AC_SUBST(UUID_LIBS)
 AC_CHECK_FUNC([clock_gettime], [AC_DEFINE_UNQUOTED([LTTNG_HAVE_CLOCK_GETTIME], 1, [Has clock_gettime() support.])])
 
 # URCU library version needed or newer
-m4_define([WRONG_LIBURCU_MSG], [Userspace RCU (liburcu) >= 0.8.0 is needed])
+m4_define([WRONG_LIBURCU_MSG], [Userspace RCU (liburcu) >= 0.9.0 is needed])
 
 # Check liburcu needed function calls
 AC_CHECK_DECL([cds_list_add], [],
@@ -496,6 +516,11 @@ AC_CHECK_LIB([urcu-cds], [_cds_lfht_new], [],
 #Function added in urcu 0.7.0
 AC_CHECK_DECL([cmm_smp_mb__before_uatomic_or], [],
         [AC_MSG_ERROR([WRONG_LIBURCU_MSG])], [[#include <urcu.h>]]
+)
+
+#Function added in urcu 0.9.0
+AC_CHECK_DECL([urcu_ref_get_unless_zero], [],
+        [AC_MSG_ERROR([WRONG_LIBURCU_MSG])], [[#include <urcu/ref.h>]]
 )
 
 # Check for libkmod, it will be auto-neabled if found but won't fail if it's not,
@@ -558,28 +583,12 @@ AC_CHECK_LIB([c], [fmemopen],
 ]
 )
 
-# Check for open_memstream
-AC_CHECK_LIB([c], [open_memstream],
-[
-	AC_DEFINE_UNQUOTED([LTTNG_HAVE_OPEN_MEMSTREAM], 1, [Has open_memstream support.])
-]
-)
-
 # check for libpfm
 AC_CHECK_LIB([pfm], [pfm_initialize],
 	     [
 	      have_libpfm=yes
 	      ])
 AM_CONDITIONAL([LTTNG_TOOLS_BUILD_WITH_LIBPFM], [test "x$have_libpfm" = "xyes"])
-
-AC_ARG_ENABLE([git-version],
-              [AC_HELP_STRING([--disable-git-version],
-                              [Do not use the git version for the build])],
-              [have_git_version=$enableval], [have_git_version=yes]
-)
-
-AM_CONDITIONAL([LTTNG_TOOLS_BUILD_GIT_SOURCE],
-	[test "x${have_git_version}" = "xyes"])
 
 # For Python
 # SWIG version needed or newer:
@@ -629,6 +638,17 @@ AX_CONFIG_FEATURE(
 	[enable_epoll="yes"], [enable_epoll="no"]
 )
 AM_CONDITIONAL([COMPAT_EPOLL], [ test "$enable_epoll" = "yes" ])
+
+AS_IF([test "x$ac_cv_func_dirfd" = "xyes"],
+	[AX_CONFIG_FEATURE_ENABLE(dirfd)],
+	[AX_CONFIG_FEATURE_DISABLE(dirfd)]
+)
+AX_CONFIG_FEATURE(
+	[dirfd], [Use directory file descriptors],
+	[COMPAT_DIRFD], [This platform supports directory file descriptors.],
+	[enable_dirfd="yes"], [enable_dirfd="no"]
+)
+AM_CONDITIONAL([COMPAT_DIRFD], [ test "$enable_dirfd" = "yes" ])
 
 AM_CONDITIONAL([TEST_JAVA_JUL_AGENT], [test "x$test_java_agent_jul" = "xyes"])
 AM_CONDITIONAL([TEST_JAVA_LOG4J_AGENT], [test "x$test_java_agent_log4j" = "xyes"])
@@ -914,7 +934,6 @@ AS_IF([test x$enable_bin_lttng_sessiond != xno],
        build_lib_relayd=yes
        build_lib_testpoint=yes
        build_lib_health=yes
-       build_lib_health=yes
       ]
 )
 
@@ -950,6 +969,51 @@ AS_IF([test x$build_lib_relayd = xyes],
       ]
 )
 
+# Find arch type
+AS_CASE([$host_cpu],
+        [k1om], [ARCHTYPE="x86"],
+        [i386], [ARCHTYPE="x86"],
+        [i486], [ARCHTYPE="x86"],
+        [i586], [ARCHTYPE="x86"],
+        [i686], [ARCHTYPE="x86"],
+        [amd64], [ARCHTYPE="x86"],
+        [x86_64], [ARCHTYPE="x86"],
+        [powerpc], [ARCHTYPE="ppc"],
+        [ppc64], [ARCHTYPE="ppc"],
+        [powerpc64], [ARCHTYPE="ppc"],
+        [powerpc64le], [ARCHTYPE="ppc"],
+        [ppc], [ARCHTYPE="ppc"],
+        [s390], [ARCHTYPE="s390"],
+        [s390x], [ARCHTYPE="s390"],
+        [sparc], [ARCHTYPE="sparc64"],
+        [sparc64], [ARCHTYPE="sparc64"],
+        [alpha*], [ARCHTYPE="alpha"],
+        [ia64], [ARCHTYPE="ia64"],
+        [arm*], [ARCHTYPE="arm"],
+        [aarch64*], [ARCHTYPE="aarch64"],
+        [mips*], [ARCHTYPE="mips"],
+        [nios2*], [ARCHTYPE="nios2"],
+        [tile*], [ARCHTYPE="tile"],
+        [hppa*], [ARCHTYPE="hppa"],
+        [m68k], [ARCHTYPE="m68k"],
+        [riscv*], [ARCHTYPE="riscv"],
+        [ARCHTYPE="unknown"]
+)
+
+AC_SUBST(ARCHTYPE)
+
+AH_TEMPLATE([HAVE_MODULES_USERSPACE_CALLSTACK_CONTEXT], [Define if you have LTTng-modules userspace callstack tracing support])
+AC_MSG_CHECKING([for architecture support of userspace callstack tracing from the kernel])
+AS_IF([test "x$ARCHTYPE" = "xx86"],[
+        # Userspace callstack capture is only supported by the Linux kernel on x86.
+        AC_MSG_RESULT([yes])
+        have_modules_userspace_callstack_context=yes
+        AC_DEFINE([HAVE_MODULES_USERSPACE_CALLSTACK_CONTEXT], [1])
+], [
+        AC_MSG_RESULT([no])
+        have_modules_userspace_callstack_context=no
+])
+AM_CONDITIONAL([HAVE_MODULES_USERSPACE_CALLSTACK_CONTEXT], [test x$have_modules_userspace_callstack_context != xno])
 
 # Export binaries build conditions.
 AM_CONDITIONAL([BUILD_BIN_LTTNG], [test x$enable_bin_lttng != xno])
@@ -1067,6 +1131,9 @@ AC_CONFIG_FILES([
 	tests/regression/tools/regen-metadata/Makefile
 	tests/regression/tools/regen-statedump/Makefile
 	tests/regression/tools/notification/Makefile
+	tests/regression/tools/rotation/Makefile
+	tests/regression/tools/base-path/Makefile
+	tests/regression/tools/metadata/Makefile
 	tests/regression/ust/Makefile
 	tests/regression/ust/nprocesses/Makefile
 	tests/regression/ust/high-throughput/Makefile
@@ -1075,6 +1142,7 @@ AC_CONFIG_FILES([
 	tests/regression/ust/buffers-pid/Makefile
 	tests/regression/ust/periodical-metadata-flush/Makefile
 	tests/regression/ust/multi-session/Makefile
+	tests/regression/ust/multi-lib/Makefile
 	tests/regression/ust/overlap/Makefile
 	tests/regression/ust/overlap/demo/Makefile
 	tests/regression/ust/linking/Makefile
@@ -1100,9 +1168,14 @@ AC_CONFIG_FILES([
 	tests/utils/tap/Makefile
 	tests/utils/testapp/Makefile
 	tests/utils/testapp/gen-ust-events/Makefile
+	tests/utils/testapp/gen-syscall-events-callstack/Makefile
 	tests/utils/testapp/gen-ust-nevents/Makefile
 	tests/utils/testapp/gen-ust-nevents-str/Makefile
+	tests/utils/testapp/gen-syscall-events/Makefile
 	tests/utils/testapp/gen-ust-tracef/Makefile
+	tests/utils/testapp/userspace-probe-elf-binary/Makefile
+	tests/utils/testapp/userspace-probe-elf-cxx-binary/Makefile
+	tests/utils/testapp/userspace-probe-sdt-binary/Makefile
 ])
 
 # Inject variable into python test script.

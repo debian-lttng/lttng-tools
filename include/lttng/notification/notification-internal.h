@@ -21,6 +21,7 @@
 #include <lttng/notification/notification.h>
 #include <common/macros.h>
 #include <common/buffer-view.h>
+#include <common/dynamic-buffer.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/types.h>
@@ -28,21 +29,6 @@
 struct lttng_notification {
 	struct lttng_condition *condition;
 	struct lttng_evaluation *evaluation;
-	/*
-	 * The ownership of the notification's inner-elements depends
-	 * on the way it was created. The notification owns both
-	 * the condition and evaluation if it was obtained from a notification
-	 * channel (i.e. created using lttng_notification_create_from_buffer)
-	 * as the user may never access the condition and evaluation,
-	 * thus never getting a chance to free them.
-	 *
-	 * However, when the _private_ lttng_notification_create() function
-	 * is used, no ownership of condition and evaluation is assumed by
-	 * the notification object. The main reason for this change in
-	 * behavior is that internal users of this API only use the object
-	 * to use its serialization facilities.
-	 */
-	bool owns_elements;
 };
 
 struct lttng_notification_comm {
@@ -58,8 +44,8 @@ struct lttng_notification *lttng_notification_create(
 		struct lttng_evaluation *evaluation);
 
 LTTNG_HIDDEN
-ssize_t lttng_notification_serialize(struct lttng_notification *notification,
-		char *buf);
+int lttng_notification_serialize(const struct lttng_notification *notification,
+		struct lttng_dynamic_buffer *buf);
 
 LTTNG_HIDDEN
 ssize_t lttng_notification_create_from_buffer(

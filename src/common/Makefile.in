@@ -90,25 +90,29 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
-@BUILD_LIB_COMPAT_TRUE@am__append_1 = compat
-@BUILD_LIB_HEALTH_TRUE@am__append_2 = health
-@BUILD_LIB_HASHTABLE_TRUE@am__append_3 = hashtable
-@BUILD_LIB_KERNEL_CTL_TRUE@am__append_4 = kernel-ctl
-@BUILD_LIB_SESSIOND_COMM_TRUE@am__append_5 = sessiond-comm
-@BUILD_LIB_RELAYD_TRUE@am__append_6 = relayd
-@BUILD_LIB_KERNEL_CONSUMER_TRUE@am__append_7 = kernel-consumer
-@BUILD_LIB_UST_CONSUMER_TRUE@am__append_8 = ust-consumer
-@BUILD_LIB_TESTPOINT_TRUE@am__append_9 = testpoint
-@BUILD_LIB_INDEX_TRUE@am__append_10 = index
-@BUILD_LIB_CONFIG_TRUE@am__append_11 = config
-@BUILD_LIB_CONSUMER_TRUE@am__append_12 = consumer
+@HAVE_ELF_H_TRUE@am__append_1 = lttng-elf.h lttng-elf.c
+@BUILD_LIB_COMPAT_TRUE@am__append_2 = compat
+@BUILD_LIB_HEALTH_TRUE@am__append_3 = health
+@BUILD_LIB_HASHTABLE_TRUE@am__append_4 = hashtable
+@BUILD_LIB_KERNEL_CTL_TRUE@am__append_5 = kernel-ctl
+@BUILD_LIB_SESSIOND_COMM_TRUE@am__append_6 = sessiond-comm
+@BUILD_LIB_RELAYD_TRUE@am__append_7 = relayd
+@BUILD_LIB_KERNEL_CONSUMER_TRUE@am__append_8 = kernel-consumer
+@BUILD_LIB_UST_CONSUMER_TRUE@am__append_9 = ust-consumer
+@BUILD_LIB_TESTPOINT_TRUE@am__append_10 = testpoint
+@BUILD_LIB_INDEX_TRUE@am__append_11 = index
+@BUILD_LIB_CONFIG_TRUE@am__append_12 = config
+@BUILD_LIB_CONSUMER_TRUE@am__append_13 = consumer
 subdir = src/common
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ac_define_dir.m4 \
-	$(top_srcdir)/m4/ax_c___attribute__.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_check_class.m4 \
 	$(top_srcdir)/m4/ax_check_classpath.m4 \
+	$(top_srcdir)/m4/ax_check_link_flag.m4 \
 	$(top_srcdir)/m4/ax_compare_version.m4 \
+	$(top_srcdir)/m4/ax_config_feature.m4 \
+	$(top_srcdir)/m4/ax_define_dir.m4 \
+	$(top_srcdir)/m4/ax_have_epoll.m4 \
 	$(top_srcdir)/m4/ax_java_options.m4 \
 	$(top_srcdir)/m4/ax_lib_socket_nsl.m4 \
 	$(top_srcdir)/m4/ax_pkg_swig.m4 \
@@ -121,10 +125,12 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ac_define_dir.m4 \
 	$(top_srcdir)/m4/ax_prog_javac_works.m4 \
 	$(top_srcdir)/m4/ax_pthread.m4 \
 	$(top_srcdir)/m4/ax_try_compile_java.m4 \
-	$(top_srcdir)/m4/config_feature.m4 $(top_srcdir)/m4/epoll.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
-	$(top_srcdir)/m4/ltsugar.m4 $(top_srcdir)/m4/ltversion.m4 \
-	$(top_srcdir)/m4/lt~obsolete.m4 $(top_srcdir)/m4/pprint.m4 \
+	$(top_srcdir)/m4/ltsugar.m4 \
+	$(top_srcdir)/m4/lttng_check_sdt_works.m4 \
+	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
+	$(top_srcdir)/m4/pprint.m4 \
+	$(top_srcdir)/m4/rw_prog_cxx_works.m4 \
 	$(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
@@ -138,12 +144,30 @@ LTLIBRARIES = $(noinst_LTLIBRARIES)
 am__DEPENDENCIES_1 =
 libcommon_la_DEPENDENCIES =  \
 	$(top_builddir)/src/common/config/libconfig.la \
+	$(top_builddir)/src/common/compat/libcompat.la \
+	$(top_builddir)/src/common/hashtable/libhashtable.la \
 	$(am__DEPENDENCIES_1)
+am__libcommon_la_SOURCES_DIST = error.h error.c utils.c utils.h \
+	runas.h runas.c common.h futex.c futex.h uri.c uri.h \
+	defaults.c pipe.c pipe.h readwrite.c readwrite.h mi-lttng.h \
+	mi-lttng.c daemonize.c daemonize.h unix.c unix.h filter.c \
+	filter.h context.c context.h action.c notify.c condition.c \
+	buffer-usage.c session-consumed-size.c session-rotation.c \
+	evaluation.c notification.c trigger.c endpoint.c \
+	dynamic-buffer.h dynamic-buffer.c buffer-view.h buffer-view.c \
+	location.c waiter.h waiter.c userspace-probe.c event.c time.c \
+	session-descriptor.c credentials.h trace-chunk.c trace-chunk.h \
+	trace-chunk-registry.h dynamic-array.h dynamic-array.c \
+	optional.h lttng-elf.h lttng-elf.c
+@HAVE_ELF_H_TRUE@am__objects_1 = lttng-elf.lo
 am_libcommon_la_OBJECTS = error.lo utils.lo runas.lo futex.lo uri.lo \
 	defaults.lo pipe.lo readwrite.lo mi-lttng.lo daemonize.lo \
 	unix.lo filter.lo context.lo action.lo notify.lo condition.lo \
-	buffer-usage.lo evaluation.lo notification.lo trigger.lo \
-	endpoint.lo dynamic-buffer.lo buffer-view.lo waiter.lo
+	buffer-usage.lo session-consumed-size.lo session-rotation.lo \
+	evaluation.lo notification.lo trigger.lo endpoint.lo \
+	dynamic-buffer.lo buffer-view.lo location.lo waiter.lo \
+	userspace-probe.lo event.lo time.lo session-descriptor.lo \
+	trace-chunk.lo dynamic-array.lo $(am__objects_1)
 libcommon_la_OBJECTS = $(am_libcommon_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -184,7 +208,7 @@ am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(libcommon_la_SOURCES)
-DIST_SOURCES = $(libcommon_la_SOURCES)
+DIST_SOURCES = $(am__libcommon_la_SOURCES_DIST)
 RECURSIVE_TARGETS = all-recursive check-recursive cscopelist-recursive \
 	ctags-recursive dvi-recursive html-recursive info-recursive \
 	install-data-recursive install-dvi-recursive \
@@ -259,6 +283,7 @@ AM_CFLAGS = @AM_CFLAGS@
 AM_CPPFLAGS = @AM_CPPFLAGS@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
 AR = @AR@
+ARCHTYPE = @ARCHTYPE@
 ASCIIDOC = @ASCIIDOC@
 AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
@@ -274,12 +299,15 @@ CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
 CMD_DESCR_DISABLE_CHANNEL = @CMD_DESCR_DISABLE_CHANNEL@
 CMD_DESCR_DISABLE_EVENT = @CMD_DESCR_DISABLE_EVENT@
+CMD_DESCR_DISABLE_ROTATION = @CMD_DESCR_DISABLE_ROTATION@
 CMD_DESCR_ENABLE_CHANNEL = @CMD_DESCR_ENABLE_CHANNEL@
 CMD_DESCR_ENABLE_EVENT = @CMD_DESCR_ENABLE_EVENT@
+CMD_DESCR_ENABLE_ROTATION = @CMD_DESCR_ENABLE_ROTATION@
 CMD_DESCR_HELP = @CMD_DESCR_HELP@
 CMD_DESCR_LIST = @CMD_DESCR_LIST@
 CMD_DESCR_LOAD = @CMD_DESCR_LOAD@
 CMD_DESCR_REGENERATE = @CMD_DESCR_REGENERATE@
+CMD_DESCR_ROTATE = @CMD_DESCR_ROTATE@
 CMD_DESCR_SAVE = @CMD_DESCR_SAVE@
 CMD_DESCR_SET_SESSION = @CMD_DESCR_SET_SESSION@
 CMD_DESCR_SNAPSHOT = @CMD_DESCR_SNAPSHOT@
@@ -298,6 +326,10 @@ CONSUMERD64_BIN = @CONSUMERD64_BIN@
 CONSUMERD64_LIBDIR = @CONSUMERD64_LIBDIR@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
+CXX = @CXX@
+CXXCPP = @CXXCPP@
+CXXDEPMODE = @CXXDEPMODE@
+CXXFLAGS = @CXXFLAGS@
 CYGPATH_W = @CYGPATH_W@
 DEFAULT_AGENT_BIND_ADDRESS = @DEFAULT_AGENT_BIND_ADDRESS@
 DEFAULT_AGENT_TCP_PORT_RANGE_BEGIN = @DEFAULT_AGENT_TCP_PORT_RANGE_BEGIN@
@@ -323,8 +355,10 @@ DEFAULT_NETWORK_CONTROL_BIND_ADDRESS = @DEFAULT_NETWORK_CONTROL_BIND_ADDRESS@
 DEFAULT_NETWORK_CONTROL_PORT = @DEFAULT_NETWORK_CONTROL_PORT@
 DEFAULT_NETWORK_DATA_BIND_ADDRESS = @DEFAULT_NETWORK_DATA_BIND_ADDRESS@
 DEFAULT_NETWORK_DATA_PORT = @DEFAULT_NETWORK_DATA_PORT@
+DEFAULT_NETWORK_RELAYD_CTRL_MAX_PAYLOAD_SIZE = @DEFAULT_NETWORK_RELAYD_CTRL_MAX_PAYLOAD_SIZE@
 DEFAULT_NETWORK_VIEWER_BIND_ADDRESS = @DEFAULT_NETWORK_VIEWER_BIND_ADDRESS@
 DEFAULT_NETWORK_VIEWER_PORT = @DEFAULT_NETWORK_VIEWER_PORT@
+DEFAULT_ROTATE_PENDING_TIMER = @DEFAULT_ROTATE_PENDING_TIMER@
 DEFAULT_UST_PID_CHANNEL_BLOCKING_TIMEOUT = @DEFAULT_UST_PID_CHANNEL_BLOCKING_TIMEOUT@
 DEFAULT_UST_PID_CHANNEL_LIVE_TIMER = @DEFAULT_UST_PID_CHANNEL_LIVE_TIMER@
 DEFAULT_UST_PID_CHANNEL_MONITOR_TIMER = @DEFAULT_UST_PID_CHANNEL_MONITOR_TIMER@
@@ -433,7 +467,6 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
-UUDECODE = @UUDECODE@
 UUID_CFLAGS = @UUID_CFLAGS@
 UUID_LIBS = @UUID_LIBS@
 VERSION = @VERSION@
@@ -446,6 +479,7 @@ abs_top_builddir = @abs_top_builddir@
 abs_top_srcdir = @abs_top_srcdir@
 ac_ct_AR = @ac_ct_AR@
 ac_ct_CC = @ac_ct_CC@
+ac_ct_CXX = @ac_ct_CXX@
 ac_ct_DUMPBIN = @ac_ct_DUMPBIN@
 am__include = @am__include@
 am__leading_dot = @am__leading_dot@
@@ -514,10 +548,10 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = subdir-objects
-SUBDIRS = string-utils $(am__append_1) $(am__append_2) $(am__append_3) \
-	$(am__append_4) $(am__append_5) $(am__append_6) \
-	$(am__append_7) $(am__append_8) $(am__append_9) \
-	$(am__append_10) $(am__append_11) $(am__append_12)
+SUBDIRS = string-utils $(am__append_2) $(am__append_3) $(am__append_4) \
+	$(am__append_5) $(am__append_6) $(am__append_7) \
+	$(am__append_8) $(am__append_9) $(am__append_10) \
+	$(am__append_11) $(am__append_12) $(am__append_13)
 
 # Make sure to always distribute all folders
 # since SUBDIRS is decided at configure time.
@@ -525,30 +559,31 @@ DIST_SUBDIRS = compat health hashtable kernel-ctl sessiond-comm relayd \
 	  kernel-consumer ust-consumer testpoint index config consumer \
 	  string-utils
 
-noinst_HEADERS = lttng-kernel.h defaults.h macros.h error.h futex.h \
-				 uri.h utils.h lttng-kernel-old.h \
-				 align.h bug.h time.h
-
-
+#
 # Common library
 noinst_LTLIBRARIES = libcommon.la
 EXTRA_DIST = mi-lttng-3.0.xsd
-libcommon_la_SOURCES = error.h error.c utils.c utils.h runas.c runas.h \
-                       common.h futex.c futex.h uri.c uri.h defaults.c \
-                       pipe.c pipe.h readwrite.c readwrite.h \
-                       mi-lttng.h mi-lttng.c \
-                       daemonize.c daemonize.h \
-                       unix.c unix.h \
-                       filter.c filter.h context.c context.h \
-                       action.c notify.c condition.c buffer-usage.c \
-                       evaluation.c notification.c trigger.c endpoint.c \
-                       dynamic-buffer.h dynamic-buffer.c \
-                       buffer-view.h buffer-view.c \
-                       waiter.h waiter.c
-
+libcommon_la_SOURCES = error.h error.c utils.c utils.h runas.h runas.c \
+	common.h futex.c futex.h uri.c uri.h defaults.c pipe.c pipe.h \
+	readwrite.c readwrite.h mi-lttng.h mi-lttng.c daemonize.c \
+	daemonize.h unix.c unix.h filter.c filter.h context.c \
+	context.h action.c notify.c condition.c buffer-usage.c \
+	session-consumed-size.c session-rotation.c evaluation.c \
+	notification.c trigger.c endpoint.c dynamic-buffer.h \
+	dynamic-buffer.c buffer-view.h buffer-view.c location.c \
+	waiter.h waiter.c userspace-probe.c event.c time.c \
+	session-descriptor.c credentials.h trace-chunk.c trace-chunk.h \
+	trace-chunk-registry.h dynamic-array.h dynamic-array.c \
+	optional.h $(am__append_1)
 libcommon_la_LIBADD = \
 		$(top_builddir)/src/common/config/libconfig.la \
+		$(top_builddir)/src/common/compat/libcompat.la \
+		$(top_builddir)/src/common/hashtable/libhashtable.la \
 		$(UUID_LIBS)
+
+noinst_HEADERS = lttng-kernel.h defaults.h macros.h error.h futex.h \
+				 uri.h utils.h lttng-kernel-old.h \
+				 align.h bug.h time.h
 
 all: all-recursive
 
@@ -611,21 +646,31 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/context.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/daemonize.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/defaults.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dynamic-array.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dynamic-buffer.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/endpoint.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/error.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/evaluation.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/event.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/filter.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/futex.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/location.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-elf.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mi-lttng.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notification.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notify.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pipe.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/readwrite.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/runas.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session-consumed-size.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session-descriptor.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session-rotation.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/time.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trace-chunk.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trigger.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/unix.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/uri.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/userspace-probe.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utils.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/waiter.Plo@am__quote@
 

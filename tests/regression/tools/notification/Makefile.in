@@ -91,14 +91,18 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
-noinst_PROGRAMS = base_client$(EXEEXT) notification$(EXEEXT)
+noinst_PROGRAMS = base_client$(EXEEXT) notification$(EXEEXT) \
+	rotation$(EXEEXT)
 subdir = tests/regression/tools/notification
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ac_define_dir.m4 \
-	$(top_srcdir)/m4/ax_c___attribute__.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_check_class.m4 \
 	$(top_srcdir)/m4/ax_check_classpath.m4 \
+	$(top_srcdir)/m4/ax_check_link_flag.m4 \
 	$(top_srcdir)/m4/ax_compare_version.m4 \
+	$(top_srcdir)/m4/ax_config_feature.m4 \
+	$(top_srcdir)/m4/ax_define_dir.m4 \
+	$(top_srcdir)/m4/ax_have_epoll.m4 \
 	$(top_srcdir)/m4/ax_java_options.m4 \
 	$(top_srcdir)/m4/ax_lib_socket_nsl.m4 \
 	$(top_srcdir)/m4/ax_pkg_swig.m4 \
@@ -111,10 +115,12 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ac_define_dir.m4 \
 	$(top_srcdir)/m4/ax_prog_javac_works.m4 \
 	$(top_srcdir)/m4/ax_pthread.m4 \
 	$(top_srcdir)/m4/ax_try_compile_java.m4 \
-	$(top_srcdir)/m4/config_feature.m4 $(top_srcdir)/m4/epoll.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
-	$(top_srcdir)/m4/ltsugar.m4 $(top_srcdir)/m4/ltversion.m4 \
-	$(top_srcdir)/m4/lt~obsolete.m4 $(top_srcdir)/m4/pprint.m4 \
+	$(top_srcdir)/m4/ltsugar.m4 \
+	$(top_srcdir)/m4/lttng_check_sdt_works.m4 \
+	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
+	$(top_srcdir)/m4/pprint.m4 \
+	$(top_srcdir)/m4/rw_prog_cxx_works.m4 \
 	$(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
@@ -152,6 +158,10 @@ am__notification_SOURCES_DIST = notification.c
 notification_OBJECTS = $(am_notification_OBJECTS)
 @NO_SHARED_FALSE@notification_DEPENDENCIES = $(LIB_LTTNG_CTL) \
 @NO_SHARED_FALSE@	$(LIBTAP)
+am__rotation_SOURCES_DIST = rotation.c
+@NO_SHARED_FALSE@am_rotation_OBJECTS = rotation.$(OBJEXT)
+rotation_OBJECTS = $(am_rotation_OBJECTS)
+@NO_SHARED_FALSE@rotation_DEPENDENCIES = $(LIB_LTTNG_CTL) $(LIBTAP)
 SCRIPTS = $(noinst_SCRIPTS)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -188,10 +198,10 @@ am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(libpause_consumer_la_SOURCES) $(base_client_SOURCES) \
-	$(notification_SOURCES)
+	$(notification_SOURCES) $(rotation_SOURCES)
 DIST_SOURCES = $(am__libpause_consumer_la_SOURCES_DIST) \
 	$(am__base_client_SOURCES_DIST) \
-	$(am__notification_SOURCES_DIST)
+	$(am__notification_SOURCES_DIST) $(am__rotation_SOURCES_DIST)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -224,6 +234,7 @@ AM_CFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/src -I$(top_srcdir)/tests -I
 AM_CPPFLAGS = @AM_CPPFLAGS@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
 AR = @AR@
+ARCHTYPE = @ARCHTYPE@
 ASCIIDOC = @ASCIIDOC@
 AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
@@ -239,12 +250,15 @@ CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
 CMD_DESCR_DISABLE_CHANNEL = @CMD_DESCR_DISABLE_CHANNEL@
 CMD_DESCR_DISABLE_EVENT = @CMD_DESCR_DISABLE_EVENT@
+CMD_DESCR_DISABLE_ROTATION = @CMD_DESCR_DISABLE_ROTATION@
 CMD_DESCR_ENABLE_CHANNEL = @CMD_DESCR_ENABLE_CHANNEL@
 CMD_DESCR_ENABLE_EVENT = @CMD_DESCR_ENABLE_EVENT@
+CMD_DESCR_ENABLE_ROTATION = @CMD_DESCR_ENABLE_ROTATION@
 CMD_DESCR_HELP = @CMD_DESCR_HELP@
 CMD_DESCR_LIST = @CMD_DESCR_LIST@
 CMD_DESCR_LOAD = @CMD_DESCR_LOAD@
 CMD_DESCR_REGENERATE = @CMD_DESCR_REGENERATE@
+CMD_DESCR_ROTATE = @CMD_DESCR_ROTATE@
 CMD_DESCR_SAVE = @CMD_DESCR_SAVE@
 CMD_DESCR_SET_SESSION = @CMD_DESCR_SET_SESSION@
 CMD_DESCR_SNAPSHOT = @CMD_DESCR_SNAPSHOT@
@@ -263,6 +277,10 @@ CONSUMERD64_BIN = @CONSUMERD64_BIN@
 CONSUMERD64_LIBDIR = @CONSUMERD64_LIBDIR@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
+CXX = @CXX@
+CXXCPP = @CXXCPP@
+CXXDEPMODE = @CXXDEPMODE@
+CXXFLAGS = @CXXFLAGS@
 CYGPATH_W = @CYGPATH_W@
 DEFAULT_AGENT_BIND_ADDRESS = @DEFAULT_AGENT_BIND_ADDRESS@
 DEFAULT_AGENT_TCP_PORT_RANGE_BEGIN = @DEFAULT_AGENT_TCP_PORT_RANGE_BEGIN@
@@ -288,8 +306,10 @@ DEFAULT_NETWORK_CONTROL_BIND_ADDRESS = @DEFAULT_NETWORK_CONTROL_BIND_ADDRESS@
 DEFAULT_NETWORK_CONTROL_PORT = @DEFAULT_NETWORK_CONTROL_PORT@
 DEFAULT_NETWORK_DATA_BIND_ADDRESS = @DEFAULT_NETWORK_DATA_BIND_ADDRESS@
 DEFAULT_NETWORK_DATA_PORT = @DEFAULT_NETWORK_DATA_PORT@
+DEFAULT_NETWORK_RELAYD_CTRL_MAX_PAYLOAD_SIZE = @DEFAULT_NETWORK_RELAYD_CTRL_MAX_PAYLOAD_SIZE@
 DEFAULT_NETWORK_VIEWER_BIND_ADDRESS = @DEFAULT_NETWORK_VIEWER_BIND_ADDRESS@
 DEFAULT_NETWORK_VIEWER_PORT = @DEFAULT_NETWORK_VIEWER_PORT@
+DEFAULT_ROTATE_PENDING_TIMER = @DEFAULT_ROTATE_PENDING_TIMER@
 DEFAULT_UST_PID_CHANNEL_BLOCKING_TIMEOUT = @DEFAULT_UST_PID_CHANNEL_BLOCKING_TIMEOUT@
 DEFAULT_UST_PID_CHANNEL_LIVE_TIMER = @DEFAULT_UST_PID_CHANNEL_LIVE_TIMER@
 DEFAULT_UST_PID_CHANNEL_MONITOR_TIMER = @DEFAULT_UST_PID_CHANNEL_MONITOR_TIMER@
@@ -398,7 +418,6 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
-UUDECODE = @UUDECODE@
 UUID_CFLAGS = @UUID_CFLAGS@
 UUID_LIBS = @UUID_LIBS@
 VERSION = @VERSION@
@@ -411,6 +430,7 @@ abs_top_builddir = @abs_top_builddir@
 abs_top_srcdir = @abs_top_srcdir@
 ac_ct_AR = @ac_ct_AR@
 ac_ct_CC = @ac_ct_CC@
+ac_ct_CXX = @ac_ct_CXX@
 ac_ct_DUMPBIN = @ac_ct_DUMPBIN@
 am__include = @am__include@
 am__leading_dot = @am__leading_dot@
@@ -482,7 +502,7 @@ AM_LDFLAGS =
 LIBTAP = $(top_builddir)/tests/utils/tap/libtap.la
 LIB_LTTNG_CTL = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la
 @NO_SHARED_TRUE@CLEANFILES = libpause_consumer.so libpause_consumer.so.debug
-@NO_SHARED_FALSE@EXTRA_DIST = test_notification_ust test_notification_kernel test_notification_multi_app
+@NO_SHARED_FALSE@EXTRA_DIST = test_notification_ust test_notification_kernel test_notification_multi_app test_rotation
 @NO_SHARED_TRUE@EXTRA_DIST = test_notification_ust test_notification_kernel test_notification_multi_app base_client.c notification.c consumer_testpoints.c
 
 # In order to test the health check feature, the helper library
@@ -502,7 +522,9 @@ LIB_LTTNG_CTL = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la
 @NO_SHARED_FALSE@base_client_LDADD = $(LIB_LTTNG_CTL)
 @NO_SHARED_FALSE@notification_SOURCES = notification.c
 @NO_SHARED_FALSE@notification_LDADD = $(LIB_LTTNG_CTL) $(LIBTAP) -lm
-@NO_SHARED_FALSE@noinst_SCRIPTS = test_notification_ust test_notification_ust test_notification_multi_app
+@NO_SHARED_FALSE@rotation_SOURCES = rotation.c
+@NO_SHARED_FALSE@rotation_LDADD = $(LIB_LTTNG_CTL) $(LIBTAP) -lm
+@NO_SHARED_FALSE@noinst_SCRIPTS = test_notification_ust test_notification_ust test_notification_multi_app test_rotation
 all: all-am
 
 .SUFFIXES:
@@ -568,6 +590,10 @@ notification$(EXEEXT): $(notification_OBJECTS) $(notification_DEPENDENCIES) $(EX
 	@rm -f notification$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(notification_OBJECTS) $(notification_LDADD) $(LIBS)
 
+rotation$(EXEEXT): $(rotation_OBJECTS) $(rotation_DEPENDENCIES) $(EXTRA_rotation_DEPENDENCIES) 
+	@rm -f rotation$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(rotation_OBJECTS) $(rotation_LDADD) $(LIBS)
+
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 
@@ -577,6 +603,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/base_client.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/consumer_testpoints.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notification.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/rotation.Po@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<

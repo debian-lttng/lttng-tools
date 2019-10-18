@@ -37,6 +37,7 @@
 #include "notification-thread-commands.h"
 #include "lttng-sessiond.h"
 #include "health-sessiond.h"
+#include "thread.h"
 
 #include <urcu.h>
 #include <urcu/list.h>
@@ -56,6 +57,7 @@ void notification_thread_handle_destroy(
 
 	assert(cds_list_empty(&handle->cmd_queue.list));
 	pthread_mutex_destroy(&handle->cmd_queue.lock);
+	sem_destroy(&handle->ready);
 
 	if (handle->cmd_queue.event_pipe) {
 		lttng_pipe_destroy(handle->cmd_queue.event_pipe);
@@ -95,6 +97,8 @@ struct notification_thread_handle *notification_thread_handle_create(
 	if (!handle) {
 		goto end;
 	}
+
+	sem_init(&handle->ready, 0, 0);
 
 	event_pipe = lttng_pipe_open(FD_CLOEXEC);
 	if (!event_pipe) {
@@ -168,7 +172,7 @@ char *get_notification_channel_sock_path(void)
 			goto error;
 		}
 	} else {
-		char *home_path = utils_get_home_dir();
+		const char *home_path = utils_get_home_dir();
 
 		if (!home_path) {
 			ERR("Can't get HOME directory for socket creation");
@@ -358,16 +362,41 @@ void fini_thread_state(struct notification_thread_state *state)
 		assert(!ret);
 	}
 	if (state->channels_ht) {
-		ret = cds_lfht_destroy(state->channels_ht,
-				NULL);
+		ret = cds_lfht_destroy(state->channels_ht, NULL);
 		assert(!ret);
 	}
-
+	if (state->sessions_ht) {
+		ret = cds_lfht_destroy(state->sessions_ht, NULL);
+		assert(!ret);
+	}
+	/*
+	 * Must be destroyed after all channels have been destroyed.
+	 * See comment in struct lttng_session_trigger_list.
+	 */
+	if (state->session_triggers_ht) {
+		ret = cds_lfht_destroy(state->session_triggers_ht, NULL);
+		assert(!ret);
+	}
 	if (state->notification_channel_socket >= 0) {
 		notification_channel_socket_destroy(
 				state->notification_channel_socket);
 	}
 	lttng_poll_clean(&state->events);
+}
+
+static
+void mark_thread_as_ready(struct notification_thread_handle *handle)
+{
+	DBG("Marking notification thread as ready");
+	sem_post(&handle->ready);
+}
+
+static
+void wait_until_thread_is_ready(struct notification_thread_handle *handle)
+{
+	DBG("Waiting for notification thread to be ready");
+	sem_wait(&handle->ready);
+	DBG("Notification thread is ready");
 }
 
 static
@@ -411,6 +440,12 @@ int init_thread_state(struct notification_thread_handle *handle,
 		goto error;
 	}
 
+	state->session_triggers_ht = cds_lfht_new(DEFAULT_HT_SIZE, 1, 0,
+			CDS_LFHT_AUTO_RESIZE | CDS_LFHT_ACCOUNTING, NULL);
+	if (!state->session_triggers_ht) {
+		goto error;
+	}
+
 	state->channel_state_ht = cds_lfht_new(DEFAULT_HT_SIZE, 1, 0,
 			CDS_LFHT_AUTO_RESIZE | CDS_LFHT_ACCOUNTING, NULL);
 	if (!state->channel_state_ht) {
@@ -428,12 +463,17 @@ int init_thread_state(struct notification_thread_handle *handle,
 	if (!state->channels_ht) {
 		goto error;
 	}
-
+	state->sessions_ht = cds_lfht_new(DEFAULT_HT_SIZE,
+			1, 0, CDS_LFHT_AUTO_RESIZE | CDS_LFHT_ACCOUNTING, NULL);
+	if (!state->sessions_ht) {
+		goto error;
+	}
 	state->triggers_ht = cds_lfht_new(DEFAULT_HT_SIZE,
 			1, 0, CDS_LFHT_AUTO_RESIZE | CDS_LFHT_ACCOUNTING, NULL);
 	if (!state->triggers_ht) {
 		goto error;
 	}
+	mark_thread_as_ready(handle);
 end:
 	return 0;
 error:
@@ -481,6 +521,7 @@ end:
  * This thread services notification channel clients and commands received
  * from various lttng-sessiond components over a command queue.
  */
+static
 void *thread_notification(void *data)
 {
 	int ret;
@@ -489,24 +530,21 @@ void *thread_notification(void *data)
 
 	DBG("[notification-thread] Started notification thread");
 
+	health_register(health_sessiond, HEALTH_SESSIOND_TYPE_NOTIFICATION);
+	rcu_register_thread();
+	rcu_thread_online();
+
 	if (!handle) {
 		ERR("[notification-thread] Invalid thread context provided");
 		goto end;
 	}
 
-	rcu_register_thread();
-	rcu_thread_online();
-
-	health_register(health_sessiond, HEALTH_SESSIOND_TYPE_NOTIFICATION);
 	health_code_update();
 
 	ret = init_thread_state(handle, &state);
 	if (ret) {
 		goto end;
 	}
-
-	/* Ready to handle client connections. */
-	sessiond_notify_ready();
 
 	while (true) {
 		int fd_count, i;
@@ -532,9 +570,6 @@ void *thread_notification(void *data)
 			int fd = LTTNG_POLL_GETFD(&state.events, i);
 			uint32_t revents = LTTNG_POLL_GETEV(&state.events, i);
 
-			if (!revents) {
-				continue;
-			}
 			DBG("[notification-thread] Handling fd (%i) activity (%u)", fd, revents);
 
 			if (fd == state.notification_channel_socket) {
@@ -607,9 +642,43 @@ void *thread_notification(void *data)
 exit:
 error:
 	fini_thread_state(&state);
-	health_unregister(health_sessiond);
+end:
 	rcu_thread_offline();
 	rcu_unregister_thread();
-end:
+	health_unregister(health_sessiond);
+	return NULL;
+}
+
+static
+bool shutdown_notification_thread(void *thread_data)
+{
+	struct notification_thread_handle *handle = thread_data;
+
+	notification_thread_command_quit(handle);
+	return true;
+}
+
+struct lttng_thread *launch_notification_thread(
+		struct notification_thread_handle *handle)
+{
+	struct lttng_thread *thread;
+
+	thread = lttng_thread_create("Notification",
+			thread_notification,
+			shutdown_notification_thread,
+			NULL,
+			handle);
+	if (!thread) {
+		goto error;
+	}
+
+	/*
+	 * Wait for the thread to be marked as "ready" before returning
+	 * as other subsystems depend on the notification subsystem
+	 * (e.g. rotation thread).
+	 */
+	wait_until_thread_is_ready(handle);
+	return thread;
+error:
 	return NULL;
 }

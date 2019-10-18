@@ -79,9 +79,19 @@ void *zmalloc(size_t len)
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
+#ifndef min_t
+#define min_t(type, a, b)	min((type) a, (type) b)
+#endif
+
 #ifndef LTTNG_PACKED
 #define LTTNG_PACKED __attribute__((__packed__))
 #endif
+
+/*
+ * Align value to the next multiple of align. Returns val if it already is a
+ * multiple of align. Align must be a power of two.
+ */
+#define ALIGN_TO(value, align) ((value + (align - 1)) & ~(align - 1))
 
 /*
  * LTTNG_HIDDEN: set the hidden attribute for internal functions
@@ -95,6 +105,8 @@ void *zmalloc(size_t len)
 #endif
 
 #define member_sizeof(type, field)	sizeof(((type *) 0)->field)
+
+#define ASSERT_LOCKED(lock) assert(pthread_mutex_trylock(&lock))
 
 /*
  * Get an aligned pointer to a value. This is meant
@@ -113,17 +125,11 @@ void *zmalloc(size_t len)
 static inline
 int lttng_strncpy(char *dst, const char *src, size_t dst_len)
 {
-	if (lttng_strnlen(src, dst_len) == dst_len) {
+	if (lttng_strnlen(src, dst_len) >= dst_len) {
 		/* Fail since copying would result in truncation. */
 		return -1;
 	}
-	strncpy(dst, src, dst_len);
-	/*
-	 * Be extra careful and put final \0 at the end after strncpy(),
-	 * even though we checked the length before. This makes Coverity
-	 * happy.
-	 */
-	dst[dst_len - 1] = '\0';
+	strcpy(dst, src);
 	return 0;
 }
 

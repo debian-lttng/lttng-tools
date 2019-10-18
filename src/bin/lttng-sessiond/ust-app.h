@@ -25,6 +25,7 @@
 
 #include "trace-ust.h"
 #include "ust-registry.h"
+#include "session.h"
 
 #define UST_APP_EVENT_LIST_SIZE 32
 
@@ -85,6 +86,8 @@ struct lttng_ht *ust_app_ht;
 /*
  * Global applications HT used by the session daemon. This table is indexed by
  * socket using the sock_n node and sock value of an ust_app.
+ *
+ * The 'sock' in question here is the 'command' socket.
  */
 struct lttng_ht *ust_app_ht_by_sock;
 
@@ -137,7 +140,7 @@ struct ust_app_channel {
 	/*
 	 * Unique key used to identify the channel on the consumer side.
 	 * 0 is a reserved 'invalid' value used to indicate that the consumer
-	 * does not know about this channel (i.e. an error occured).
+	 * does not know about this channel (i.e. an error occurred).
 	 */
 	uint64_t key;
 	/* Id of the tracing channel set on creation. */
@@ -203,13 +206,12 @@ struct ust_app_session {
 	 * ust_sessions_objd hash table in the ust_app object.
 	 */
 	struct lttng_ht_node_ulong ust_objd_node;
+	/* Starts with 'ust'; no leading slash. */
 	char path[PATH_MAX];
 	/* UID/GID of the application owning the session */
-	uid_t uid;
-	gid_t gid;
+	struct lttng_credentials real_credentials;
 	/* Effective UID and GID. Same as the tracing session. */
-	uid_t euid;
-	gid_t egid;
+	struct lttng_credentials effective_credentials;
 	struct cds_list_head teardown_node;
 	/*
 	 * Once at least *one* session is created onto the application, the
@@ -295,6 +297,11 @@ struct ust_app {
 	 * to a negative value indicating that the agent application is gone.
 	 */
 	int agent_app_sock;
+	/*
+	 * Time at which the app is registred.
+	 * Used for path creation
+	 */
+	time_t registration_time;
 };
 
 #ifdef HAVE_LIBLTTNG_UST_CTL
@@ -312,17 +319,12 @@ int ust_app_create_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan);
 int ust_app_create_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent);
-int ust_app_enable_event_pid(struct ltt_ust_session *usess,
-		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent,
-		pid_t pid);
 int ust_app_disable_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan);
 int ust_app_enable_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan);
 int ust_app_enable_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent);
-int ust_app_enable_all_event_glb(struct ltt_ust_session *usess,
-		struct ltt_ust_channel *uchan);
 int ust_app_disable_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent);
 int ust_app_add_ctx_channel_glb(struct ltt_ust_session *usess,
@@ -342,11 +344,12 @@ void ust_app_notify_sock_unregister(int sock);
 ssize_t ust_app_push_metadata(struct ust_registry_session *registry,
 		struct consumer_socket *socket, int send_zero_data);
 void ust_app_destroy(struct ust_app *app);
-int ust_app_snapshot_record(struct ltt_ust_session *usess,
-		struct snapshot_output *output, int wait,
+enum lttng_error_code ust_app_snapshot_record(
+		const struct ltt_ust_session *usess,
+		const struct consumer_output *output, int wait,
 		uint64_t nb_packets_per_stream);
 uint64_t ust_app_get_size_one_more_packet_per_stream(
-		struct ltt_ust_session *usess, uint64_t cur_nr_packets);
+		const struct ltt_ust_session *usess, uint64_t cur_nr_packets);
 struct ust_app *ust_app_find_by_sock(int sock);
 int ust_app_uid_get_channel_runtime_stats(uint64_t ust_session_id,
 		struct cds_list_head *buffer_reg_uid_list,
@@ -357,6 +360,9 @@ int ust_app_pid_get_channel_runtime_stats(struct ltt_ust_session *usess,
 		struct consumer_output *consumer,
 		int overwrite, uint64_t *discarded, uint64_t *lost);
 int ust_app_regenerate_statedump_all(struct ltt_ust_session *usess);
+enum lttng_error_code ust_app_rotate_session(struct ltt_session *session);
+enum lttng_error_code ust_app_create_channel_subdirectories(
+		const struct ltt_ust_session *session);
 
 static inline
 int ust_app_supported(void)
@@ -464,12 +470,6 @@ int ust_app_create_channel_glb(struct ltt_ust_session *usess,
 	return 0;
 }
 static inline
-int ust_app_enable_all_event_glb(struct ltt_ust_session *usess,
-		struct ltt_ust_channel *uchan)
-{
-	return 0;
-}
-static inline
 int ust_app_create_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent)
 {
@@ -535,8 +535,8 @@ void ust_app_destroy(struct ust_app *app)
 	return;
 }
 static inline
-int ust_app_snapshot_record(struct ltt_ust_session *usess,
-		struct snapshot_output *output, int wait, uint64_t max_stream_size)
+enum lttng_error_code ust_app_snapshot_record(struct ltt_ust_session *usess,
+		const struct consumer_output *output, int wait, uint64_t max_stream_size)
 {
 	return 0;
 }
@@ -563,7 +563,7 @@ struct ust_app *ust_app_find_by_pid(pid_t pid)
 }
 static inline
 uint64_t ust_app_get_size_one_more_packet_per_stream(
-		struct ltt_ust_session *usess, uint64_t cur_nr_packets) {
+		const struct ltt_ust_session *usess, uint64_t cur_nr_packets) {
 	return 0;
 }
 static inline
@@ -586,6 +586,19 @@ int ust_app_pid_get_channel_runtime_stats(struct ltt_ust_session *usess,
 
 static inline
 int ust_app_regenerate_statedump_all(struct ltt_ust_session *usess)
+{
+	return 0;
+}
+
+static inline
+enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
+{
+	return 0;
+}
+
+static inline
+enum lttng_error_code ust_app_create_channel_subdirectories(
+		const struct ltt_ust_session *session)
 {
 	return 0;
 }

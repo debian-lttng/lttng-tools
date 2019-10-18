@@ -43,6 +43,7 @@
 #include "session.h"
 #include "lttng-sessiond.h"
 #include "notification-thread-commands.h"
+#include "rotate.h"
 
 static
 int ust_app_flush_app_session(struct ust_app *app, struct ust_app_session *ua_sess);
@@ -249,7 +250,8 @@ static struct ust_registry_session *get_session_registry(
 	case LTTNG_BUFFER_PER_UID:
 	{
 		struct buffer_reg_uid *reg_uid = buffer_reg_uid_find(
-				ua_sess->tracing_id, ua_sess->bits_per_long, ua_sess->uid);
+				ua_sess->tracing_id, ua_sess->bits_per_long,
+				ua_sess->real_credentials.uid);
 		if (!reg_uid) {
 			goto error;
 		}
@@ -436,6 +438,9 @@ void save_per_pid_lost_discarded_counters(struct ust_app_channel *ua_chan)
 
 end:
 	rcu_read_unlock();
+	if (session) {
+		session_put(session);
+	}
 }
 
 /*
@@ -488,6 +493,11 @@ void delete_ust_app_channel(int sock, struct ust_app_channel *ua_chan,
 			ust_registry_channel_del_free(registry, ua_chan->key,
 				sock >= 0);
 		}
+		/*
+		 * A negative socket can be used by the caller when
+		 * cleaning-up a ua_chan in an error path. Skip the
+		 * accounting in this case.
+		 */
 		if (sock >= 0) {
 			save_per_pid_lost_discarded_counters(ua_chan);
 		}
@@ -980,7 +990,7 @@ end:
  * Alloc new UST app session.
  */
 static
-struct ust_app_session *alloc_ust_app_session(struct ust_app *app)
+struct ust_app_session *alloc_ust_app_session(void)
 {
 	struct ust_app_session *ua_sess;
 
@@ -1090,7 +1100,7 @@ struct ust_app_event *alloc_ust_app_event(char *name,
 	/* Init most of the default value by allocating and zeroing */
 	ua_event = zmalloc(sizeof(struct ust_app_event));
 	if (ua_event == NULL) {
-		PERROR("malloc");
+		PERROR("Failed to allocate ust_app_event structure");
 		goto error;
 	}
 
@@ -1251,7 +1261,7 @@ error:
  * Return an ust_app_event object or NULL on error.
  */
 static struct ust_app_event *find_ust_app_event(struct lttng_ht *ht,
-		char *name, struct lttng_filter_bytecode *filter,
+		const char *name, const struct lttng_filter_bytecode *filter,
 		int loglevel_value,
 		const struct lttng_event_exclusion *exclusion)
 {
@@ -1312,7 +1322,7 @@ int create_ust_channel_context(struct ust_app_channel *ua_chan,
 			 * continue normally.
 			 */
 			ret = 0;
-			DBG3("UST app disable event failed. Application is dead.");
+			DBG3("UST app add context failed. Application is dead.");
 		}
 		goto error;
 	}
@@ -1674,6 +1684,7 @@ int create_ust_event(struct ust_app *app, struct ust_app_session *ua_sess,
 	pthread_mutex_unlock(&app->sock_lock);
 	if (ret < 0) {
 		if (ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
+			abort();
 			ERR("Error ustctl create event %s for app pid: %d with ret %d",
 					ua_event->attr.name, app->pid, ret);
 		} else {
@@ -1786,11 +1797,6 @@ static void shadow_copy_event(struct ust_app_event *ua_event,
 static void shadow_copy_channel(struct ust_app_channel *ua_chan,
 		struct ltt_ust_channel *uchan)
 {
-	struct lttng_ht_iter iter;
-	struct ltt_ust_event *uevent;
-	struct ltt_ust_context *uctx;
-	struct ust_app_event *ua_event;
-
 	DBG2("UST app shadow copy of channel %s started", ua_chan->name);
 
 	strncpy(ua_chan->name, uchan->name, sizeof(ua_chan->name));
@@ -1817,34 +1823,6 @@ static void shadow_copy_channel(struct ust_app_channel *ua_chan,
 	ua_chan->enabled = uchan->enabled;
 	ua_chan->tracing_channel_id = uchan->id;
 
-	cds_list_for_each_entry(uctx, &uchan->ctx_list, list) {
-		struct ust_app_ctx *ua_ctx = alloc_ust_app_ctx(&uctx->ctx);
-
-		if (ua_ctx == NULL) {
-			continue;
-		}
-		lttng_ht_node_init_ulong(&ua_ctx->node,
-				(unsigned long) ua_ctx->ctx.ctx);
-		lttng_ht_add_ulong(ua_chan->ctx, &ua_ctx->node);
-		cds_list_add_tail(&ua_ctx->list, &ua_chan->ctx_list);
-	}
-
-	/* Copy all events from ltt ust channel to ust app channel */
-	cds_lfht_for_each_entry(uchan->events->ht, &iter.iter, uevent, node.node) {
-		ua_event = find_ust_app_event(ua_chan->events, uevent->attr.name,
-				uevent->filter, uevent->attr.loglevel, uevent->exclusion);
-		if (ua_event == NULL) {
-			DBG2("UST event %s not found on shadow copy channel",
-					uevent->attr.name);
-			ua_event = alloc_ust_app_event(uevent->attr.name, &uevent->attr);
-			if (ua_event == NULL) {
-				continue;
-			}
-			shadow_copy_event(ua_event, uevent);
-			add_unique_ust_app_event(ua_chan, ua_event);
-		}
-	}
-
 	DBG3("UST app shadow copy of channel %s done", ua_chan->name);
 }
 
@@ -1854,29 +1832,22 @@ static void shadow_copy_channel(struct ust_app_channel *ua_chan,
 static void shadow_copy_session(struct ust_app_session *ua_sess,
 		struct ltt_ust_session *usess, struct ust_app *app)
 {
-	struct lttng_ht_node_str *ua_chan_node;
-	struct lttng_ht_iter iter;
-	struct ltt_ust_channel *uchan;
-	struct ust_app_channel *ua_chan;
-	time_t rawtime;
 	struct tm *timeinfo;
 	char datetime[16];
 	int ret;
 	char tmp_shm_path[PATH_MAX];
 
-	/* Get date and time for unique app path */
-	time(&rawtime);
-	timeinfo = localtime(&rawtime);
+	timeinfo = localtime(&app->registration_time);
 	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
 
 	DBG2("Shadow copy of session handle %d", ua_sess->handle);
 
 	ua_sess->tracing_id = usess->id;
 	ua_sess->id = get_next_session_id();
-	ua_sess->uid = app->uid;
-	ua_sess->gid = app->gid;
-	ua_sess->euid = usess->uid;
-	ua_sess->egid = usess->gid;
+	ua_sess->real_credentials.uid = app->uid;
+	ua_sess->real_credentials.gid = app->gid;
+	ua_sess->effective_credentials.uid = usess->uid;
+	ua_sess->effective_credentials.gid = usess->gid;
 	ua_sess->buffer_type = usess->buffer_type;
 	ua_sess->bits_per_long = app->bits_per_long;
 
@@ -1897,7 +1868,9 @@ static void shadow_copy_session(struct ust_app_session *ua_sess,
 		break;
 	case LTTNG_BUFFER_PER_UID:
 		ret = snprintf(ua_sess->path, sizeof(ua_sess->path),
-				DEFAULT_UST_TRACE_UID_PATH, ua_sess->uid, app->bits_per_long);
+				DEFAULT_UST_TRACE_UID_PATH,
+				ua_sess->real_credentials.uid,
+				app->bits_per_long);
 		break;
 	default:
 		assert(0);
@@ -1940,37 +1913,6 @@ static void shadow_copy_session(struct ust_app_session *ua_sess,
 			sizeof(ua_sess->shm_path) - strlen(ua_sess->shm_path) - 1);
 		ua_sess->shm_path[sizeof(ua_sess->shm_path) - 1] = '\0';
 	}
-
-	/* Iterate over all channels in global domain. */
-	cds_lfht_for_each_entry(usess->domain_global.channels->ht, &iter.iter,
-			uchan, node.node) {
-		struct lttng_ht_iter uiter;
-
-		lttng_ht_lookup(ua_sess->channels, (void *)uchan->name, &uiter);
-		ua_chan_node = lttng_ht_iter_get_node_str(&uiter);
-		if (ua_chan_node != NULL) {
-			/* Session exist. Contiuing. */
-			continue;
-		}
-
-		DBG2("Channel %s not found on shadow session copy, creating it",
-				uchan->name);
-		ua_chan = alloc_ust_app_channel(uchan->name, ua_sess,
-				&uchan->attr);
-		if (ua_chan == NULL) {
-			/* malloc failed FIXME: Might want to do handle ENOMEM .. */
-			continue;
-		}
-		shadow_copy_channel(ua_chan, uchan);
-		/*
-		 * The concept of metadata channel does not exist on the tracing
-		 * registry side of the session daemon so this can only be a per CPU
-		 * channel and not metadata.
-		 */
-		ua_chan->attr.type = LTTNG_UST_CHAN_PER_CPU;
-
-		lttng_ht_add_unique_str(ua_sess->channels, &ua_chan->node);
-	}
 	return;
 
 error:
@@ -1981,7 +1923,7 @@ error:
  * Lookup sesison wrapper.
  */
 static
-void __lookup_session_by_app(struct ltt_ust_session *usess,
+void __lookup_session_by_app(const struct ltt_ust_session *usess,
 			struct ust_app *app, struct lttng_ht_iter *iter)
 {
 	/* Get right UST app session from app */
@@ -1993,7 +1935,7 @@ void __lookup_session_by_app(struct ltt_ust_session *usess,
  * id.
  */
 static struct ust_app_session *lookup_session_by_app(
-		struct ltt_ust_session *usess, struct ust_app *app)
+		const struct ltt_ust_session *usess, struct ust_app *app)
 {
 	struct lttng_ht_iter iter;
 	struct lttng_ht_node_u64 *node;
@@ -2048,10 +1990,11 @@ static int setup_buffer_reg_pid(struct ust_app_session *ua_sess,
 			app->bits_per_long, app->uint8_t_alignment,
 			app->uint16_t_alignment, app->uint32_t_alignment,
 			app->uint64_t_alignment, app->long_alignment,
-			app->byte_order, app->version.major,
-			app->version.minor, reg_pid->root_shm_path,
-			reg_pid->shm_path,
-			ua_sess->euid, ua_sess->egid);
+			app->byte_order, app->version.major, app->version.minor,
+			reg_pid->root_shm_path, reg_pid->shm_path,
+			ua_sess->effective_credentials.uid,
+			ua_sess->effective_credentials.gid, ua_sess->tracing_id,
+			app->uid);
 	if (ret < 0) {
 		/*
 		 * reg_pid->registry->reg.ust is NULL upon error, so we need to
@@ -2118,7 +2061,8 @@ static int setup_buffer_reg_uid(struct ltt_ust_session *usess,
 			app->uint64_t_alignment, app->long_alignment,
 			app->byte_order, app->version.major,
 			app->version.minor, reg_uid->root_shm_path,
-			reg_uid->shm_path, usess->uid, usess->gid);
+			reg_uid->shm_path, usess->uid, usess->gid,
+			ua_sess->tracing_id, app->uid);
 	if (ret < 0) {
 		/*
 		 * reg_uid->registry->reg.ust is NULL upon error, so we need to
@@ -2155,7 +2099,7 @@ error:
  * Returns 0 on success or else a negative code which is either -ENOMEM or
  * -ENOTCONN which is the default code if the ustctl_create_session fails.
  */
-static int create_ust_app_session(struct ltt_ust_session *usess,
+static int find_or_create_ust_app_session(struct ltt_ust_session *usess,
 		struct ust_app *app, struct ust_app_session **ua_sess_ptr,
 		int *is_created)
 {
@@ -2172,7 +2116,7 @@ static int create_ust_app_session(struct ltt_ust_session *usess,
 	if (ua_sess == NULL) {
 		DBG2("UST app pid: %d session id %" PRIu64 " not found, creating it",
 				app->pid, usess->id);
-		ua_sess = alloc_ust_app_session(app);
+		ua_sess = alloc_ust_app_session();
 		if (ua_sess == NULL) {
 			/* Only malloc can failed so something is really wrong */
 			ret = -ENOMEM;
@@ -2348,8 +2292,7 @@ end:
  * Called with UST app session lock held and a RCU read side lock.
  */
 static
-int create_ust_app_channel_context(struct ust_app_session *ua_sess,
-		struct ust_app_channel *ua_chan,
+int create_ust_app_channel_context(struct ust_app_channel *ua_chan,
 	        struct lttng_ust_context_attr *uctx,
 		struct ust_app *app)
 {
@@ -2367,7 +2310,7 @@ int create_ust_app_channel_context(struct ust_app_session *ua_sess,
 	ua_ctx = alloc_ust_app_ctx(uctx);
 	if (ua_ctx == NULL) {
 		/* malloc failed */
-		ret = -1;
+		ret = -ENOMEM;
 		goto error;
 	}
 
@@ -2485,7 +2428,8 @@ error:
  */
 static int do_consumer_create_channel(struct ltt_ust_session *usess,
 		struct ust_app_session *ua_sess, struct ust_app_channel *ua_chan,
-		int bitness, struct ust_registry_session *registry)
+		int bitness, struct ust_registry_session *registry,
+		uint64_t trace_archive_id)
 {
 	int ret;
 	unsigned int nb_fd = 0;
@@ -2520,7 +2464,7 @@ static int do_consumer_create_channel(struct ltt_ust_session *usess,
 	 * stream we have to expect.
 	 */
 	ret = ust_consumer_ask_channel(ua_sess, ua_chan, usess->consumer, socket,
-			registry);
+			registry, usess->current_trace_chunk);
 	if (ret < 0) {
 		goto error_ask;
 	}
@@ -2847,6 +2791,9 @@ error:
 /*
  * Create and send to the application the created buffers with per UID buffers.
  *
+ * This MUST be called with a RCU read side lock acquired.
+ * The session list lock and the session's lock must be acquired.
+ *
  * Return 0 on success else a negative value.
  */
 static int create_channel_per_uid(struct ust_app *app,
@@ -2856,7 +2803,9 @@ static int create_channel_per_uid(struct ust_app *app,
 	int ret;
 	struct buffer_reg_uid *reg_uid;
 	struct buffer_reg_channel *reg_chan;
-	bool created = false;
+	struct ltt_session *session = NULL;
+	enum lttng_error_code notification_ret;
+	struct ust_registry_channel *chan_reg;
 
 	assert(app);
 	assert(usess);
@@ -2875,85 +2824,77 @@ static int create_channel_per_uid(struct ust_app *app,
 
 	reg_chan = buffer_reg_channel_find(ua_chan->tracing_channel_id,
 			reg_uid);
-	if (!reg_chan) {
-		/* Create the buffer registry channel object. */
-		ret = create_buffer_reg_channel(reg_uid->registry, ua_chan, &reg_chan);
-		if (ret < 0) {
-			ERR("Error creating the UST channel \"%s\" registry instance",
-				ua_chan->name);
-			goto error;
-		}
-		assert(reg_chan);
-
-		/*
-		 * Create the buffers on the consumer side. This call populates the
-		 * ust app channel object with all streams and data object.
-		 */
-		ret = do_consumer_create_channel(usess, ua_sess, ua_chan,
-				app->bits_per_long, reg_uid->registry->reg.ust);
-		if (ret < 0) {
-			ERR("Error creating UST channel \"%s\" on the consumer daemon",
-				ua_chan->name);
-
-			/*
-			 * Let's remove the previously created buffer registry channel so
-			 * it's not visible anymore in the session registry.
-			 */
-			ust_registry_channel_del_free(reg_uid->registry->reg.ust,
-					ua_chan->tracing_channel_id, false);
-			buffer_reg_channel_remove(reg_uid->registry, reg_chan);
-			buffer_reg_channel_destroy(reg_chan, LTTNG_DOMAIN_UST);
-			goto error;
-		}
-
-		/*
-		 * Setup the streams and add it to the session registry.
-		 */
-		ret = setup_buffer_reg_channel(reg_uid->registry,
-				ua_chan, reg_chan, app);
-		if (ret < 0) {
-			ERR("Error setting up UST channel \"%s\"",
-				ua_chan->name);
-			goto error;
-		}
-		created = true;
+	if (reg_chan) {
+		goto send_channel;
 	}
 
-	if (created) {
-		enum lttng_error_code cmd_ret;
-		struct ltt_session *session;
-		uint64_t chan_reg_key;
-		struct ust_registry_channel *chan_reg;
-
-		rcu_read_lock();
-		chan_reg_key = ua_chan->tracing_channel_id;
-
-		pthread_mutex_lock(&reg_uid->registry->reg.ust->lock);
-		chan_reg = ust_registry_channel_find(reg_uid->registry->reg.ust,
-				chan_reg_key);
-		assert(chan_reg);
-		chan_reg->consumer_key = ua_chan->key;
-		chan_reg = NULL;
-		pthread_mutex_unlock(&reg_uid->registry->reg.ust->lock);
-
-		session = session_find_by_id(ua_sess->tracing_id);
-		assert(session);
-
-		cmd_ret = notification_thread_command_add_channel(
-				notification_thread_handle, session->name,
-				ua_sess->euid, ua_sess->egid,
-				ua_chan->name,
-				ua_chan->key,
-				LTTNG_DOMAIN_UST,
-				ua_chan->attr.subbuf_size * ua_chan->attr.num_subbuf);
-		rcu_read_unlock();
-		if (cmd_ret != LTTNG_OK) {
-			ret = - (int) cmd_ret;
-			ERR("Failed to add channel to notification thread");
-			goto error;
-		}
+	/* Create the buffer registry channel object. */
+	ret = create_buffer_reg_channel(reg_uid->registry, ua_chan, &reg_chan);
+	if (ret < 0) {
+		ERR("Error creating the UST channel \"%s\" registry instance",
+				ua_chan->name);
+		goto error;
 	}
 
+	session = session_find_by_id(ua_sess->tracing_id);
+	assert(session);
+	assert(pthread_mutex_trylock(&session->lock));
+	assert(session_trylock_list());
+
+	/*
+	 * Create the buffers on the consumer side. This call populates the
+	 * ust app channel object with all streams and data object.
+	 */
+	ret = do_consumer_create_channel(usess, ua_sess, ua_chan,
+			app->bits_per_long, reg_uid->registry->reg.ust,
+			session->most_recent_chunk_id.value);
+	if (ret < 0) {
+		ERR("Error creating UST channel \"%s\" on the consumer daemon",
+				ua_chan->name);
+
+		/*
+		 * Let's remove the previously created buffer registry channel so
+		 * it's not visible anymore in the session registry.
+		 */
+		ust_registry_channel_del_free(reg_uid->registry->reg.ust,
+				ua_chan->tracing_channel_id, false);
+		buffer_reg_channel_remove(reg_uid->registry, reg_chan);
+		buffer_reg_channel_destroy(reg_chan, LTTNG_DOMAIN_UST);
+		goto error;
+	}
+
+	/*
+	 * Setup the streams and add it to the session registry.
+	 */
+	ret = setup_buffer_reg_channel(reg_uid->registry,
+			ua_chan, reg_chan, app);
+	if (ret < 0) {
+		ERR("Error setting up UST channel \"%s\"", ua_chan->name);
+		goto error;
+	}
+
+	/* Notify the notification subsystem of the channel's creation. */
+	pthread_mutex_lock(&reg_uid->registry->reg.ust->lock);
+	chan_reg = ust_registry_channel_find(reg_uid->registry->reg.ust,
+			ua_chan->tracing_channel_id);
+	assert(chan_reg);
+	chan_reg->consumer_key = ua_chan->key;
+	chan_reg = NULL;
+	pthread_mutex_unlock(&reg_uid->registry->reg.ust->lock);
+
+	notification_ret = notification_thread_command_add_channel(
+			notification_thread_handle, session->name,
+			ua_sess->effective_credentials.uid,
+			ua_sess->effective_credentials.gid, ua_chan->name,
+			ua_chan->key, LTTNG_DOMAIN_UST,
+			ua_chan->attr.subbuf_size * ua_chan->attr.num_subbuf);
+	if (notification_ret != LTTNG_OK) {
+		ret = - (int) notification_ret;
+		ERR("Failed to add channel to notification thread");
+		goto error;
+	}
+
+send_channel:
 	/* Send buffers to the application. */
 	ret = send_channel_uid_to_ust(reg_chan, app, ua_sess, ua_chan);
 	if (ret < 0) {
@@ -2964,6 +2905,9 @@ static int create_channel_per_uid(struct ust_app *app,
 	}
 
 error:
+	if (session) {
+		session_put(session);
+	}
 	return ret;
 }
 
@@ -2971,6 +2915,7 @@ error:
  * Create and send to the application the created buffers with per PID buffers.
  *
  * Called with UST app session lock held.
+ * The session list lock and the session's lock must be acquired.
  *
  * Return 0 on success else a negative value.
  */
@@ -2981,7 +2926,7 @@ static int create_channel_per_pid(struct ust_app *app,
 	int ret;
 	struct ust_registry_session *registry;
 	enum lttng_error_code cmd_ret;
-	struct ltt_session *session;
+	struct ltt_session *session = NULL;
 	uint64_t chan_reg_key;
 	struct ust_registry_channel *chan_reg;
 
@@ -3006,9 +2951,16 @@ static int create_channel_per_pid(struct ust_app *app,
 		goto error;
 	}
 
+	session = session_find_by_id(ua_sess->tracing_id);
+	assert(session);
+
+	assert(pthread_mutex_trylock(&session->lock));
+	assert(session_trylock_list());
+
 	/* Create and get channel on the consumer side. */
 	ret = do_consumer_create_channel(usess, ua_sess, ua_chan,
-			app->bits_per_long, registry);
+			app->bits_per_long, registry,
+			session->most_recent_chunk_id.value);
 	if (ret < 0) {
 		ERR("Error creating UST channel \"%s\" on the consumer daemon",
 			ua_chan->name);
@@ -3023,9 +2975,6 @@ static int create_channel_per_pid(struct ust_app *app,
 		goto error_remove_from_registry;
 	}
 
-	session = session_find_by_id(ua_sess->tracing_id);
-	assert(session);
-
 	chan_reg_key = ua_chan->key;
 	pthread_mutex_lock(&registry->lock);
 	chan_reg = ust_registry_channel_find(registry, chan_reg_key);
@@ -3035,10 +2984,9 @@ static int create_channel_per_pid(struct ust_app *app,
 
 	cmd_ret = notification_thread_command_add_channel(
 			notification_thread_handle, session->name,
-			ua_sess->euid, ua_sess->egid,
-			ua_chan->name,
-			ua_chan->key,
-			LTTNG_DOMAIN_UST,
+			ua_sess->effective_credentials.uid,
+			ua_sess->effective_credentials.gid, ua_chan->name,
+			ua_chan->key, LTTNG_DOMAIN_UST,
 			ua_chan->attr.subbuf_size * ua_chan->attr.num_subbuf);
 	if (cmd_ret != LTTNG_OK) {
 		ret = - (int) cmd_ret;
@@ -3052,12 +3000,15 @@ error_remove_from_registry:
 	}
 error:
 	rcu_read_unlock();
+	if (session) {
+		session_put(session);
+	}
 	return ret;
 }
 
 /*
  * From an already allocated ust app channel, create the channel buffers if
- * need and send it to the application. This MUST be called with a RCU read
+ * needed and send them to the application. This MUST be called with a RCU read
  * side lock acquired.
  *
  * Called with UST app session lock held.
@@ -3065,7 +3016,7 @@ error:
  * Return 0 on success or else a negative value. Returns -ENOTCONN if
  * the application exited concurrently.
  */
-static int do_create_channel(struct ust_app *app,
+static int ust_app_channel_send(struct ust_app *app,
 		struct ltt_ust_session *usess, struct ust_app_session *ua_sess,
 		struct ust_app_channel *ua_chan)
 {
@@ -3073,6 +3024,7 @@ static int do_create_channel(struct ust_app *app,
 
 	assert(app);
 	assert(usess);
+	assert(usess->active);
 	assert(ua_sess);
 	assert(ua_chan);
 
@@ -3117,16 +3069,14 @@ error:
 }
 
 /*
- * Create UST app channel and create it on the tracer. Set ua_chanp of the
- * newly created channel if not NULL.
+ * Create UST app channel and return it through ua_chanp if not NULL.
  *
  * Called with UST app session lock and RCU read-side lock held.
  *
- * Return 0 on success or else a negative value. Returns -ENOTCONN if
- * the application exited concurrently.
+ * Return 0 on success or else a negative value.
  */
-static int create_ust_app_channel(struct ust_app_session *ua_sess,
-		struct ltt_ust_channel *uchan, struct ust_app *app,
+static int ust_app_channel_allocate(struct ust_app_session *ua_sess,
+		struct ltt_ust_channel *uchan,
 		enum lttng_ust_chan_type type, struct ltt_ust_session *usess,
 		struct ust_app_channel **ua_chanp)
 {
@@ -3147,20 +3097,12 @@ static int create_ust_app_channel(struct ust_app_session *ua_sess,
 	if (ua_chan == NULL) {
 		/* Only malloc can fail here */
 		ret = -ENOMEM;
-		goto error_alloc;
+		goto error;
 	}
 	shadow_copy_channel(ua_chan, uchan);
 
 	/* Set channel type. */
 	ua_chan->attr.type = type;
-
-	ret = do_create_channel(app, usess, ua_sess, ua_chan);
-	if (ret < 0) {
-		goto error;
-	}
-
-	DBG2("UST app create channel %s for PID %d completed", ua_chan->name,
-			app->pid);
 
 	/* Only add the channel if successful on the tracer side. */
 	lttng_ht_add_unique_str(ua_sess->channels, &ua_chan->node);
@@ -3173,8 +3115,6 @@ end:
 	return 0;
 
 error:
-	delete_ust_app_channel(ua_chan->is_sent ? app->sock : -1, ua_chan, app);
-error_alloc:
 	return ret;
 }
 
@@ -3191,18 +3131,9 @@ int create_ust_app_event(struct ust_app_session *ua_sess,
 	int ret = 0;
 	struct ust_app_event *ua_event;
 
-	/* Get event node */
-	ua_event = find_ust_app_event(ua_chan->events, uevent->attr.name,
-			uevent->filter, uevent->attr.loglevel, uevent->exclusion);
-	if (ua_event != NULL) {
-		ret = -EEXIST;
-		goto end;
-	}
-
-	/* Does not exist so create one */
 	ua_event = alloc_ust_app_event(uevent->attr.name, &uevent->attr);
 	if (ua_event == NULL) {
-		/* Only malloc can failed so something is really wrong */
+		/* Only failure mode of alloc_ust_app_event(). */
 		ret = -ENOMEM;
 		goto end;
 	}
@@ -3211,8 +3142,19 @@ int create_ust_app_event(struct ust_app_session *ua_sess,
 	/* Create it on the tracer side */
 	ret = create_ust_event(app, ua_sess, ua_chan, ua_event);
 	if (ret < 0) {
-		/* Not found previously means that it does not exist on the tracer */
-		assert(ret != -LTTNG_UST_ERR_EXIST);
+		/*
+		 * Not found previously means that it does not exist on the
+		 * tracer. If the application reports that the event existed,
+		 * it means there is a bug in the sessiond or lttng-ust
+		 * (or corruption, etc.)
+		 */
+		if (ret == -LTTNG_UST_ERR_EXIST) {
+			ERR("Tracer for application reported that an event being created already existed: "
+					"event_name = \"%s\", pid = %d, ppid = %d, uid = %d, gid = %d",
+					uevent->attr.name,
+					app->pid, app->ppid, app->uid,
+					app->gid);
+		}
 		goto error;
 	}
 
@@ -3242,6 +3184,7 @@ static int create_ust_app_metadata(struct ust_app_session *ua_sess,
 	struct ust_app_channel *metadata;
 	struct consumer_socket *socket;
 	struct ust_registry_session *registry;
+	struct ltt_session *session = NULL;
 
 	assert(ua_sess);
 	assert(app);
@@ -3291,6 +3234,12 @@ static int create_ust_app_metadata(struct ust_app_session *ua_sess,
 	 */
 	registry->metadata_key = metadata->key;
 
+	session = session_find_by_id(ua_sess->tracing_id);
+	assert(session);
+
+	assert(pthread_mutex_trylock(&session->lock));
+	assert(session_trylock_list());
+
 	/*
 	 * Ask the metadata channel creation to the consumer. The metadata object
 	 * will be created by the consumer and kept their. However, the stream is
@@ -3298,7 +3247,7 @@ static int create_ust_app_metadata(struct ust_app_session *ua_sess,
 	 * consumer.
 	 */
 	ret = ust_consumer_ask_channel(ua_sess, metadata, consumer, socket,
-			registry);
+			registry, session->current_trace_chunk);
 	if (ret < 0) {
 		/* Nullify the metadata key so we don't try to close it later on. */
 		registry->metadata_key = 0;
@@ -3326,6 +3275,9 @@ error_consumer:
 	delete_ust_app_channel(-1, metadata, app);
 error:
 	pthread_mutex_unlock(&registry->lock);
+	if (session) {
+		session_put(session);
+	}
 	return ret;
 }
 
@@ -3434,6 +3386,8 @@ void ust_app_add(struct ust_app *app)
 {
 	assert(app);
 	assert(app->notify_sock >= 0);
+
+	app->registration_time = time(NULL);
 
 	rcu_read_lock();
 
@@ -3583,8 +3537,8 @@ void ust_app_unregister(int sock)
 	/*
 	 * Remove application from notify hash table. The thread handling the
 	 * notify socket could have deleted the node so ignore on error because
-	 * either way it's valid. The close of that socket is handled by the other
-	 * thread.
+	 * either way it's valid. The close of that socket is handled by the
+	 * apps_notify_thread.
 	 */
 	iter.iter.node = &lta->notify_sock_n.node;
 	(void) lttng_ht_del(ust_app_ht_by_notify_sock, &iter);
@@ -3893,6 +3847,24 @@ void ust_app_clean_list(void)
 
 	rcu_read_lock();
 
+	/* Cleanup notify socket hash table */
+	if (ust_app_ht_by_notify_sock) {
+		cds_lfht_for_each_entry(ust_app_ht_by_notify_sock->ht, &iter.iter, app,
+				notify_sock_n.node) {
+			struct cds_lfht_node *node;
+			struct ust_app *app;
+
+			node = cds_lfht_iter_get_node(&iter.iter);
+			if (!node) {
+				continue;
+			}
+
+			app = container_of(node, struct ust_app,
+					notify_sock_n.node);
+			ust_app_notify_sock_unregister(app->notify_sock);
+		}
+	}
+
 	if (ust_app_ht) {
 		cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
 			ret = lttng_ht_del(ust_app_ht, &iter);
@@ -3910,14 +3882,6 @@ void ust_app_clean_list(void)
 		}
 	}
 
-	/* Cleanup notify socket hash table */
-	if (ust_app_ht_by_notify_sock) {
-		cds_lfht_for_each_entry(ust_app_ht_by_notify_sock->ht, &iter.iter, app,
-				notify_sock_n.node) {
-			ret = lttng_ht_del(ust_app_ht_by_notify_sock, &iter);
-			assert(!ret);
-		}
-	}
 	rcu_read_unlock();
 
 	/* Destroy is done only when the ht is empty */
@@ -3965,12 +3929,7 @@ int ust_app_disable_channel_glb(struct ltt_ust_session *usess,
 	struct ust_app_session *ua_sess;
 	struct ust_app_channel *ua_chan;
 
-	if (usess == NULL || uchan == NULL) {
-		ERR("Disabling UST global channel with NULL values");
-		ret = -1;
-		goto error;
-	}
-
+	assert(usess->active);
 	DBG2("UST app disabling channel %s from global domain for session id %" PRIu64,
 			uchan->name, usess->id);
 
@@ -4010,8 +3969,6 @@ int ust_app_disable_channel_glb(struct ltt_ust_session *usess,
 	}
 
 	rcu_read_unlock();
-
-error:
 	return ret;
 }
 
@@ -4026,12 +3983,7 @@ int ust_app_enable_channel_glb(struct ltt_ust_session *usess,
 	struct ust_app *app;
 	struct ust_app_session *ua_sess;
 
-	if (usess == NULL || uchan == NULL) {
-		ERR("Adding UST global channel to NULL values");
-		ret = -1;
-		goto error;
-	}
-
+	assert(usess->active);
 	DBG2("UST app enabling channel %s to global domain for session id %" PRIu64,
 			uchan->name, usess->id);
 
@@ -4060,8 +4012,6 @@ int ust_app_enable_channel_glb(struct ltt_ust_session *usess,
 	}
 
 	rcu_read_unlock();
-
-error:
 	return ret;
 }
 
@@ -4079,6 +4029,7 @@ int ust_app_disable_event_glb(struct ltt_ust_session *usess,
 	struct ust_app_channel *ua_chan;
 	struct ust_app_event *ua_event;
 
+	assert(usess->active);
 	DBG("UST app disabling event %s for all apps in channel "
 			"%s for session id %" PRIu64,
 			uevent->attr.name, uchan->name, usess->id);
@@ -4127,7 +4078,77 @@ int ust_app_disable_event_glb(struct ltt_ust_session *usess,
 	}
 
 	rcu_read_unlock();
+	return ret;
+}
 
+/* The ua_sess lock must be held by the caller.  */
+static
+int ust_app_channel_create(struct ltt_ust_session *usess,
+		struct ust_app_session *ua_sess,
+		struct ltt_ust_channel *uchan, struct ust_app *app,
+		struct ust_app_channel **_ua_chan)
+{
+	int ret = 0;
+	struct ust_app_channel *ua_chan = NULL;
+
+	assert(ua_sess);
+	ASSERT_LOCKED(ua_sess->lock);
+
+	if (!strncmp(uchan->name, DEFAULT_METADATA_NAME,
+		     sizeof(uchan->name))) {
+		copy_channel_attr_to_ustctl(&ua_sess->metadata_attr,
+			&uchan->attr);
+		ret = 0;
+	} else {
+		struct ltt_ust_context *uctx = NULL;
+
+		/*
+		 * Create channel onto application and synchronize its
+		 * configuration.
+		 */
+		ret = ust_app_channel_allocate(ua_sess, uchan,
+			LTTNG_UST_CHAN_PER_CPU, usess,
+			&ua_chan);
+		if (ret == 0) {
+			ret = ust_app_channel_send(app, usess,
+				ua_sess, ua_chan);
+		} else {
+			goto end;
+		}
+
+		/* Add contexts. */
+		cds_list_for_each_entry(uctx, &uchan->ctx_list, list) {
+			ret = create_ust_app_channel_context(ua_chan,
+				&uctx->ctx, app);
+			if (ret) {
+				goto end;
+			}
+		}
+	}
+	if (ret < 0) {
+		switch (ret) {
+		case -ENOTCONN:
+			/*
+			 * The application's socket is not valid. Either a bad socket
+			 * or a timeout on it. We can't inform the caller that for a
+			 * specific app, the session failed so lets continue here.
+			 */
+			ret = 0;	/* Not an error. */
+			break;
+		case -ENOMEM:
+		default:
+			break;
+		}
+	}
+end:
+	if (ret == 0 && _ua_chan) {
+		/*
+		 * Only return the application's channel on success. Note
+		 * that the channel can still be part of the application's
+		 * channel hashtable on error.
+		 */
+		*_ua_chan = ua_chan;
+	}
 	return ret;
 }
 
@@ -4137,32 +4158,26 @@ int ust_app_disable_event_glb(struct ltt_ust_session *usess,
 int ust_app_create_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan)
 {
-	int ret = 0, created;
-	struct lttng_ht_iter iter;
+	int ret = 0;
+	struct cds_lfht_iter iter;
 	struct ust_app *app;
-	struct ust_app_session *ua_sess = NULL;
 
-	/* Very wrong code flow */
 	assert(usess);
+	assert(usess->active);
 	assert(uchan);
 
 	DBG2("UST app adding channel %s to UST domain for session id %" PRIu64,
 			uchan->name, usess->id);
 
 	rcu_read_lock();
-
 	/* For every registered applications */
-	cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
-		if (!app->compatible) {
-			/*
-			 * TODO: In time, we should notice the caller of this error by
-			 * telling him that this is a version error.
-			 */
-			continue;
-		}
-		if (!trace_ust_pid_tracker_lookup(usess, app->pid)) {
-			/* Skip. */
-			continue;
+	cds_lfht_for_each_entry(ust_app_ht->ht, &iter, app, pid_n.node) {
+		struct ust_app_session *ua_sess;
+		int session_was_created = 0;
+
+		if (!app->compatible ||
+				!trace_ust_pid_tracker_lookup(usess, app->pid)) {
+			goto error_rcu_unlock;
 		}
 
 		/*
@@ -4170,59 +4185,34 @@ int ust_app_create_channel_glb(struct ltt_ust_session *usess,
 		 * that if session exist, it will simply return a pointer to the ust
 		 * app session.
 		 */
-		ret = create_ust_app_session(usess, app, &ua_sess, &created);
+		ret = find_or_create_ust_app_session(usess, app, &ua_sess,
+				&session_was_created);
 		if (ret < 0) {
 			switch (ret) {
 			case -ENOTCONN:
 				/*
-				 * The application's socket is not valid. Either a bad socket
-				 * or a timeout on it. We can't inform the caller that for a
-				 * specific app, the session failed so lets continue here.
+				 * The application's socket is not valid. Either a bad
+				 * socket or a timeout on it. We can't inform the caller
+				 * that for a specific app, the session failed so lets
+				 * continue here; it is not an error.
 				 */
-				ret = 0;	/* Not an error. */
-				continue;
+				ret = 0;
+				goto error_rcu_unlock;
 			case -ENOMEM:
 			default:
 				goto error_rcu_unlock;
 			}
 		}
-		assert(ua_sess);
-
-		pthread_mutex_lock(&ua_sess->lock);
 
 		if (ua_sess->deleted) {
-			pthread_mutex_unlock(&ua_sess->lock);
 			continue;
 		}
-
-		if (!strncmp(uchan->name, DEFAULT_METADATA_NAME,
-					sizeof(uchan->name))) {
-			copy_channel_attr_to_ustctl(&ua_sess->metadata_attr, &uchan->attr);
-			ret = 0;
-		} else {
-			/* Create channel onto application. We don't need the chan ref. */
-			ret = create_ust_app_channel(ua_sess, uchan, app,
-					LTTNG_UST_CHAN_PER_CPU, usess, NULL);
-		}
-		pthread_mutex_unlock(&ua_sess->lock);
-		if (ret < 0) {
-			/* Cleanup the created session if it's the case. */
-			if (created) {
+		ret = ust_app_channel_create(usess, ua_sess, uchan, app, NULL);
+		if (ret) {
+			if (session_was_created) {
 				destroy_app_session(app, ua_sess);
 			}
-			switch (ret) {
-			case -ENOTCONN:
-				/*
-				 * The application's socket is not valid. Either a bad socket
-				 * or a timeout on it. We can't inform the caller that for a
-				 * specific app, the session failed so lets continue here.
-				 */
-				ret = 0;	/* Not an error. */
-				continue;
-			case -ENOMEM:
-			default:
-				goto error_rcu_unlock;
-			}
+			/* Continue to the next application. */
 		}
 	}
 
@@ -4245,6 +4235,7 @@ int ust_app_enable_event_glb(struct ltt_ust_session *usess,
 	struct ust_app_channel *ua_chan;
 	struct ust_app_event *ua_event;
 
+	assert(usess->active);
 	DBG("UST app enabling event %s for all apps for session id %" PRIu64,
 			uevent->attr.name, usess->id);
 
@@ -4330,6 +4321,7 @@ int ust_app_create_event_glb(struct ltt_ust_session *usess,
 	struct ust_app_session *ua_sess;
 	struct ust_app_channel *ua_chan;
 
+	assert(usess->active);
 	DBG("UST app creating event %s for all apps for session id %" PRIu64,
 			uevent->attr.name, usess->id);
 
@@ -4379,7 +4371,6 @@ int ust_app_create_event_glb(struct ltt_ust_session *usess,
 	}
 
 	rcu_read_unlock();
-
 	return ret;
 }
 
@@ -4419,19 +4410,6 @@ int ust_app_start_trace(struct ltt_ust_session *usess, struct ust_app *app)
 	/* Upon restart, we skip the setup, already done */
 	if (ua_sess->started) {
 		goto skip_setup;
-	}
-
-	/* Create directories if consumer is LOCAL and has a path defined. */
-	if (usess->consumer->type == CONSUMER_DST_LOCAL &&
-			strlen(usess->consumer->dst.trace_path) > 0) {
-		ret = run_as_mkdir_recursive(usess->consumer->dst.trace_path,
-				S_IRWXU | S_IRWXG, ua_sess->euid, ua_sess->egid);
-		if (ret < 0) {
-			if (errno != EEXIST) {
-				ERR("Trace directory creation error");
-				goto error_unlock;
-			}
-		}
 	}
 
 	/*
@@ -4928,11 +4906,16 @@ end:
  */
 int ust_app_start_trace_all(struct ltt_ust_session *usess)
 {
-	int ret = 0;
 	struct lttng_ht_iter iter;
 	struct ust_app *app;
 
 	DBG("Starting all UST traces");
+
+	/*
+	 * Even though the start trace might fail, flag this session active so
+	 * other application coming in are started by default.
+	 */
+	usess->active = 1;
 
 	rcu_read_lock();
 
@@ -4945,11 +4928,7 @@ int ust_app_start_trace_all(struct ltt_ust_session *usess)
 	(void) ust_app_clear_quiescent_session(usess);
 
 	cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
-		ret = ust_app_start_trace(usess, app);
-		if (ret < 0) {
-			/* Continue to next apps even on error */
-			continue;
-		}
+		ust_app_global_update(usess, app);
 	}
 
 	rcu_read_unlock();
@@ -4968,6 +4947,12 @@ int ust_app_stop_trace_all(struct ltt_ust_session *usess)
 	struct ust_app *app;
 
 	DBG("Stopping all UST traces");
+
+	/*
+	 * Even though the stop trace might fail, flag this session inactive so
+	 * other application coming in are not started by default.
+	 */
+	usess->active = 0;
 
 	rcu_read_lock();
 
@@ -5012,92 +4997,147 @@ int ust_app_destroy_trace_all(struct ltt_ust_session *usess)
 	return 0;
 }
 
+/* The ua_sess lock must be held by the caller. */
 static
-void ust_app_global_create(struct ltt_ust_session *usess, struct ust_app *app)
+int find_or_create_ust_app_channel(
+		struct ltt_ust_session *usess,
+		struct ust_app_session *ua_sess,
+		struct ust_app *app,
+		struct ltt_ust_channel *uchan,
+		struct ust_app_channel **ua_chan)
 {
 	int ret = 0;
-	struct lttng_ht_iter iter, uiter;
-	struct ust_app_session *ua_sess = NULL;
-	struct ust_app_channel *ua_chan;
-	struct ust_app_event *ua_event;
-	struct ust_app_ctx *ua_ctx;
-	int is_created = 0;
+	struct lttng_ht_iter iter;
+	struct lttng_ht_node_str *ua_chan_node;
 
-	ret = create_ust_app_session(usess, app, &ua_sess, &is_created);
+	lttng_ht_lookup(ua_sess->channels, (void *) uchan->name, &iter);
+	ua_chan_node = lttng_ht_iter_get_node_str(&iter);
+	if (ua_chan_node) {
+		*ua_chan = caa_container_of(ua_chan_node,
+			struct ust_app_channel, node);
+		goto end;
+	}
+
+	ret = ust_app_channel_create(usess, ua_sess, uchan, app, ua_chan);
+	if (ret) {
+		goto end;
+	}
+end:
+	return ret;
+}
+
+static
+int ust_app_channel_synchronize_event(struct ust_app_channel *ua_chan,
+		struct ltt_ust_event *uevent, struct ust_app_session *ua_sess,
+		struct ust_app *app)
+{
+	int ret = 0;
+	struct ust_app_event *ua_event = NULL;
+
+	ua_event = find_ust_app_event(ua_chan->events, uevent->attr.name,
+		uevent->filter, uevent->attr.loglevel, uevent->exclusion);
+	if (!ua_event) {
+		ret = create_ust_app_event(ua_sess, ua_chan, uevent, app);
+		if (ret < 0) {
+			goto end;
+		}
+	} else {
+		if (ua_event->enabled != uevent->enabled) {
+			ret = uevent->enabled ?
+				enable_ust_app_event(ua_sess, ua_event, app) :
+				disable_ust_app_event(ua_sess, ua_event, app);
+		}
+	}
+
+end:
+	return ret;
+}
+
+/*
+ * The caller must ensure that the application is compatible and is tracked
+ * by the PID tracker.
+ */
+static
+void ust_app_synchronize(struct ltt_ust_session *usess,
+		struct ust_app *app)
+{
+	int ret = 0;
+	struct cds_lfht_iter uchan_iter;
+	struct ltt_ust_channel *uchan;
+	struct ust_app_session *ua_sess = NULL;
+
+	/*
+	 * The application's configuration should only be synchronized for
+	 * active sessions.
+	 */
+	assert(usess->active);
+
+	ret = find_or_create_ust_app_session(usess, app, &ua_sess, NULL);
 	if (ret < 0) {
 		/* Tracer is probably gone or ENOMEM. */
 		goto error;
 	}
-	if (!is_created) {
-		/* App session already created. */
-		goto end;
-	}
 	assert(ua_sess);
 
 	pthread_mutex_lock(&ua_sess->lock);
-
 	if (ua_sess->deleted) {
 		pthread_mutex_unlock(&ua_sess->lock);
 		goto end;
 	}
 
-	/*
-	 * We can iterate safely here over all UST app session since the create ust
-	 * app session above made a shadow copy of the UST global domain from the
-	 * ltt ust session.
-	 */
-	cds_lfht_for_each_entry(ua_sess->channels->ht, &iter.iter, ua_chan,
-			node.node) {
-		ret = do_create_channel(app, usess, ua_sess, ua_chan);
-		if (ret < 0 && ret != -ENOTCONN) {
-			/*
-			 * Stop everything. On error, the application
-			 * failed, no more file descriptor are available
-			 * or ENOMEM so stopping here is the only thing
-			 * we can do for now. The only exception is
-			 * -ENOTCONN, which indicates that the application
-			 * has exit.
-			 */
+	rcu_read_lock();
+	cds_lfht_for_each_entry(usess->domain_global.channels->ht, &uchan_iter,
+			uchan, node.node) {
+		struct ust_app_channel *ua_chan;
+		struct cds_lfht_iter uevent_iter;
+		struct ltt_ust_event *uevent;
+
+		/*
+		 * Search for a matching ust_app_channel. If none is found,
+		 * create it. Creating the channel will cause the ua_chan
+		 * structure to be allocated, the channel buffers to be
+		 * allocated (if necessary) and sent to the application, and
+		 * all enabled contexts will be added to the channel.
+		 */
+	        ret = find_or_create_ust_app_channel(usess, ua_sess,
+			app, uchan, &ua_chan);
+		if (ret) {
+			/* Tracer is probably gone or ENOMEM. */
 			goto error_unlock;
 		}
 
-		/*
-		 * Add context using the list so they are enabled in the same order the
-		 * user added them.
-		 */
-		cds_list_for_each_entry(ua_ctx, &ua_chan->ctx_list, list) {
-			ret = create_ust_channel_context(ua_chan, ua_ctx, app);
-			if (ret < 0) {
-				goto error_unlock;
-			}
+		if (!ua_chan) {
+			/* ua_chan will be NULL for the metadata channel */
+			continue;
 		}
 
-
-		/* For each events */
-		cds_lfht_for_each_entry(ua_chan->events->ht, &uiter.iter, ua_event,
+		cds_lfht_for_each_entry(uchan->events->ht, &uevent_iter, uevent,
 				node.node) {
-			ret = create_ust_event(app, ua_sess, ua_chan, ua_event);
-			if (ret < 0) {
+			ret = ust_app_channel_synchronize_event(ua_chan,
+				uevent, ua_sess, app);
+			if (ret) {
+				goto error_unlock;
+			}
+		}
+
+		if (ua_chan->enabled != uchan->enabled) {
+			ret = uchan->enabled ?
+				enable_ust_app_channel(ua_sess, uchan, app) :
+				disable_ust_app_channel(ua_sess, ua_chan, app);
+			if (ret) {
 				goto error_unlock;
 			}
 		}
 	}
+	rcu_read_unlock();
 
-	pthread_mutex_unlock(&ua_sess->lock);
-
-	if (usess->active) {
-		ret = ust_app_start_trace(usess, app);
-		if (ret < 0) {
-			goto error;
-		}
-
-		DBG2("UST trace started for app pid %d", app->pid);
-	}
 end:
+	pthread_mutex_unlock(&ua_sess->lock);
 	/* Everything went well at this point. */
 	return;
 
 error_unlock:
+	rcu_read_unlock();
 	pthread_mutex_unlock(&ua_sess->lock);
 error:
 	if (ua_sess) {
@@ -5127,6 +5167,7 @@ void ust_app_global_destroy(struct ltt_ust_session *usess, struct ust_app *app)
 void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app)
 {
 	assert(usess);
+	assert(usess->active);
 
 	DBG2("UST app global update for app sock %d for session id %" PRIu64,
 			app->sock, usess->id);
@@ -5134,9 +5175,13 @@ void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app)
 	if (!app->compatible) {
 		return;
 	}
-
 	if (trace_ust_pid_tracker_lookup(usess, app->pid)) {
-		ust_app_global_create(usess, app);
+		/*
+		 * Synchronize the application's internal tracing configuration
+		 * and start tracing.
+		 */
+		ust_app_synchronize(usess, app);
+		ust_app_start_trace(usess, app);
 	} else {
 		ust_app_global_destroy(usess, app);
 	}
@@ -5170,8 +5215,9 @@ int ust_app_add_ctx_channel_glb(struct ltt_ust_session *usess,
 	struct ust_app_session *ua_sess;
 	struct ust_app *app;
 
-	rcu_read_lock();
+	assert(usess->active);
 
+	rcu_read_lock();
 	cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
 		if (!app->compatible) {
 			/*
@@ -5200,7 +5246,7 @@ int ust_app_add_ctx_channel_glb(struct ltt_ust_session *usess,
 		}
 		ua_chan = caa_container_of(ua_chan_node, struct ust_app_channel,
 				node);
-		ret = create_ust_app_channel_context(ua_sess, ua_chan, &uctx->ctx, app);
+		ret = create_ust_app_channel_context(ua_chan, &uctx->ctx, app);
 		if (ret < 0) {
 			goto next_app;
 		}
@@ -5208,79 +5254,6 @@ int ust_app_add_ctx_channel_glb(struct ltt_ust_session *usess,
 		pthread_mutex_unlock(&ua_sess->lock);
 	}
 
-	rcu_read_unlock();
-	return ret;
-}
-
-/*
- * Enable event for a channel from a UST session for a specific PID.
- */
-int ust_app_enable_event_pid(struct ltt_ust_session *usess,
-		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent, pid_t pid)
-{
-	int ret = 0;
-	struct lttng_ht_iter iter;
-	struct lttng_ht_node_str *ua_chan_node;
-	struct ust_app *app;
-	struct ust_app_session *ua_sess;
-	struct ust_app_channel *ua_chan;
-	struct ust_app_event *ua_event;
-
-	DBG("UST app enabling event %s for PID %d", uevent->attr.name, pid);
-
-	rcu_read_lock();
-
-	app = ust_app_find_by_pid(pid);
-	if (app == NULL) {
-		ERR("UST app enable event per PID %d not found", pid);
-		ret = -1;
-		goto end;
-	}
-
-	if (!app->compatible) {
-		ret = 0;
-		goto end;
-	}
-
-	ua_sess = lookup_session_by_app(usess, app);
-	if (!ua_sess) {
-		/* The application has problem or is probably dead. */
-		ret = 0;
-		goto end;
-	}
-
-	pthread_mutex_lock(&ua_sess->lock);
-
-	if (ua_sess->deleted) {
-		ret = 0;
-		goto end_unlock;
-	}
-
-	/* Lookup channel in the ust app session */
-	lttng_ht_lookup(ua_sess->channels, (void *)uchan->name, &iter);
-	ua_chan_node = lttng_ht_iter_get_node_str(&iter);
-	/* If the channel is not found, there is a code flow error */
-	assert(ua_chan_node);
-
-	ua_chan = caa_container_of(ua_chan_node, struct ust_app_channel, node);
-
-	ua_event = find_ust_app_event(ua_chan->events, uevent->attr.name,
-			uevent->filter, uevent->attr.loglevel, uevent->exclusion);
-	if (ua_event == NULL) {
-		ret = create_ust_app_event(ua_sess, ua_chan, uevent, app);
-		if (ret < 0) {
-			goto end_unlock;
-		}
-	} else {
-		ret = enable_ust_app_event(ua_sess, ua_event, app);
-		if (ret < 0) {
-			goto end_unlock;
-		}
-	}
-
-end_unlock:
-	pthread_mutex_unlock(&ua_sess->lock);
-end:
 	rcu_read_unlock();
 	return ret;
 }
@@ -5396,7 +5369,7 @@ error:
  *
  * On success 0 is returned else a negative value.
  */
-static int reply_ust_register_channel(int sock, int sobjd, int cobjd,
+static int reply_ust_register_channel(int sock, int cobjd,
 		size_t nr_fields, struct ustctl_field *fields)
 {
 	int ret, ret_code = 0;
@@ -5773,7 +5746,7 @@ int ust_app_recv_notify(int sock)
 		 * that if needed it will be freed. After this, it's invalid to access
 		 * fields or clean it up.
 		 */
-		ret = reply_ust_register_channel(sock, sobjd, cobjd, nr_fields,
+		ret = reply_ust_register_channel(sock, cobjd, nr_fields,
 				fields);
 		if (ret < 0) {
 			goto error;
@@ -5912,16 +5885,18 @@ void ust_app_destroy(struct ust_app *app)
  * Take a snapshot for a given UST session. The snapshot is sent to the given
  * output.
  *
- * Return 0 on success or else a negative value.
+ * Returns LTTNG_OK on success or a LTTNG_ERR error code.
  */
-int ust_app_snapshot_record(struct ltt_ust_session *usess,
-		struct snapshot_output *output, int wait,
+enum lttng_error_code ust_app_snapshot_record(
+		const struct ltt_ust_session *usess,
+		const struct consumer_output *output, int wait,
 		uint64_t nb_packets_per_stream)
 {
 	int ret = 0;
+	enum lttng_error_code status = LTTNG_OK;
 	struct lttng_ht_iter iter;
 	struct ust_app *app;
-	char pathname[PATH_MAX];
+	char *trace_path = NULL;
 
 	assert(usess);
 	assert(output);
@@ -5936,6 +5911,7 @@ int ust_app_snapshot_record(struct ltt_ust_session *usess,
 		cds_list_for_each_entry(reg, &usess->buffer_reg_uid_list, lnode) {
 			struct buffer_reg_channel *reg_chan;
 			struct consumer_socket *socket;
+			char pathname[PATH_MAX];
 
 			if (!reg->registry->reg.ust->metadata_key) {
 				/* Skip since no metadata is present */
@@ -5946,33 +5922,46 @@ int ust_app_snapshot_record(struct ltt_ust_session *usess,
 			socket = consumer_find_socket_by_bitness(reg->bits_per_long,
 					usess->consumer);
 			if (!socket) {
-				ret = -EINVAL;
+				status = LTTNG_ERR_INVALID;
 				goto error;
 			}
 
 			memset(pathname, 0, sizeof(pathname));
+			/*
+			 * DEFAULT_UST_TRACE_UID_PATH already contains a path
+			 * separator.
+			 */
 			ret = snprintf(pathname, sizeof(pathname),
-					DEFAULT_UST_TRACE_DIR "/" DEFAULT_UST_TRACE_UID_PATH,
+					DEFAULT_UST_TRACE_DIR DEFAULT_UST_TRACE_UID_PATH,
 					reg->uid, reg->bits_per_long);
 			if (ret < 0) {
 				PERROR("snprintf snapshot path");
+				status = LTTNG_ERR_INVALID;
 				goto error;
 			}
-
-			/* Add the UST default trace dir to path. */
+			/* Free path allowed on previous iteration. */
+			free(trace_path);
+			trace_path = setup_channel_trace_path(usess->consumer, pathname);
+			if (!trace_path) {
+				status = LTTNG_ERR_INVALID;
+				goto error;
+			}
+                        /* Add the UST default trace dir to path. */
 			cds_lfht_for_each_entry(reg->registry->channels->ht, &iter.iter,
 					reg_chan, node.node) {
-				ret = consumer_snapshot_channel(socket, reg_chan->consumer_key,
-						output, 0, usess->uid, usess->gid, pathname, wait,
+				status = consumer_snapshot_channel(socket,
+						reg_chan->consumer_key,
+						output, 0, usess->uid,
+						usess->gid, trace_path, wait,
 						nb_packets_per_stream);
-				if (ret < 0) {
+				if (status != LTTNG_OK) {
 					goto error;
 				}
 			}
-			ret = consumer_snapshot_channel(socket,
+			status = consumer_snapshot_channel(socket,
 					reg->registry->reg.ust->metadata_key, output, 1,
-					usess->uid, usess->gid, pathname, wait, 0);
-			if (ret < 0) {
+					usess->uid, usess->gid, trace_path, wait, 0);
+			if (status != LTTNG_OK) {
 				goto error;
 			}
 		}
@@ -5986,6 +5975,7 @@ int ust_app_snapshot_record(struct ltt_ust_session *usess,
 			struct ust_app_channel *ua_chan;
 			struct ust_app_session *ua_sess;
 			struct ust_registry_session *registry;
+			char pathname[PATH_MAX];
 
 			ua_sess = lookup_session_by_app(usess, app);
 			if (!ua_sess) {
@@ -5995,40 +5985,64 @@ int ust_app_snapshot_record(struct ltt_ust_session *usess,
 
 			/* Get the right consumer socket for the application. */
 			socket = consumer_find_socket_by_bitness(app->bits_per_long,
-					output->consumer);
+					output);
 			if (!socket) {
-				ret = -EINVAL;
+				status = LTTNG_ERR_INVALID;
 				goto error;
 			}
 
 			/* Add the UST default trace dir to path. */
 			memset(pathname, 0, sizeof(pathname));
-			ret = snprintf(pathname, sizeof(pathname), DEFAULT_UST_TRACE_DIR "/%s",
+			ret = snprintf(pathname, sizeof(pathname), DEFAULT_UST_TRACE_DIR "%s",
 					ua_sess->path);
 			if (ret < 0) {
+				status = LTTNG_ERR_INVALID;
 				PERROR("snprintf snapshot path");
 				goto error;
 			}
-
-			cds_lfht_for_each_entry(ua_sess->channels->ht, &chan_iter.iter,
+			/* Free path allowed on previous iteration. */
+			free(trace_path);
+			trace_path = setup_channel_trace_path(usess->consumer, pathname);
+			if (!trace_path) {
+				status = LTTNG_ERR_INVALID;
+				goto error;
+			}
+                        cds_lfht_for_each_entry(ua_sess->channels->ht, &chan_iter.iter,
 					ua_chan, node.node) {
-				ret = consumer_snapshot_channel(socket, ua_chan->key, output,
-						0, ua_sess->euid, ua_sess->egid, pathname, wait,
+				status = consumer_snapshot_channel(socket,
+						ua_chan->key, output, 0,
+						ua_sess->effective_credentials
+								.uid,
+						ua_sess->effective_credentials
+								.gid,
+						trace_path, wait,
 						nb_packets_per_stream);
-				if (ret < 0) {
+				switch (status) {
+				case LTTNG_OK:
+					break;
+				case LTTNG_ERR_CHAN_NOT_FOUND:
+					continue;
+				default:
 					goto error;
 				}
 			}
 
 			registry = get_session_registry(ua_sess);
 			if (!registry) {
-				DBG("Application session is being torn down. Abort snapshot record.");
-				ret = -1;
-				goto error;
+				DBG("Application session is being torn down. Skip application.");
+				continue;
 			}
-			ret = consumer_snapshot_channel(socket, registry->metadata_key, output,
-					1, ua_sess->euid, ua_sess->egid, pathname, wait, 0);
-			if (ret < 0) {
+			status = consumer_snapshot_channel(socket,
+					registry->metadata_key, output, 1,
+					ua_sess->effective_credentials.uid,
+					ua_sess->effective_credentials.gid,
+					trace_path, wait, 0);
+			switch (status) {
+			case LTTNG_OK:
+				break;
+			case LTTNG_ERR_CHAN_NOT_FOUND:
+				continue;
+			default:
 				goto error;
 			}
 		}
@@ -6040,15 +6054,16 @@ int ust_app_snapshot_record(struct ltt_ust_session *usess,
 	}
 
 error:
+	free(trace_path);
 	rcu_read_unlock();
-	return ret;
+	return status;
 }
 
 /*
  * Return the size taken by one more packet per stream.
  */
-uint64_t ust_app_get_size_one_more_packet_per_stream(struct ltt_ust_session *usess,
-		uint64_t cur_nr_packets)
+uint64_t ust_app_get_size_one_more_packet_per_stream(
+		const struct ltt_ust_session *usess, uint64_t cur_nr_packets)
 {
 	uint64_t tot_size = 0;
 	struct ust_app *app;
@@ -6129,8 +6144,7 @@ int ust_app_uid_get_channel_runtime_stats(uint64_t ust_session_id,
 	*lost = 0;
 
 	ret = buffer_reg_uid_consumer_channel_key(
-			buffer_reg_uid_list, ust_session_id,
-			uchan_id, &consumer_chan_key);
+			buffer_reg_uid_list, uchan_id, &consumer_chan_key);
 	if (ret < 0) {
 		/* Not found */
 		ret = 0;
@@ -6274,4 +6288,241 @@ int ust_app_regenerate_statedump_all(struct ltt_ust_session *usess)
 	rcu_read_unlock();
 
 	return 0;
+}
+
+/*
+ * Rotate all the channels of a session.
+ *
+ * Return LTTNG_OK on success or else an LTTng error code.
+ */
+enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
+{
+	int ret;
+	enum lttng_error_code cmd_ret = LTTNG_OK;
+	struct lttng_ht_iter iter;
+	struct ust_app *app;
+	struct ltt_ust_session *usess = session->ust_session;
+
+	assert(usess);
+
+	rcu_read_lock();
+
+	switch (usess->buffer_type) {
+	case LTTNG_BUFFER_PER_UID:
+	{
+		struct buffer_reg_uid *reg;
+
+		cds_list_for_each_entry(reg, &usess->buffer_reg_uid_list, lnode) {
+			struct buffer_reg_channel *reg_chan;
+			struct consumer_socket *socket;
+
+			/* Get consumer socket to use to push the metadata.*/
+			socket = consumer_find_socket_by_bitness(reg->bits_per_long,
+					usess->consumer);
+			if (!socket) {
+				cmd_ret = LTTNG_ERR_INVALID;
+				goto error;
+			}
+
+			/* Rotate the data channels. */
+			cds_lfht_for_each_entry(reg->registry->channels->ht, &iter.iter,
+					reg_chan, node.node) {
+				ret = consumer_rotate_channel(socket,
+						reg_chan->consumer_key,
+						usess->uid, usess->gid,
+						usess->consumer,
+						/* is_metadata_channel */ false);
+				if (ret < 0) {
+					cmd_ret = LTTNG_ERR_ROTATION_FAIL_CONSUMER;
+					goto error;
+				}
+			}
+
+			(void) push_metadata(reg->registry->reg.ust, usess->consumer);
+
+			ret = consumer_rotate_channel(socket,
+					reg->registry->reg.ust->metadata_key,
+					usess->uid, usess->gid,
+					usess->consumer,
+					/* is_metadata_channel */ true);
+			if (ret < 0) {
+				cmd_ret = LTTNG_ERR_ROTATION_FAIL_CONSUMER;
+				goto error;
+			}
+		}
+		break;
+	}
+	case LTTNG_BUFFER_PER_PID:
+	{
+		cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
+			struct consumer_socket *socket;
+			struct lttng_ht_iter chan_iter;
+			struct ust_app_channel *ua_chan;
+			struct ust_app_session *ua_sess;
+			struct ust_registry_session *registry;
+
+			ua_sess = lookup_session_by_app(usess, app);
+			if (!ua_sess) {
+				/* Session not associated with this app. */
+				continue;
+			}
+
+			/* Get the right consumer socket for the application. */
+			socket = consumer_find_socket_by_bitness(app->bits_per_long,
+					usess->consumer);
+			if (!socket) {
+				cmd_ret = LTTNG_ERR_INVALID;
+				goto error;
+			}
+
+			registry = get_session_registry(ua_sess);
+			if (!registry) {
+				DBG("Application session is being torn down. Skip application.");
+				continue;
+			}
+
+			/* Rotate the data channels. */
+			cds_lfht_for_each_entry(ua_sess->channels->ht, &chan_iter.iter,
+					ua_chan, node.node) {
+				ret = consumer_rotate_channel(socket,
+						ua_chan->key,
+						ua_sess->effective_credentials
+								.uid,
+						ua_sess->effective_credentials
+								.gid,
+						ua_sess->consumer,
+						/* is_metadata_channel */ false);
+				if (ret < 0) {
+					/* Per-PID buffer and application going away. */
+					if (ret == -LTTNG_ERR_CHAN_NOT_FOUND)
+						continue;
+					cmd_ret = LTTNG_ERR_ROTATION_FAIL_CONSUMER;
+					goto error;
+				}
+			}
+
+			/* Rotate the metadata channel. */
+			(void) push_metadata(registry, usess->consumer);
+			ret = consumer_rotate_channel(socket,
+					registry->metadata_key,
+					ua_sess->effective_credentials.uid,
+					ua_sess->effective_credentials.gid,
+					ua_sess->consumer,
+					/* is_metadata_channel */ true);
+			if (ret < 0) {
+				/* Per-PID buffer and application going away. */
+				if (ret == -LTTNG_ERR_CHAN_NOT_FOUND)
+					continue;
+				cmd_ret = LTTNG_ERR_ROTATION_FAIL_CONSUMER;
+				goto error;
+			}
+		}
+		break;
+	}
+	default:
+		assert(0);
+		break;
+	}
+
+	cmd_ret = LTTNG_OK;
+
+error:
+	rcu_read_unlock();
+	return cmd_ret;
+}
+
+enum lttng_error_code ust_app_create_channel_subdirectories(
+		const struct ltt_ust_session *usess)
+{
+	enum lttng_error_code ret = LTTNG_OK;
+	struct lttng_ht_iter iter;
+	enum lttng_trace_chunk_status chunk_status;
+	char *pathname_index;
+	int fmt_ret;
+
+	assert(usess->current_trace_chunk);
+	rcu_read_lock();
+
+	switch (usess->buffer_type) {
+	case LTTNG_BUFFER_PER_UID:
+	{
+		struct buffer_reg_uid *reg;
+
+		cds_list_for_each_entry(reg, &usess->buffer_reg_uid_list, lnode) {
+			fmt_ret = asprintf(&pathname_index,
+				       DEFAULT_UST_TRACE_DIR DEFAULT_UST_TRACE_UID_PATH "/" DEFAULT_INDEX_DIR,
+				       reg->uid, reg->bits_per_long);
+			if (fmt_ret < 0) {
+				ERR("Failed to format channel index directory");
+				ret = LTTNG_ERR_CREATE_DIR_FAIL;
+				goto error;
+			}
+
+			/*
+			 * Create the index subdirectory which will take care
+			 * of implicitly creating the channel's path.
+			 */
+			chunk_status = lttng_trace_chunk_create_subdirectory(
+					usess->current_trace_chunk,
+					pathname_index);
+			free(pathname_index);
+			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+				ret = LTTNG_ERR_CREATE_DIR_FAIL;
+				goto error;
+			}
+		}
+		break;
+	}
+	case LTTNG_BUFFER_PER_PID:
+	{
+		struct ust_app *app;
+
+		cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app,
+				pid_n.node) {
+			struct ust_app_session *ua_sess;
+			struct ust_registry_session *registry;
+
+			ua_sess = lookup_session_by_app(usess, app);
+			if (!ua_sess) {
+				/* Session not associated with this app. */
+				continue;
+			}
+
+			registry = get_session_registry(ua_sess);
+			if (!registry) {
+				DBG("Application session is being torn down. Skip application.");
+				continue;
+			}
+
+			fmt_ret = asprintf(&pathname_index,
+					DEFAULT_UST_TRACE_DIR "%s/" DEFAULT_INDEX_DIR,
+					ua_sess->path);
+			if (fmt_ret < 0) {
+				ERR("Failed to format channel index directory");
+				ret = LTTNG_ERR_CREATE_DIR_FAIL;
+				goto error;
+			}
+			/*
+			 * Create the index subdirectory which will take care
+			 * of implicitly creating the channel's path.
+			 */
+			chunk_status = lttng_trace_chunk_create_subdirectory(
+					usess->current_trace_chunk,
+					pathname_index);
+			free(pathname_index);
+			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+				ret = LTTNG_ERR_CREATE_DIR_FAIL;
+				goto error;
+			}
+		}
+		break;
+	}
+	default:
+		abort();
+	}
+
+	ret = LTTNG_OK;
+error:
+	rcu_read_unlock();
+	return ret;
 }

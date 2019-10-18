@@ -27,10 +27,17 @@
 
 struct snapshot;
 struct snapshot_output;
+struct ltt_session;
 
 enum consumer_dst_type {
 	CONSUMER_DST_LOCAL,
 	CONSUMER_DST_NET,
+};
+
+enum consumer_trace_chunk_exists_status {
+	CONSUMER_TRACE_CHUNK_EXISTS_STATUS_EXISTS_LOCAL,
+	CONSUMER_TRACE_CHUNK_EXISTS_STATUS_EXISTS_REMOTE,
+	CONSUMER_TRACE_CHUNK_EXISTS_STATUS_UNKNOWN_CHUNK,
 };
 
 struct consumer_socket {
@@ -65,26 +72,6 @@ struct consumer_socket {
 
 struct consumer_data {
 	enum lttng_consumer_type type;
-
-	pthread_t thread;	/* Worker thread interacting with the consumer */
-
-	/* Conditions used by the consumer thread to indicate readiness. */
-	pthread_cond_t cond;
-	pthread_condattr_t condattr;
-	pthread_mutex_t cond_mutex;
-
-	/*
-	 * This is a flag condition indicating that the consumer thread is ready
-	 * and connected to the lttng-consumerd daemon. This flag MUST only be
-	 * updated by locking the condition mutex above or before spawning a
-	 * consumer thread.
-	 *
-	 * A value of 0 means that the thread is NOT ready. A value of 1 means that
-	 * the thread consumer did connect successfully to the lttng-consumerd
-	 * daemon. A negative value indicates that there is been an error and the
-	 * thread has likely quit.
-	 */
-	int consumer_thread_is_ready;
 
 	/* Mutex to control consumerd pid assignation */
 	pthread_mutex_t pid_mutex;
@@ -140,6 +127,9 @@ struct consumer_net {
 
 	/* Data path for network streaming. */
 	struct lttng_uri data;
+
+	/* <hostname>/<session-name> */
+	char base_dir[PATH_MAX];
 };
 
 /*
@@ -163,14 +153,16 @@ struct consumer_output {
 	uint32_t relay_minor_version;
 
 	/*
-	 * Subdirectory path name used for both local and network consumer.
+	 * Subdirectory path name used for both local and network
+	 * consumer ("kernel", "ust", or empty).
 	 */
-	char subdir[PATH_MAX];
+	char domain_subdir[max(sizeof(DEFAULT_KERNEL_TRACE_DIR),
+			sizeof(DEFAULT_UST_TRACE_DIR))];
 
 	/*
 	 * Hashtable of consumer_socket index by the file descriptor value. For
-	 * multiarch consumer support, we can have more than one consumer (ex: 32
-	 * and 64 bit).
+	 * multiarch consumer support, we can have more than one consumer (ex:
+	 * 32 and 64 bit).
 	 */
 	struct lttng_ht *socks;
 
@@ -178,15 +170,21 @@ struct consumer_output {
 	unsigned int snapshot:1;
 
 	union {
-		char trace_path[PATH_MAX];
+		char session_root_path[LTTNG_PATH_MAX];
 		struct consumer_net net;
 	} dst;
+
+	/*
+	 * Sub-directory below the session_root_path where the next chunk of
+	 * trace will be stored (\0 before the first session rotation).
+	 */
+	char chunk_path[LTTNG_PATH_MAX];
 };
 
 struct consumer_socket *consumer_find_socket(int key,
-		struct consumer_output *consumer);
+		const struct consumer_output *consumer);
 struct consumer_socket *consumer_find_socket_by_bitness(int bits,
-		struct consumer_output *consumer);
+		const struct consumer_output *consumer);
 struct consumer_socket *consumer_allocate_socket(int *fd);
 void consumer_add_socket(struct consumer_socket *sock,
 		struct consumer_output *consumer);
@@ -205,20 +203,25 @@ struct consumer_output *consumer_create_output(enum consumer_dst_type type);
 struct consumer_output *consumer_copy_output(struct consumer_output *obj);
 void consumer_output_get(struct consumer_output *obj);
 void consumer_output_put(struct consumer_output *obj);
-int consumer_set_network_uri(struct consumer_output *obj,
+int consumer_set_network_uri(const struct ltt_session *session,
+		struct consumer_output *obj,
 		struct lttng_uri *uri);
-int consumer_send_fds(struct consumer_socket *sock, int *fds, size_t nb_fd);
+int consumer_send_fds(struct consumer_socket *sock, const int *fds,
+		size_t nb_fd);
 int consumer_send_msg(struct consumer_socket *sock,
 		struct lttcomm_consumer_msg *msg);
 int consumer_send_stream(struct consumer_socket *sock,
 		struct consumer_output *dst, struct lttcomm_consumer_msg *msg,
-		int *fds, size_t nb_fd);
+		const int *fds, size_t nb_fd);
 int consumer_send_channel(struct consumer_socket *sock,
 		struct lttcomm_consumer_msg *msg);
 int consumer_send_relayd_socket(struct consumer_socket *consumer_sock,
 		struct lttcomm_relayd_sock *rsock, struct consumer_output *consumer,
 		enum lttng_stream_type type, uint64_t session_id,
-		char *session_name, char *hostname, int session_live_timer);
+		const char *session_name, const char *hostname,
+		const char *base_path, int session_live_timer,
+		const uint64_t *current_chunk_id, time_t session_creation_time,
+		bool session_name_contains_creation_time);
 int consumer_send_channel_monitor_pipe(struct consumer_socket *consumer_sock,
 		int pipe);
 int consumer_send_destroy_relayd(struct consumer_socket *sock,
@@ -229,8 +232,6 @@ int consumer_recv_status_channel(struct consumer_socket *sock,
 void consumer_output_send_destroy_relayd(struct consumer_output *consumer);
 int consumer_create_socket(struct consumer_data *data,
 		struct consumer_output *output);
-int consumer_set_subdir(struct consumer_output *consumer,
-		const char *session_name);
 
 void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t subbuf_size,
@@ -245,8 +246,6 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t session_id,
 		const char *pathname,
 		const char *name,
-		uid_t uid,
-		gid_t gid,
 		uint64_t relayd_id,
 		uint64_t key,
 		unsigned char *uuid,
@@ -258,17 +257,17 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint32_t ust_app_uid,
 		int64_t blocking_timeout,
 		const char *root_shm_path,
-		const char *shm_path);
-void consumer_init_stream_comm_msg(struct lttcomm_consumer_msg *msg,
-		enum lttng_consumer_command cmd,
+		const char *shm_path,
+		struct lttng_trace_chunk *trace_chunk,
+		const struct lttng_credentials *buffer_credentials);
+void consumer_init_add_stream_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t channel_key,
 		uint64_t stream_key,
-		int cpu);
+		int32_t cpu);
 void consumer_init_streams_sent_comm_msg(struct lttcomm_consumer_msg *msg,
 		enum lttng_consumer_command cmd,
 		uint64_t channel_key, uint64_t net_seq_idx);
-void consumer_init_channel_comm_msg(struct lttcomm_consumer_msg *msg,
-		enum lttng_consumer_command cmd,
+void consumer_init_add_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t channel_key,
 		uint64_t session_id,
 		const char *pathname,
@@ -283,7 +282,8 @@ void consumer_init_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t tracefile_count,
 		unsigned int monitor,
 		unsigned int live_timer_interval,
-		unsigned int monitor_timer_interval);
+		unsigned int monitor_timer_interval,
+		struct lttng_trace_chunk *trace_chunk);
 int consumer_is_data_pending(uint64_t session_id,
 		struct consumer_output *consumer);
 int consumer_close_metadata(struct consumer_socket *socket,
@@ -301,8 +301,31 @@ int consumer_get_lost_packets(uint64_t session_id, uint64_t channel_key,
 		struct consumer_output *consumer, uint64_t *lost);
 
 /* Snapshot command. */
-int consumer_snapshot_channel(struct consumer_socket *socket, uint64_t key,
-		struct snapshot_output *output, int metadata, uid_t uid, gid_t gid,
-		const char *session_path, int wait, uint64_t nb_packets_per_stream);
+enum lttng_error_code consumer_snapshot_channel(struct consumer_socket *socket,
+		uint64_t key, const struct consumer_output *output, int metadata,
+		uid_t uid, gid_t gid, const char *channel_path, int wait,
+		uint64_t nb_packets_per_stream);
+
+/* Rotation commands. */
+int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
+		uid_t uid, gid_t gid, struct consumer_output *output,
+		bool is_metadata_channel);
+int consumer_init(struct consumer_socket *socket,
+		const lttng_uuid sessiond_uuid);
+
+int consumer_create_trace_chunk(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		struct lttng_trace_chunk *chunk);
+int consumer_close_trace_chunk(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		struct lttng_trace_chunk *chunk,
+		char *closed_trace_chunk_path);
+int consumer_trace_chunk_exists(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		struct lttng_trace_chunk *chunk,
+		enum consumer_trace_chunk_exists_status *result);
+
+char *setup_channel_trace_path(struct consumer_output *consumer,
+		const char *session_path);
 
 #endif /* _CONSUMER_H */

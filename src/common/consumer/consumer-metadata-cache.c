@@ -89,7 +89,7 @@ void metadata_cache_reset(struct consumer_metadata_cache *cache)
  */
 static
 int metadata_cache_check_version(struct consumer_metadata_cache *cache,
-		struct lttng_consumer_channel *channel, uint64_t version)
+		uint64_t version)
 {
 	int ret = 0;
 
@@ -100,6 +100,41 @@ int metadata_cache_check_version(struct consumer_metadata_cache *cache,
 	DBG("Metadata cache version update to %" PRIu64, version);
 	metadata_cache_reset(cache);
 	cache->version = version;
+
+end:
+	return ret;
+}
+
+/*
+ * Write a character on the metadata poll pipe to wake the metadata thread.
+ * Returns 0 on success, -1 on error.
+ */
+int consumer_metadata_wakeup_pipe(const struct lttng_consumer_channel *channel)
+{
+	int ret = 0;
+	const char dummy = 'c';
+
+	if (channel->monitor && channel->metadata_stream) {
+		ssize_t write_ret;
+
+		write_ret = lttng_write(channel->metadata_stream->ust_metadata_poll_pipe[1],
+				&dummy, 1);
+		if (write_ret < 1) {
+			if (errno == EWOULDBLOCK) {
+				/*
+				 * This is fine, the metadata poll thread
+				 * is having a hard time keeping-up, but
+				 * it will eventually wake-up and consume
+				 * the available data.
+				 */
+				ret = 0;
+                        } else {
+				PERROR("Wake-up UST metadata pipe");
+				ret = -1;
+				goto end;
+                        }
+                }
+	}
 
 end:
 	return ret;
@@ -118,7 +153,6 @@ int consumer_metadata_cache_write(struct lttng_consumer_channel *channel,
 		char *data)
 {
 	int ret = 0;
-	int size_ret;
 	struct consumer_metadata_cache *cache;
 
 	assert(channel);
@@ -126,7 +160,7 @@ int consumer_metadata_cache_write(struct lttng_consumer_channel *channel,
 
 	cache = channel->metadata_cache;
 
-	ret = metadata_cache_check_version(cache, channel, version);
+	ret = metadata_cache_check_version(cache, version);
 	if (ret < 0) {
 		goto end;
 	}
@@ -144,18 +178,8 @@ int consumer_metadata_cache_write(struct lttng_consumer_channel *channel,
 
 	memcpy(cache->data + offset, data, len);
 	if (offset + len > cache->max_offset) {
-		char dummy = 'c';
-
 		cache->max_offset = offset + len;
-		if (channel->monitor && channel->metadata_stream) {
-			size_ret = lttng_write(channel->metadata_stream->ust_metadata_poll_pipe[1],
-					&dummy, 1);
-			if (size_ret < 1) {
-				ERR("Wakeup UST metadata pipe");
-				ret = -1;
-				goto end;
-			}
-		}
+		ret = consumer_metadata_wakeup_pipe(channel);
 	}
 
 end:

@@ -20,10 +20,15 @@
 
 #include "consumer.h"
 #include "ust-app.h"
+#include <stdint.h>
+#include <common/trace-chunk.h>
 
 int ust_consumer_ask_channel(struct ust_app_session *ua_sess,
-		struct ust_app_channel *ua_chan, struct consumer_output *consumer,
-		struct consumer_socket *socket, struct ust_registry_session *registry);
+		struct ust_app_channel *ua_chan,
+		struct consumer_output *consumer,
+		struct consumer_socket *socket,
+		struct ust_registry_session *registry,
+		struct lttng_trace_chunk *trace_chunk);
 
 int ust_consumer_get_channel(struct consumer_socket *socket,
 		struct ust_app_channel *ua_chan);

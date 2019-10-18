@@ -22,9 +22,11 @@
 #include <sys/ioctl.h>
 #include <string.h>
 #include <common/align.h>
+#include <common/macros.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <assert.h>
+#include <common/time.h>
 
 #include "kernel-ctl.h"
 #include "kernel-ioctl.h"
@@ -238,6 +240,39 @@ int kernctl_session_regenerate_statedump(int fd)
 	return LTTNG_IOCTL_CHECK(fd, LTTNG_KERNEL_SESSION_STATEDUMP);
 }
 
+int kernctl_session_set_name(int fd, const char *name)
+{
+	int ret;
+	struct lttng_kernel_session_name session_name;
+
+	ret = lttng_strncpy(session_name.name, name, sizeof(session_name.name));
+	if (ret) {
+		goto end;
+	}
+
+	ret = LTTNG_IOCTL_CHECK(
+			fd, LTTNG_KERNEL_SESSION_SET_NAME, &session_name);
+end:
+	return ret;
+}
+
+int kernctl_session_set_creation_time(int fd, time_t time)
+{
+	int ret;
+	struct lttng_kernel_session_creation_time creation_time;
+
+	ret = time_to_iso8601_str(time, creation_time.iso8601,
+			sizeof(creation_time.iso8601));
+	if (ret) {
+		goto end;
+	}
+
+	ret = LTTNG_IOCTL_CHECK(fd, LTTNG_KERNEL_SESSION_SET_CREATION_TIME,
+			&creation_time);
+end:
+	return ret;
+}
+
 int kernctl_create_stream(int fd)
 {
 	return compat_ioctl_no_arg(fd, LTTNG_KERNEL_OLD_STREAM,
@@ -350,6 +385,11 @@ int kernctl_filter(int fd, struct lttng_filter_bytecode *filter)
 	return ret;
 }
 
+int kernctl_add_callsite(int fd, struct lttng_kernel_event_callsite *callsite)
+{
+	return LTTNG_IOCTL_CHECK(fd, LTTNG_KERNEL_ADD_CALLSITE, callsite);
+}
+
 int kernctl_tracepoint_list(int fd)
 {
 	return compat_ioctl_no_arg(fd, LTTNG_KERNEL_OLD_TRACEPOINT_LIST,
@@ -419,6 +459,10 @@ int kernctl_get_metadata_version(int fd, uint64_t *version)
 	return LTTNG_IOCTL_CHECK(fd, RING_BUFFER_GET_METADATA_VERSION, version);
 }
 
+int kernctl_metadata_cache_dump(int fd)
+{
+	return LTTNG_IOCTL_CHECK(fd, RING_BUFFER_METADATA_CACHE_DUMP);
+}
 
 /* Buffer operations */
 
