@@ -25,20 +25,6 @@
 #include <common/common.h>
 
 /*
- * Maximum number of fd we can monitor.
- *
- * For epoll(7), /proc/sys/fs/epoll/max_user_watches (since Linux 2.6.28) will
- * be used for the maximum size of the poll set. If this interface is not
- * available, according to the manpage, the max_user_watches value is 1/25 (4%)
- * of the available low memory divided by the registration cost in bytes which
- * is 90 bytes on a 32-bit kernel and 160 bytes on a 64-bit kernel.
- *
- * For poll(2), the max fds must not exceed RLIMIT_NOFILE given by
- * getrlimit(2).
- */
-extern unsigned int poll_max_size;
-
-/*
  * Used by lttng_poll_clean to free the events structure in a lttng_poll_event.
  */
 static inline void __lttng_poll_free(void *events)
@@ -119,9 +105,7 @@ static inline int __lttng_epoll_get_prev_fd(struct lttng_poll_event *events,
 #define LTTNG_POLL_GET_PREV_FD(e, i, nb_fd) \
 	__lttng_epoll_get_prev_fd(LTTNG_REF(e), i, nb_fd)
 
-/*
- * Create the epoll set. No memory allocation is done here.
- */
+/* Create the epoll set. */
 extern int compat_epoll_create(struct lttng_poll_event *events,
 		int size, int flags);
 #define lttng_poll_create(events, size, flags) \
@@ -152,9 +136,12 @@ static inline int compat_glibc_epoll_create(int size, int flags)
  * Wait on epoll set with the number of fd registered to the lttng_poll_event
  * data structure (events).
  */
-extern int compat_epoll_wait(struct lttng_poll_event *events, int timeout);
+extern int compat_epoll_wait(struct lttng_poll_event *events, int timeout,
+		bool interruptible);
 #define lttng_poll_wait(events, timeout) \
-	compat_epoll_wait(events, timeout)
+	compat_epoll_wait(events, timeout, false)
+#define lttng_poll_wait_interruptible(events, timeout) \
+	compat_epoll_wait(events, timeout, true)
 
 /*
  * Add a fd to the epoll set and resize the epoll_event structure if needed.
@@ -315,10 +302,12 @@ static inline int __lttng_poll_get_prev_fd(struct lttng_poll_event *events,
 /*
  * For the following calls, consider 'e' to be a lttng_poll_event pointer and i
  * being the index of the events array.
+ * LTTNG_POLL_GETNB is always used after lttng_poll_wait, thus we can use the
+ * current list for test compatibility purposes.
  */
 #define LTTNG_POLL_GETFD(e, i) LTTNG_REF(e)->wait.events[i].fd
 #define LTTNG_POLL_GETEV(e, i) LTTNG_REF(e)->wait.events[i].revents
-#define LTTNG_POLL_GETNB(e) LTTNG_REF(e)->wait.nb_fd
+#define LTTNG_POLL_GETNB(e) LTTNG_REF(e)->current.nb_fd
 #define LTTNG_POLL_GETSZ(e) LTTNG_REF(e)->wait.events_size
 #define LTTNG_POLL_GET_PREV_FD(e, i, nb_fd) \
 	__lttng_poll_get_prev_fd(LTTNG_REF(e), i, nb_fd)
@@ -334,9 +323,12 @@ extern int compat_poll_create(struct lttng_poll_event *events, int size);
  * Wait on poll(2) event with nb_fd registered to the lttng_poll_event data
  * structure.
  */
-extern int compat_poll_wait(struct lttng_poll_event *events, int timeout);
+extern int compat_poll_wait(struct lttng_poll_event *events, int timeout,
+		bool interruptible);
 #define lttng_poll_wait(events, timeout) \
-	compat_poll_wait(events, timeout)
+	compat_poll_wait(events, timeout, false)
+#define lttng_poll_wait_interruptible(events, timeout) \
+	compat_poll_wait(events, timeout, true)
 
 /*
  * Add the fd to the pollfd structure. Resize if needed.
@@ -356,7 +348,7 @@ extern int compat_poll_del(struct lttng_poll_event *events, int fd);
 	compat_poll_del(events, fd)
 
 /*
- * Modify an fd's events in the epoll set.
+ * Modify an fd's events in the poll set.
  */
 extern int compat_poll_mod(struct lttng_poll_event *events,
 		int fd, uint32_t req_events);

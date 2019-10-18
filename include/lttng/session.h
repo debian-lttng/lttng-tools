@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2014 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2019 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
  * This library is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License, version 2.1 only,
@@ -22,6 +23,9 @@
 extern "C" {
 #endif
 
+struct lttng_session_descriptor;
+struct lttng_destruction_handle;
+
 /*
  * Basic session information.
  *
@@ -30,7 +34,7 @@ extern "C" {
  *
  * The structures should be initialized to zero before use.
  */
-#define LTTNG_SESSION_PADDING1             12
+#define LTTNG_SESSION_PADDING1             8
 struct lttng_session {
 	char name[LTTNG_NAME_MAX];
 	/*
@@ -47,8 +51,50 @@ struct lttng_session {
 	uint32_t snapshot_mode;
 	unsigned int live_timer_interval;	/* usec */
 
-	char padding[LTTNG_SESSION_PADDING1];
+	/*
+	 * End of public attributes.
+	 * The remaining fields are used to deal with ABI management concerns.
+	 */
+
+	/*
+	 * 32-bit architectures are already naturally aligned on 4 bytes after
+	 * 'live_timer_interval'. However, the offset does not result in a
+	 * natural alignment on 64-bit architectures. Adding 4 bytes of
+	 * padding here results in an aligned offset after 'alignement_padding'
+	 * for both bitnesses.
+	 *
+	 * This was added since not all compilers appear to align unions in the
+	 * same way. Some (e.g. MSVC) do not seem to impose an alignement
+	 * constraint while others (e.g. gcc, clang, icc) seem to align it to
+	 * ensure 'ptr' is naturally aligned.
+	 */
+	char alignment_padding[4];
+	union {
+		/*
+		 * Ensure the 'extended' union has the same size for both
+		 * 32-bit and 64-bit builds.
+		 */
+		char padding[LTTNG_SESSION_PADDING1];
+		void *ptr;
+	} extended;
 };
+
+/*
+ * Create a session on the session daemon from a session descriptor.
+ *
+ * See the session descriptor API description in session-descriptor.h
+ *
+ * Note that unspecified session descriptor parameters, such as a session's
+ * name, are updated in the session descriptor if the creation of the session
+ * succeeds. This allows users to query the session's auto-generated name
+ * after its creation. Note that other attributes can be queried using the
+ * session listing API.
+ *
+ * Returns LTTNG_OK on success. See lttng-error.h for the meaning of the other
+ * return codes.
+ */
+extern enum lttng_error_code lttng_create_session_ext(
+		struct lttng_session_descriptor *session_descriptor);
 
 /*
  * Create a tracing session using a name and an optional URL.
@@ -84,8 +130,7 @@ extern int lttng_create_session_snapshot(const char *name,
  * indexes are sent and metadata is checked for each packet.
  *
  * Name can't be NULL. If no URL is given, the default is to send the data to
- * net://127.0.0.1. The timer_interval is in usec and by default set to 1000000
- * (1 second).
+ * net://127.0.0.1. The timer_interval is in usec.
  *
  * Return 0 on success else a negative LTTng error code.
  */
@@ -112,6 +157,21 @@ extern int lttng_create_session_live(const char *name, const char *url,
 extern int lttng_destroy_session(const char *name);
 
 /*
+ * Destroy a tracing session.
+ *
+ * Performs the same function as lttng_destroy_session(), but provides
+ * an lttng_destruction_handle which can be used to wait for the completion
+ * of the session's destruction. The lttng_destroy_handle can also be used
+ * obtain the status and archive location of any implicit session
+ * rotation that may have occured during the session's destruction.
+ *
+ * Returns LTTNG_OK on success. The returned handle is owned by the caller
+ * and must be free'd using lttng_destruction_handle_destroy().
+ */
+extern enum lttng_error_code lttng_destroy_session_ext(const char *session_name,
+		struct lttng_destruction_handle **handle);
+
+/*
  * Behaves exactly like lttng_destroy_session but does not wait for data
  * availability.
  */
@@ -120,10 +180,27 @@ extern int lttng_destroy_session_no_wait(const char *name);
 /*
  * List all the tracing sessions.
  *
- * Return the size (number of entries) of the "lttng_session" array. Caller
- * must free sessions. On error, a negative LTTng error code is returned.
+ * Return the number of entries of the "lttng_session" array. The caller
+ * must free the returned sessions array directly using free().
+ *
+ * On error, a negative LTTng error code is returned.
  */
 extern int lttng_list_sessions(struct lttng_session **sessions);
+
+/*
+ * Get the creation time of an lttng_session object on the session daemon.
+ *
+ * This function must only be used with lttng_session objects returned
+ * by lttng_list_sessions() or lttng_session_create().
+ *
+ * The creation time returned is a UNIX timestamp; the number of seconds since
+ * Epoch (1970-01-01 00:00:00 +0000 (UTC)).
+ *
+ * Returns LTTNG_OK on success. See lttng-error.h for the meaning of the other
+ * return codes.
+ */
+extern enum lttng_error_code lttng_session_get_creation_time(
+		const struct lttng_session *session, uint64_t *creation_time);
 
 /*
  * Set the shared memory path for a session.

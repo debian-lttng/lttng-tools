@@ -25,6 +25,7 @@
 
 #include <common/common.h>
 #include <common/defaults.h>
+#include <common/trace-chunk.h>
 
 #include "buffer-registry.h"
 #include "trace-ust.h"
@@ -170,7 +171,7 @@ no_match:
  * lock MUST be acquired before calling this.
  */
 struct ltt_ust_channel *trace_ust_find_channel_by_name(struct lttng_ht *ht,
-		char *name)
+		const char *name)
 {
 	struct lttng_ht_node_str *node;
 	struct lttng_ht_iter iter;
@@ -435,91 +436,99 @@ end:
  * Allocate and initialize a ust event. Set name and event type.
  * We own filter_expression, filter, and exclusion.
  *
- * Return pointer to structure or NULL.
+ * Return an lttng_error_code
  */
-struct ltt_ust_event *trace_ust_create_event(struct lttng_event *ev,
+enum lttng_error_code trace_ust_create_event(struct lttng_event *ev,
 		char *filter_expression,
 		struct lttng_filter_bytecode *filter,
 		struct lttng_event_exclusion *exclusion,
-		bool internal_event)
+		bool internal_event,
+		struct ltt_ust_event **ust_event)
 {
-	struct ltt_ust_event *lue;
+	struct ltt_ust_event *local_ust_event;
+	enum lttng_error_code ret = LTTNG_OK;
 
 	assert(ev);
 
 	if (exclusion && validate_exclusion(exclusion)) {
+		ret = LTTNG_ERR_INVALID;
 		goto error;
 	}
 
-	lue = zmalloc(sizeof(struct ltt_ust_event));
-	if (lue == NULL) {
+	local_ust_event = zmalloc(sizeof(struct ltt_ust_event));
+	if (local_ust_event == NULL) {
 		PERROR("ust event zmalloc");
+		ret = LTTNG_ERR_NOMEM;
 		goto error;
 	}
 
-	lue->internal = internal_event;
+	local_ust_event->internal = internal_event;
 
 	switch (ev->type) {
 	case LTTNG_EVENT_PROBE:
-		lue->attr.instrumentation = LTTNG_UST_PROBE;
+		local_ust_event->attr.instrumentation = LTTNG_UST_PROBE;
 		break;
 	case LTTNG_EVENT_FUNCTION:
-		lue->attr.instrumentation = LTTNG_UST_FUNCTION;
+		local_ust_event->attr.instrumentation = LTTNG_UST_FUNCTION;
 		break;
 	case LTTNG_EVENT_FUNCTION_ENTRY:
-		lue->attr.instrumentation = LTTNG_UST_FUNCTION;
+		local_ust_event->attr.instrumentation = LTTNG_UST_FUNCTION;
 		break;
 	case LTTNG_EVENT_TRACEPOINT:
-		lue->attr.instrumentation = LTTNG_UST_TRACEPOINT;
+		local_ust_event->attr.instrumentation = LTTNG_UST_TRACEPOINT;
 		break;
 	default:
 		ERR("Unknown ust instrumentation type (%d)", ev->type);
+		ret = LTTNG_ERR_INVALID;
 		goto error_free_event;
 	}
 
 	/* Copy event name */
-	strncpy(lue->attr.name, ev->name, LTTNG_UST_SYM_NAME_LEN);
-	lue->attr.name[LTTNG_UST_SYM_NAME_LEN - 1] = '\0';
+	strncpy(local_ust_event->attr.name, ev->name, LTTNG_UST_SYM_NAME_LEN);
+	local_ust_event->attr.name[LTTNG_UST_SYM_NAME_LEN - 1] = '\0';
 
 	switch (ev->loglevel_type) {
 	case LTTNG_EVENT_LOGLEVEL_ALL:
-		lue->attr.loglevel_type = LTTNG_UST_LOGLEVEL_ALL;
-		lue->attr.loglevel = -1;	/* Force to -1 */
+		local_ust_event->attr.loglevel_type = LTTNG_UST_LOGLEVEL_ALL;
+		local_ust_event->attr.loglevel = -1;	/* Force to -1 */
 		break;
 	case LTTNG_EVENT_LOGLEVEL_RANGE:
-		lue->attr.loglevel_type = LTTNG_UST_LOGLEVEL_RANGE;
-		lue->attr.loglevel = ev->loglevel;
+		local_ust_event->attr.loglevel_type = LTTNG_UST_LOGLEVEL_RANGE;
+		local_ust_event->attr.loglevel = ev->loglevel;
 		break;
 	case LTTNG_EVENT_LOGLEVEL_SINGLE:
-		lue->attr.loglevel_type = LTTNG_UST_LOGLEVEL_SINGLE;
-		lue->attr.loglevel = ev->loglevel;
+		local_ust_event->attr.loglevel_type = LTTNG_UST_LOGLEVEL_SINGLE;
+		local_ust_event->attr.loglevel = ev->loglevel;
 		break;
 	default:
 		ERR("Unknown ust loglevel type (%d)", ev->loglevel_type);
+		ret = LTTNG_ERR_INVALID;
 		goto error_free_event;
 	}
 
 	/* Same layout. */
-	lue->filter_expression = filter_expression;
-	lue->filter = filter;
-	lue->exclusion = exclusion;
+	local_ust_event->filter_expression = filter_expression;
+	local_ust_event->filter = filter;
+	local_ust_event->exclusion = exclusion;
 
 	/* Init node */
-	lttng_ht_node_init_str(&lue->node, lue->attr.name);
+	lttng_ht_node_init_str(&local_ust_event->node, local_ust_event->attr.name);
 
 	DBG2("Trace UST event %s, loglevel (%d,%d) created",
-		lue->attr.name, lue->attr.loglevel_type,
-		lue->attr.loglevel);
+		local_ust_event->attr.name, local_ust_event->attr.loglevel_type,
+		local_ust_event->attr.loglevel);
 
-	return lue;
+	*ust_event = local_ust_event;
+
+	return ret;
 
 error_free_event:
-	free(lue);
+	free(local_ust_event);
 error:
 	free(filter_expression);
 	free(filter);
 	free(exclusion);
-	return NULL;
+	return ret;
 }
 
 static
@@ -565,8 +574,8 @@ int trace_ust_context_type_event_to_ust(
 /*
  * Return 1 if contexts match, 0 otherwise.
  */
-int trace_ust_match_context(struct ltt_ust_context *uctx,
-		struct lttng_event_context *ctx)
+int trace_ust_match_context(const struct ltt_ust_context *uctx,
+		const struct lttng_event_context *ctx)
 {
 	int utype;
 
@@ -615,7 +624,7 @@ int trace_ust_match_context(struct ltt_ust_context *uctx,
  * Return pointer to structure or NULL.
  */
 struct ltt_ust_context *trace_ust_create_context(
-		struct lttng_event_context *ctx)
+		const struct lttng_event_context *ctx)
 {
 	struct ltt_ust_context *uctx = NULL;
 	int utype;
@@ -819,13 +828,14 @@ int trace_ust_pid_tracker_lookup(struct ltt_ust_session *session, int pid)
 int trace_ust_track_pid(struct ltt_ust_session *session, int pid)
 {
 	int retval = LTTNG_OK;
+	bool should_update_apps = false;
 
 	if (pid == -1) {
 		/* Track all pids: destroy tracker if exists. */
 		if (session->pid_tracker.ht) {
 			fini_pid_tracker(&session->pid_tracker);
 			/* Ensure all apps have session. */
-			ust_app_global_update_all(session);
+			should_update_apps = true;
 		}
 	} else {
 		int ret;
@@ -844,7 +854,7 @@ int trace_ust_track_pid(struct ltt_ust_session *session, int pid)
 				goto end;
 			}
 			/* Remove all apps from session except pid. */
-			ust_app_global_update_all(session);
+			should_update_apps = true;
 		} else {
 			struct ust_app *app;
 
@@ -856,9 +866,12 @@ int trace_ust_track_pid(struct ltt_ust_session *session, int pid)
 			/* Add session to application */
 			app = ust_app_find_by_pid(pid);
 			if (app) {
-				ust_app_global_update(session, app);
+				should_update_apps = true;
 			}
 		}
+	}
+	if (should_update_apps && session->active) {
+		ust_app_global_update_all(session);
 	}
 end:
 	return retval;
@@ -1148,7 +1161,8 @@ static void destroy_domain_global(struct ltt_ust_domain_global *dom)
 }
 
 /*
- * Cleanup ust session structure
+ * Cleanup ust session structure, keeping data required by
+ * destroy notifier.
  *
  * Should *NOT* be called with RCU read-side lock held.
  */
@@ -1184,9 +1198,13 @@ void trace_ust_destroy_session(struct ltt_ust_session *session)
 		buffer_reg_uid_destroy(reg, session->consumer);
 	}
 
-	consumer_output_put(session->consumer);
-
 	fini_pid_tracker(&session->pid_tracker);
+	lttng_trace_chunk_put(session->current_trace_chunk);
+}
 
+/* Free elements needed by destroy notifiers. */
+void trace_ust_free_session(struct ltt_ust_session *session)
+{
+	consumer_output_put(session->consumer);
 	free(session);
 }

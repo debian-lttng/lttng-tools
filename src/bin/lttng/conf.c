@@ -34,7 +34,7 @@
  * Returns the path with '/CONFIG_FILENAME' added to it;
  * path will be NULL if an error occurs.
  */
-char *config_get_file_path(char *path)
+char *config_get_file_path(const char *path)
 {
 	int ret;
 	char *file_path;
@@ -52,7 +52,7 @@ char *config_get_file_path(char *path)
  * Returns an open FILE pointer to the config file;
  * on error, NULL is returned.
  */
-static FILE *open_config(char *path, const char *mode)
+static FILE *open_config(const char *path, const char *mode)
 {
 	FILE *fp = NULL;
 	char *file_path;
@@ -77,7 +77,7 @@ error:
  * On success, returns 0;
  * on error, returns -1.
  */
-static int create_config_file(char *path)
+static int create_config_file(const char *path)
 {
 	int ret;
 	FILE *fp;
@@ -100,7 +100,7 @@ error:
  * On success, returns 0;
  * on error, returns -1.
  */
-static int write_config(char *file_path, size_t size, char *data)
+static int write_config(const char *file_path, size_t size, char *data)
 {
 	FILE *fp;
 	size_t len;
@@ -127,7 +127,7 @@ end:
 /*
  * Destroys directory config and file config.
  */
-void config_destroy(char *path)
+void config_destroy(const char *path)
 {
 	int ret;
 	char *config_path;
@@ -155,7 +155,7 @@ end:
  */
 void config_destroy_default(void)
 {
-	char *path = utils_get_home_dir();
+	const char *path = utils_get_home_dir();
 	if (path == NULL) {
 		return;
 	}
@@ -178,11 +178,12 @@ int config_exists(const char *path)
 }
 
 static
-int _config_read_session_name(char *path, char **name)
+int _config_read_session_name(const char *path, char **name)
 {
 	int ret = 0;
 	FILE *fp;
 	char var[NAME_MAX], *session_name;
+
 #if (NAME_MAX == 255)
 #define NAME_MAX_SCANF_IS_A_BROKEN_API	"254"
 #endif
@@ -237,7 +238,7 @@ found:
  * The caller is responsible for freeing the returned string.
  * On error, NULL is returned.
  */
-char *config_read_session_name(char *path)
+char *config_read_session_name(const char *path)
 {
 	int ret;
 	char *name = NULL;
@@ -259,7 +260,7 @@ char *config_read_session_name(char *path)
  * The caller is responsible for freeing the returned string.
  * On error, NULL is returned.
  */
-char *config_read_session_name_quiet(char *path)
+char *config_read_session_name_quiet(const char *path)
 {
 	char *name = NULL;
 
@@ -272,7 +273,7 @@ char *config_read_session_name_quiet(char *path)
  * On success, returns 0;
  * on error, returns -1.
  */
-int config_add_session_name(char *path, char *name)
+int config_add_session_name(const char *path, const char *name)
 {
 	int ret;
 	char *attr = "session=";
@@ -298,10 +299,10 @@ error:
  * On success, returns 0;
  * on error, returns -1.
  */
-int config_init(char *session_name)
+int config_init(const char *session_name)
 {
 	int ret;
-	char *path;
+	const char *path;
 
 	path = utils_get_home_dir();
 	if (path == NULL) {

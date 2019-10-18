@@ -59,6 +59,11 @@
 #define RING_BUFFER_SNAPSHOT_SAMPLE_POSITIONS	_IO(0xF6, 0x0E)
 /* Flush the current sub-buffer, even if empty. */
 #define RING_BUFFER_FLUSH_EMPTY			_IO(0xF6, 0x0F)
+/*
+ * Reset the position of what has been consumed from the metadata cache to 0
+ * so it can be read again.
+ */
+#define RING_BUFFER_METADATA_CACHE_DUMP    	_IO(0xF6, 0x10)
 
 /* returns the timestamp begin of the current sub-buffer */
 #define LTTNG_RING_BUFFER_GET_TIMESTAMP_BEGIN     _IOR(0xF6, 0x20, uint64_t)
@@ -140,6 +145,10 @@
 #define LTTNG_KERNEL_SESSION_METADATA_REGEN	_IO(0xF6, 0x59)
 /* 0x5A and 0x5B are reserved for a future ABI-breaking cleanup. */
 #define LTTNG_KERNEL_SESSION_STATEDUMP		_IO(0xF6, 0x5C)
+#define LTTNG_KERNEL_SESSION_SET_NAME		\
+	_IOR(0xF6, 0x5D, struct lttng_kernel_session_name)
+#define LTTNG_KERNEL_SESSION_SET_CREATION_TIME		\
+	_IOR(0xF6, 0x5E, struct lttng_kernel_session_creation_time)
 
 /* Channel FD ioctl */
 #define LTTNG_KERNEL_STREAM			_IO(0xF6, 0x62)
@@ -158,5 +167,6 @@
 
 /* Event FD ioctl */
 #define LTTNG_KERNEL_FILTER			_IO(0xF6, 0x90)
+#define LTTNG_KERNEL_ADD_CALLSITE	_IO(0xF6, 0x91)
 
 #endif /* _LTT_KERNEL_IOCTL_H */

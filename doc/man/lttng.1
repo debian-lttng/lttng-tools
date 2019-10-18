@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: lttng
-.\"    Author: [see the "AUTHORS" section]
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 10/01/2019
+.\"      Date: 10/17/2019
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.10.8
+.\"    Source: LTTng 2.11.0
 .\"  Language: English
 .\"
-.TH "LTTNG" "1" "10/01/2019" "LTTng 2\&.10\&.8" "LTTng Manual"
+.TH "LTTNG" "1" "10/17/2019" "LTTng 2\&.11\&.0" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -37,7 +37,7 @@ lttng \- LTTng 2 tracer control command\-line tool
 .fi
 .SH "DESCRIPTION"
 .sp
-The \fILinux Trace Toolkit: next generation\fR <http://lttng.org/> is an open source software package used for correlated tracing of the Linux kernel, user applications, and user libraries\&.
+The \fILinux Trace Toolkit: next generation\fR <https://lttng.org/> is an open source software package used for correlated tracing of the Linux kernel, user applications, and user libraries\&.
 .sp
 LTTng consists of Linux kernel modules (for Linux kernel tracing) and dynamically loaded libraries (for user application and library tracing)\&.
 .sp
@@ -274,6 +274,22 @@ Start tracing\&.
 .RS 4
 Stop tracing\&.
 .RE
+.SS "Tracing session rotation"
+.PP
+\fBlttng-disable-rotation\fR(1)
+.RS 4
+Unset a rotation schedule\&.
+.RE
+.PP
+\fBlttng-enable-rotation\fR(1)
+.RS 4
+Set a rotation schedule\&.
+.RE
+.PP
+\fBlttng-rotate\fR(1)
+.RS 4
+Archive a tracing session\(cqs current trace chunk\&.
+.RE
 .SS "Resource tracking"
 .PP
 \fBlttng-track\fR(1)
@@ -437,7 +453,7 @@ If you encounter any issue or usability problem, please report it on the LTTng b
 .sp -1
 .IP \(bu 2.3
 .\}
-LTTng project website <http://lttng.org>
+LTTng project website <https://lttng.org>
 .RE
 .sp
 .RS 4
@@ -448,7 +464,7 @@ LTTng project website <http://lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-LTTng documentation <http://lttng.org/docs>
+LTTng documentation <https://lttng.org/docs>
 .RE
 .sp
 .RS 4
@@ -520,11 +536,6 @@ LTTng\-tools is distributed under the GNU General Public License version 2 <http
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
 .sp
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
-.SH "AUTHORS"
-.sp
-LTTng\-tools was originally written by Mathieu Desnoyers, Julien Desfossez, and David Goulet\&. More people have since contributed to it\&.
-.sp
-LTTng\-tools is currently maintained by J\('er\('emie Galarneau <mailto:jeremie.galarneau@efficios.com>\&.
 .SH "SEE ALSO"
 .sp
 \fBlttng-sessiond\fR(8), \fBlttng-relayd\fR(8), \fBlttng-crash\fR(1), \fBlttng-ust\fR(3), \fBbabeltrace\fR(1)

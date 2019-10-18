@@ -32,6 +32,7 @@
 #include <common/error.h>
 #include <common/macros.h>
 #include <common/utils.h>
+#include <common/dynamic-buffer.h>
 #include <common/compat/getenv.h>
 #include <lttng/lttng-error.h>
 #include <libxml/parser.h>
@@ -40,9 +41,13 @@
 #include <libxml/tree.h>
 #include <lttng/lttng.h>
 #include <lttng/snapshot.h>
+#include <lttng/rotation.h>
+#include <lttng/userspace-probe.h>
 
 #include "session-config.h"
 #include "config-internal.h"
+
+#define CONFIG_USERSPACE_PROBE_LOOKUP_METHOD_NAME_MAX_LEN 7
 
 struct handler_filter_args {
 	const char* section;
@@ -84,6 +89,18 @@ const char * const config_element_probe_attributes = "probe_attributes";
 const char * const config_element_symbol_name = "symbol_name";
 const char * const config_element_address = "address";
 const char * const config_element_offset = "offset";
+
+LTTNG_HIDDEN const char * const config_element_userspace_probe_lookup = "lookup_method";
+LTTNG_HIDDEN const char * const config_element_userspace_probe_lookup_function_default = "DEFAULT";
+LTTNG_HIDDEN const char * const config_element_userspace_probe_lookup_function_elf = "ELF";
+LTTNG_HIDDEN const char * const config_element_userspace_probe_lookup_tracepoint_sdt = "SDT";
+LTTNG_HIDDEN const char * const config_element_userspace_probe_location_binary_path = "binary_path";
+LTTNG_HIDDEN const char * const config_element_userspace_probe_function_attributes = "userspace_probe_function_attributes";
+LTTNG_HIDDEN const char * const config_element_userspace_probe_function_location_function_name = "function_name";
+LTTNG_HIDDEN const char * const config_element_userspace_probe_tracepoint_attributes = "userspace_probe_tracepoint_attributes";
+LTTNG_HIDDEN const char * const config_element_userspace_probe_tracepoint_location_provider_name = "provider_name";
+LTTNG_HIDDEN const char * const config_element_userspace_probe_tracepoint_location_probe_name = "probe_name";
+
 const char * const config_element_name = "name";
 const char * const config_element_enabled = "enabled";
 const char * const config_element_overwrite_mode = "overwrite_mode";
@@ -131,6 +148,12 @@ const char * const config_element_trackers = "trackers";
 const char * const config_element_targets = "targets";
 const char * const config_element_target_pid = "pid_target";
 
+LTTNG_HIDDEN const char * const config_element_rotation_schedules = "rotation_schedules";
+LTTNG_HIDDEN const char * const config_element_rotation_schedule_periodic = "periodic";
+LTTNG_HIDDEN const char * const config_element_rotation_schedule_periodic_time_us = "time_us";
+LTTNG_HIDDEN const char * const config_element_rotation_schedule_size_threshold = "size_threshold";
+LTTNG_HIDDEN const char * const config_element_rotation_schedule_size_threshold_bytes = "bytes";
+
 const char * const config_domain_type_kernel = "KERNEL";
 const char * const config_domain_type_ust = "UST";
 const char * const config_domain_type_jul = "JUL";
@@ -154,6 +177,7 @@ const char * const config_loglevel_type_single = "SINGLE";
 const char * const config_event_type_all = "ALL";
 const char * const config_event_type_tracepoint = "TRACEPOINT";
 const char * const config_event_type_probe = "PROBE";
+LTTNG_HIDDEN const char * const config_event_type_userspace_probe = "USERSPACE_PROBE";
 const char * const config_event_type_function = "FUNCTION";
 const char * const config_event_type_function_entry = "FUNCTION_ENTRY";
 const char * const config_event_type_noop = "NOOP";
@@ -179,6 +203,8 @@ LTTNG_HIDDEN const char * const config_event_context_interruptible = "INTERRUPTI
 LTTNG_HIDDEN const char * const config_event_context_preemptible = "PREEMPTIBLE";
 LTTNG_HIDDEN const char * const config_event_context_need_reschedule = "NEED_RESCHEDULE";
 LTTNG_HIDDEN const char * const config_event_context_migratable = "MIGRATABLE";
+LTTNG_HIDDEN const char * const config_event_context_callstack_user= "CALLSTACK_USER";
+LTTNG_HIDDEN const char * const config_event_context_callstack_kernel = "CALLSTACK_KERNEL";
 
 /* Deprecated symbols */
 const char * const config_element_perf;
@@ -224,7 +250,7 @@ int config_get_section_entries(const char *override_path, const char *section,
 		config_entry_handler_cb handler, void *user_data)
 {
 	int ret = 0;
-	char *path;
+	const char *path;
 	FILE *config_file = NULL;
 	struct handler_filter_args filter = { section, handler, user_data };
 
@@ -672,13 +698,12 @@ char *get_session_config_xsd_path()
 		goto end;
 	}
 
-	strncpy(xsd_path, base_path, max_path_len);
+	strcpy(xsd_path, base_path);
 	if (xsd_path[base_path_len - 1] != '/') {
 		xsd_path[base_path_len++] = '/';
 	}
 
-	strncpy(xsd_path + base_path_len, DEFAULT_SESSION_CONFIG_XSD_FILENAME,
-		max_path_len - base_path_len);
+	strcpy(xsd_path + base_path_len, DEFAULT_SESSION_CONFIG_XSD_FILENAME);
 end:
 	return xsd_path;
 }
@@ -910,10 +935,13 @@ int get_event_type(xmlChar *event_type)
 		ret = LTTNG_EVENT_TRACEPOINT;
 	} else if (!strcmp((char *) event_type, config_event_type_probe)) {
 		ret = LTTNG_EVENT_PROBE;
+	} else if (!strcmp((char *) event_type,
+				config_event_type_userspace_probe)) {
+		ret = LTTNG_EVENT_USERSPACE_PROBE;
 	} else if (!strcmp((char *) event_type, config_event_type_function)) {
 		ret = LTTNG_EVENT_FUNCTION;
 	} else if (!strcmp((char *) event_type,
-		config_event_type_function_entry)) {
+				config_event_type_function_entry)) {
 		ret = LTTNG_EVENT_FUNCTION_ENTRY;
 	} else if (!strcmp((char *) event_type, config_event_type_noop)) {
 		ret = LTTNG_EVENT_NOOP;
@@ -1013,6 +1041,12 @@ int get_context_type(xmlChar *context_type)
 	} else if (!strcmp((char *) context_type,
 		config_event_context_migratable)) {
 		ret = LTTNG_EVENT_CONTEXT_MIGRATABLE;
+	} else if (!strcmp((char *) context_type,
+		config_event_context_callstack_user)) {
+		ret = LTTNG_EVENT_CONTEXT_CALLSTACK_USER;
+	} else if (!strcmp((char *) context_type,
+		config_event_context_callstack_kernel)) {
+		ret = LTTNG_EVENT_CONTEXT_CALLSTACK_KERNEL;
 	} else {
 		goto error;
 	}
@@ -1340,10 +1374,6 @@ end:
 
 static
 int create_session(const char *name,
-	struct lttng_domain *kernel_domain,
-	struct lttng_domain *ust_domain,
-	struct lttng_domain *jul_domain,
-	struct lttng_domain *log4j_domain,
 	xmlNodePtr output_node,
 	uint64_t live_timer_interval,
 	const struct config_load_session_override_attr *overrides)
@@ -1443,6 +1473,178 @@ end:
 	free(output.data_uri);
 	return ret;
 }
+
+static
+struct lttng_userspace_probe_location *
+process_userspace_probe_function_attribute_node(
+		xmlNodePtr attribute_node)
+{
+	xmlNodePtr function_attribute_node;
+	char *function_name = NULL, *binary_path = NULL;
+	struct lttng_userspace_probe_location *location = NULL;
+	struct lttng_userspace_probe_location_lookup_method *lookup_method = NULL;
+
+	/*
+	 * Process userspace probe location function attributes. The order of
+	 * the fields are not guaranteed so we need to iterate over all fields
+	 * and check at the end if everything we need for this location type is
+	 * there.
+	 */
+	for (function_attribute_node =
+			xmlFirstElementChild(attribute_node);
+			function_attribute_node;
+			function_attribute_node = xmlNextElementSibling(
+				function_attribute_node)) {
+		/* Handle function name, binary path and lookup method. */
+		if (!strcmp((const char *) function_attribute_node->name,
+					config_element_userspace_probe_function_location_function_name)) {
+			function_name = (char *) xmlNodeGetContent(function_attribute_node);
+			if (!function_name) {
+				goto error;
+			}
+		} else if (!strcmp((const char *) function_attribute_node->name,
+					config_element_userspace_probe_location_binary_path)) {
+			binary_path = (char *) xmlNodeGetContent(function_attribute_node);
+			if (!binary_path) {
+				goto error;
+			}
+		} else if (!strcmp((const char *) function_attribute_node->name,
+					config_element_userspace_probe_lookup)) {
+			char *lookup_method_name;
+
+			lookup_method_name = (char *) xmlNodeGetContent(
+					function_attribute_node);
+			if (!lookup_method_name) {
+				goto error;
+			}
+
+			/*
+			 * function_default lookup method defaults to
+			 * function_elf lookup method at the moment.
+			 */
+			if (!strcmp(lookup_method_name, config_element_userspace_probe_lookup_function_elf)
+					|| !strcmp(lookup_method_name, config_element_userspace_probe_lookup_function_default)) {
+				lookup_method = lttng_userspace_probe_location_lookup_method_function_elf_create();
+				if (!lookup_method) {
+					PERROR("Error creating function default/ELF lookup method");
+				}
+			} else {
+				WARN("Unknown function lookup method");
+			}
+
+			free(lookup_method_name);
+			if (!lookup_method) {
+				goto error;
+			}
+		} else {
+			goto error;
+		}
+
+		/* Check if all the necessary fields were found. */
+		if (binary_path && function_name && lookup_method) {
+			/* Ownership of lookup_method is transferred. */
+			location =
+				lttng_userspace_probe_location_function_create(
+						binary_path, function_name,
+						lookup_method);
+			lookup_method = NULL;
+			goto error;
+		}
+	}
+error:
+	lttng_userspace_probe_location_lookup_method_destroy(lookup_method);
+	free(binary_path);
+	free(function_name);
+	return location;
+}
+
+static
+struct lttng_userspace_probe_location *
+process_userspace_probe_tracepoint_attribute_node(
+		xmlNodePtr attribute_node)
+{
+	xmlNodePtr tracepoint_attribute_node;
+	char *probe_name = NULL, *provider_name = NULL, *binary_path = NULL;
+	struct lttng_userspace_probe_location *location = NULL;
+	struct lttng_userspace_probe_location_lookup_method *lookup_method = NULL;
+
+	/*
+	 * Process userspace probe location tracepoint attributes. The order of
+	 * the fields are not guaranteed so we need to iterate over all fields
+	 * and check at the end if everything we need for this location type is
+	 * there.
+	 */
+	for (tracepoint_attribute_node =
+		xmlFirstElementChild(attribute_node); tracepoint_attribute_node;
+		tracepoint_attribute_node = xmlNextElementSibling(
+				tracepoint_attribute_node)) {
+		if (!strcmp((const char *) tracepoint_attribute_node->name,
+					config_element_userspace_probe_tracepoint_location_probe_name)) {
+			probe_name = (char *) xmlNodeGetContent(tracepoint_attribute_node);
+			if (!probe_name) {
+				goto error;
+			}
+		} else if (!strcmp((const char *) tracepoint_attribute_node->name,
+					config_element_userspace_probe_tracepoint_location_provider_name)) {
+			provider_name = (char *) xmlNodeGetContent(tracepoint_attribute_node);
+			if (!provider_name) {
+				goto error;
+			}
+		} else if (!strcmp((const char *) tracepoint_attribute_node->name,
+					config_element_userspace_probe_location_binary_path)) {
+			binary_path = (char *) xmlNodeGetContent(tracepoint_attribute_node);
+			if (!binary_path) {
+				goto error;
+			}
+		} else if (!strcmp((const char *) tracepoint_attribute_node->name,
+					config_element_userspace_probe_lookup)) {
+			char *lookup_method_name;
+
+		        lookup_method_name = (char *) xmlNodeGetContent(
+					tracepoint_attribute_node);
+			if (!lookup_method_name) {
+				goto error;
+			}
+
+			if (!strcmp(lookup_method_name,
+						config_element_userspace_probe_lookup_tracepoint_sdt)) {
+				lookup_method =
+					lttng_userspace_probe_location_lookup_method_tracepoint_sdt_create();
+				if (!lookup_method) {
+					PERROR("Error creating tracepoint SDT lookup method");
+				}
+			} else {
+				WARN("Unknown tracepoint lookup method");
+			}
+
+			free(lookup_method_name);
+			if (!lookup_method) {
+				goto error;
+			}
+		} else {
+			WARN("Unknown tracepoint attribute");
+			goto error;
+		}
+
+		/* Check if all the necessary fields were found. */
+		if (binary_path && provider_name && probe_name && lookup_method) {
+			/* Ownership of lookup_method is transferred. */
+			location =
+				lttng_userspace_probe_location_tracepoint_create(
+						binary_path, provider_name,
+						probe_name, lookup_method);
+			lookup_method = NULL;
+			goto error;
+		}
+	}
+error:
+	lttng_userspace_probe_location_lookup_method_destroy(lookup_method);
+	free(binary_path);
+	free(provider_name);
+	free(probe_name);
+	return location;
+}
+
 static
 int process_probe_attribute_node(xmlNodePtr probe_attribute_node,
 	struct lttng_event_probe_attr *attr)
@@ -1495,7 +1697,6 @@ int process_probe_attribute_node(xmlNodePtr probe_attribute_node,
 	} else if (!strcmp((const char *) probe_attribute_node->name,
 		config_element_symbol_name)) {
 		xmlChar *content;
-		size_t name_len;
 
 		/* symbol_name */
 		content = xmlNodeGetContent(probe_attribute_node);
@@ -1504,15 +1705,18 @@ int process_probe_attribute_node(xmlNodePtr probe_attribute_node,
 			goto end;
 		}
 
-		name_len = strlen((char *) content);
-		if (name_len >= LTTNG_SYMBOL_NAME_LEN) {
-			WARN("symbol_name too long.");
+		ret = lttng_strncpy(attr->symbol_name,
+				(const char *) content,
+				LTTNG_SYMBOL_NAME_LEN);
+		if (ret == -1) {
+		        ERR("symbol name \"%s\"'s length (%zu) exceeds the maximal permitted length (%d) in session configuration",
+					(const char *) content,
+					strlen((const char *) content),
+					LTTNG_SYMBOL_NAME_LEN);
 			ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
 			free(content);
 			goto end;
 		}
-
-		strncpy(attr->symbol_name, (const char *) content, name_len);
 		free(content);
 	}
 	ret = 0;
@@ -1526,7 +1730,7 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 {
 	int ret = 0, i;
 	xmlNodePtr node;
-	struct lttng_event event;
+	struct lttng_event *event;
 	char **exclusions = NULL;
 	unsigned long exclusion_count = 0;
 	char *filter_expression = NULL;
@@ -1535,23 +1739,27 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 	assert(handle);
 	assert(channel_name);
 
-	memset(&event, 0, sizeof(event));
+	event = lttng_event_create();
+	if (!event) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto end;
+	}
 
 	/* Initialize default log level which varies by domain */
 	switch (handle->domain.type)
 	{
 	case LTTNG_DOMAIN_JUL:
-		event.loglevel = LTTNG_LOGLEVEL_JUL_ALL;
+		event->loglevel = LTTNG_LOGLEVEL_JUL_ALL;
 		break;
 	case LTTNG_DOMAIN_LOG4J:
-		event.loglevel = LTTNG_LOGLEVEL_LOG4J_ALL;
+		event->loglevel = LTTNG_LOGLEVEL_LOG4J_ALL;
 		break;
 	case LTTNG_DOMAIN_PYTHON:
-		event.loglevel = LTTNG_LOGLEVEL_PYTHON_DEBUG;
+		event->loglevel = LTTNG_LOGLEVEL_PYTHON_DEBUG;
 		break;
 	case LTTNG_DOMAIN_UST:
 	case LTTNG_DOMAIN_KERNEL:
-		event.loglevel = LTTNG_LOGLEVEL_DEBUG;
+		event->loglevel = LTTNG_LOGLEVEL_DEBUG;
 		break;
 	default:
 		assert(0);
@@ -1561,7 +1769,6 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 		node = xmlNextElementSibling(node)) {
 		if (!strcmp((const char *) node->name, config_element_name)) {
 			xmlChar *content;
-			size_t name_len;
 
 			/* name */
 			content = xmlNodeGetContent(node);
@@ -1570,15 +1777,18 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 				goto end;
 			}
 
-			name_len = strlen((char *) content);
-			if (name_len >= LTTNG_SYMBOL_NAME_LEN) {
-				WARN("Channel name too long.");
+			ret = lttng_strncpy(event->name,
+					(const char *) content,
+					LTTNG_SYMBOL_NAME_LEN);
+			if (ret == -1) {
+				WARN("Event \"%s\"'s name length (%zu) exceeds the maximal permitted length (%d) in session configuration",
+						(const char *) content,
+						strlen((const char *) content),
+						LTTNG_SYMBOL_NAME_LEN);
 				ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
 				free(content);
 				goto end;
 			}
-
-			strncpy(event.name, (const char *) content, name_len);
 			free(content);
 		} else if (!strcmp((const char *) node->name,
 			config_element_enabled)) {
@@ -1590,7 +1800,7 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 				goto end;
 			}
 
-			ret = parse_bool(content, &event.enabled);
+			ret = parse_bool(content, &event->enabled);
 			free(content);
 			if (ret) {
 				ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
@@ -1613,7 +1823,7 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 				goto end;
 			}
 
-			event.type = ret;
+			event->type = ret;
 		} else if (!strcmp((const char *) node->name,
 			config_element_loglevel_type)) {
 			xmlChar *content = xmlNodeGetContent(node);
@@ -1631,7 +1841,7 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 				goto end;
 			}
 
-			event.loglevel_type = ret;
+			event->loglevel_type = ret;
 		} else if (!strcmp((const char *) node->name,
 			config_element_loglevel)) {
 			xmlChar *content;
@@ -1657,7 +1867,7 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 				goto end;
 			}
 
-			event.loglevel = loglevel;
+			event->loglevel = loglevel;
 		} else if (!strcmp((const char *) node->name,
 			config_element_filter)) {
 			xmlChar *content =
@@ -1722,7 +1932,7 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 				exclusion_index++;
 			}
 
-			event.exclusion = 1;
+			event->exclusion = 1;
 		} else if (!strcmp((const char *) node->name,
 			config_element_attributes)) {
 			xmlNodePtr attribute_node = xmlFirstElementChild(node);
@@ -1733,7 +1943,7 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 				goto end;
 			}
 
-			if (!strcmp((const char *) node->name,
+			if (!strcmp((const char *) attribute_node->name,
 						config_element_probe_attributes)) {
 				xmlNodePtr probe_attribute_node;
 
@@ -1744,12 +1954,13 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 							probe_attribute_node)) {
 
 					ret = process_probe_attribute_node(probe_attribute_node,
-							&event.attr.probe);
+							&event->attr.probe);
 					if (ret) {
 						goto end;
 					}
 				}
-			} else {
+			} else if (!strcmp((const char *) attribute_node->name,
+						config_element_function_attributes)) {
 				size_t sym_len;
 				xmlChar *content;
 				xmlNodePtr symbol_node = xmlFirstElementChild(attribute_node);
@@ -1769,27 +1980,80 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 					goto end;
 				}
 
-				strncpy(event.attr.ftrace.symbol_name, (char *) content,
-						sym_len);
+				ret = lttng_strncpy(
+						event->attr.ftrace.symbol_name,
+						(char *) content, sym_len);
+				if (ret == -1) {
+					ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+					free(content);
+					goto end;
+				}
 				free(content);
+			} else if (!strcmp((const char *) attribute_node->name,
+						config_element_userspace_probe_tracepoint_attributes)) {
+				struct lttng_userspace_probe_location *location;
+
+				location = process_userspace_probe_tracepoint_attribute_node(attribute_node);
+				if (!location) {
+					WARN("Error processing userspace probe tracepoint attribute");
+					ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+					goto end;
+				}
+				ret = lttng_event_set_userspace_probe_location(
+						event, location);
+				if (ret) {
+					WARN("Error setting userspace probe location field");
+					lttng_userspace_probe_location_destroy(
+							location);
+					ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+					goto end;
+				}
+			} else if (!strcmp((const char *) attribute_node->name,
+						config_element_userspace_probe_function_attributes)) {
+				struct lttng_userspace_probe_location *location;
+
+				location =
+					process_userspace_probe_function_attribute_node(
+							attribute_node);
+				if (!location) {
+					WARN("Error processing userspace probe function attribute");
+					ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+					goto end;
+				}
+
+				ret = lttng_event_set_userspace_probe_location(
+						event, location);
+				if (ret) {
+					WARN("Error setting userspace probe location field");
+					lttng_userspace_probe_location_destroy(
+							location);
+					ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+					goto end;
+				}
+			} else {
+				/* Unknown event attribute. */
+				ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+				goto end;
 			}
 		}
 	}
 
-	if ((event.enabled && phase == ENABLE) || phase == CREATION) {
-		ret = lttng_enable_event_with_exclusions(handle, &event, channel_name,
+	if ((event->enabled && phase == ENABLE) || phase == CREATION) {
+		ret = lttng_enable_event_with_exclusions(handle, event, channel_name,
 				filter_expression, exclusion_count, exclusions);
 		if (ret < 0) {
-			WARN("Enabling event (name:%s) on load failed.", event.name);
+			WARN("Enabling event (name:%s) on load failed.", event->name);
 			ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
 			goto end;
 		}
 	}
+	ret = 0;
 end:
 	for (i = 0; i < exclusion_count; i++) {
 		free(exclusions[i]);
 	}
 
+	lttng_event_destroy(event);
 	free(exclusions);
 	free(filter_expression);
 	return ret;
@@ -1854,7 +2118,6 @@ int process_channel_attr_node(xmlNodePtr attr_node,
 
 	if (!strcmp((const char *) attr_node->name, config_element_name)) {
 		xmlChar *content;
-		size_t name_len;
 
 		/* name */
 		content = xmlNodeGetContent(attr_node);
@@ -1863,15 +2126,18 @@ int process_channel_attr_node(xmlNodePtr attr_node,
 			goto end;
 		}
 
-		name_len = strlen((char *) content);
-		if (name_len >= LTTNG_SYMBOL_NAME_LEN) {
-			WARN("Channel name too long.");
+		ret = lttng_strncpy(channel->name,
+				(const char *) content,
+				LTTNG_SYMBOL_NAME_LEN);
+		if (ret == -1) {
+			WARN("Channel \"%s\"'s name length (%zu) exceeds the maximal permitted length (%d) in session configuration",
+					(const char *) content,
+					strlen((const char *) content),
+					LTTNG_SYMBOL_NAME_LEN);
 			ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
 			free(content);
 			goto end;
 		}
-
-		strncpy(channel->name, (const char *) content, name_len);
 		free(content);
 	} else if (!strcmp((const char *) attr_node->name,
 			config_element_enabled)) {
@@ -2239,7 +2505,6 @@ int process_context_node(xmlNodePtr context_node,
 			} else if (!strcmp((const char *) perf_attr_node->name,
 				config_element_name)) {
 				xmlChar *content;
-				size_t name_len;
 
 				/* name */
 				content = xmlNodeGetContent(perf_attr_node);
@@ -2248,16 +2513,18 @@ int process_context_node(xmlNodePtr context_node,
 					goto end;
 				}
 
-				name_len = strlen((char *) content);
-				if (name_len >= LTTNG_SYMBOL_NAME_LEN) {
-					WARN("perf context name too long.");
+				ret = lttng_strncpy(context.u.perf_counter.name,
+						(const char *) content,
+						LTTNG_SYMBOL_NAME_LEN);
+				if (ret == -1) {
+					WARN("Perf counter \"%s\"'s name length (%zu) exceeds the maximal permitted length (%d) in session configuration",
+							(const char *) content,
+							strlen((const char *) content),
+							LTTNG_SYMBOL_NAME_LEN);
 					ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
 					free(content);
 					goto end;
 				}
-
-				strncpy(context.u.perf_counter.name, (const char *) content,
-						name_len);
 				free(content);
 			}
 		}
@@ -2532,17 +2799,167 @@ end:
 }
 
 static
+int add_periodic_rotation(const char *name, uint64_t time_us)
+{
+	int ret;
+	enum lttng_rotation_status status;
+	struct lttng_rotation_schedule *periodic =
+			lttng_rotation_schedule_periodic_create();
+
+	if (!periodic) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto error;
+	}
+
+	status = lttng_rotation_schedule_periodic_set_period(periodic,
+			time_us);
+	if (status != LTTNG_ROTATION_STATUS_OK) {
+		ret = -LTTNG_ERR_INVALID;
+		goto error;
+	}
+
+	status = lttng_session_add_rotation_schedule(name, periodic);
+	switch (status) {
+	case LTTNG_ROTATION_STATUS_OK:
+		ret = 0;
+		break;
+	case LTTNG_ROTATION_STATUS_SCHEDULE_ALREADY_SET:
+	case LTTNG_ROTATION_STATUS_INVALID:
+		ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+		break;
+	default:
+		ret = -LTTNG_ERR_UNK;
+		break;
+	}
+error:
+	lttng_rotation_schedule_destroy(periodic);
+	return ret;
+}
+
+static
+int add_size_rotation(const char *name, uint64_t size_bytes)
+{
+	int ret;
+	enum lttng_rotation_status status;
+	struct lttng_rotation_schedule *size =
+			lttng_rotation_schedule_size_threshold_create();
+
+	if (!size) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto error;
+	}
+
+	status = lttng_rotation_schedule_size_threshold_set_threshold(size,
+			size_bytes);
+	if (status != LTTNG_ROTATION_STATUS_OK) {
+		ret = -LTTNG_ERR_INVALID;
+		goto error;
+	}
+
+	status = lttng_session_add_rotation_schedule(name, size);
+	switch (status) {
+	case LTTNG_ROTATION_STATUS_OK:
+		ret = 0;
+		break;
+	case LTTNG_ROTATION_STATUS_SCHEDULE_ALREADY_SET:
+	case LTTNG_ROTATION_STATUS_INVALID:
+		ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+		break;
+	default:
+		ret = -LTTNG_ERR_UNK;
+		break;
+	}
+error:
+	lttng_rotation_schedule_destroy(size);
+	return ret;
+}
+
+static
+int process_session_rotation_schedules_node(
+		xmlNodePtr schedules_node,
+		uint64_t *rotation_timer_interval,
+		uint64_t *rotation_size)
+{
+	int ret = 0;
+	xmlNodePtr child;
+
+	for (child = xmlFirstElementChild(schedules_node);
+			child;
+			child = xmlNextElementSibling(child)) {
+		if (!strcmp((const char *) child->name,
+				config_element_rotation_schedule_periodic)) {
+			xmlChar *content;
+			xmlNodePtr time_us_node;
+
+			/* periodic rotation schedule */
+			time_us_node = xmlFirstElementChild(child);
+			if (!time_us_node ||
+					strcmp((const char *) time_us_node->name,
+						config_element_rotation_schedule_periodic_time_us)) {
+				ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+				goto end;
+			}
+
+			/* time_us child */
+			content = xmlNodeGetContent(time_us_node);
+			if (!content) {
+				ret = -LTTNG_ERR_NOMEM;
+				goto end;
+			}
+			ret = parse_uint(content, rotation_timer_interval);
+			free(content);
+			if (ret) {
+				ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+				goto end;
+			}
+		} else if (!strcmp((const char *) child->name,
+				config_element_rotation_schedule_size_threshold)) {
+			xmlChar *content;
+			xmlNodePtr bytes_node;
+
+			/* size_threshold rotation schedule */
+			bytes_node = xmlFirstElementChild(child);
+			if (!bytes_node ||
+					strcmp((const char *) bytes_node->name,
+						config_element_rotation_schedule_size_threshold_bytes)) {
+				ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+				goto end;
+			}
+
+			/* bytes child */
+			content = xmlNodeGetContent(bytes_node);
+			if (!content) {
+				ret = -LTTNG_ERR_NOMEM;
+				goto end;
+			}
+			ret = parse_uint(content, rotation_size);
+			free(content);
+			if (ret) {
+				ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+				goto end;
+			}
+		}
+	}
+
+end:
+	return ret;
+}
+
+static
 int process_session_node(xmlNodePtr session_node, const char *session_name,
 		int overwrite,
 		const struct config_load_session_override_attr *overrides)
 {
 	int ret, started = -1, snapshot_mode = -1;
-	uint64_t live_timer_interval = UINT64_MAX;
+	uint64_t live_timer_interval = UINT64_MAX,
+			 rotation_timer_interval = 0,
+			 rotation_size = 0;
 	xmlChar *name = NULL;
 	xmlChar *shm_path = NULL;
 	xmlNodePtr domains_node = NULL;
 	xmlNodePtr output_node = NULL;
 	xmlNodePtr node;
+	xmlNodePtr attributes_child;
 	struct lttng_domain *kernel_domain = NULL;
 	struct lttng_domain *ust_domain = NULL;
 	struct lttng_domain *jul_domain = NULL;
@@ -2595,40 +3012,55 @@ int process_session_node(xmlNodePtr session_node, const char *session_name,
 
 			shm_path = node_content;
 		} else {
-			/* attributes, snapshot_mode or live_timer_interval */
-			xmlNodePtr attributes_child =
-				xmlFirstElementChild(node);
+			/*
+			 * attributes, snapshot_mode, live_timer_interval, rotation_size,
+			 * rotation_timer_interval.
+			 */
+			for (attributes_child = xmlFirstElementChild(node); attributes_child;
+					attributes_child = xmlNextElementSibling(attributes_child)) {
+				if (!strcmp((const char *) attributes_child->name,
+							config_element_snapshot_mode)) {
+					/* snapshot_mode */
+					xmlChar *snapshot_mode_content =
+						xmlNodeGetContent(attributes_child);
+					if (!snapshot_mode_content) {
+						ret = -LTTNG_ERR_NOMEM;
+						goto error;
+					}
 
-			if (!strcmp((const char *) attributes_child->name,
-				config_element_snapshot_mode)) {
-				/* snapshot_mode */
-				xmlChar *snapshot_mode_content =
-					xmlNodeGetContent(attributes_child);
-				if (!snapshot_mode_content) {
-					ret = -LTTNG_ERR_NOMEM;
-					goto error;
-				}
+					ret = parse_bool(snapshot_mode_content, &snapshot_mode);
+					free(snapshot_mode_content);
+					if (ret) {
+						ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+						goto error;
+					}
+				} else if (!strcmp((const char *) attributes_child->name,
+							config_element_live_timer_interval)) {
+					/* live_timer_interval */
+					xmlChar *timer_interval_content =
+						xmlNodeGetContent(attributes_child);
+					if (!timer_interval_content) {
+						ret = -LTTNG_ERR_NOMEM;
+						goto error;
+					}
 
-				ret = parse_bool(snapshot_mode_content, &snapshot_mode);
-				free(snapshot_mode_content);
-				if (ret) {
-					ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
-					goto error;
-				}
-			} else {
-				/* live_timer_interval */
-				xmlChar *timer_interval_content =
-					xmlNodeGetContent(attributes_child);
-				if (!timer_interval_content) {
-					ret = -LTTNG_ERR_NOMEM;
-					goto error;
-				}
+					ret = parse_uint(timer_interval_content, &live_timer_interval);
+					free(timer_interval_content);
+					if (ret) {
+						ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+						goto error;
+					}
+				} else if (!strcmp((const char *) attributes_child->name,
+							config_element_rotation_schedules)) {
+					ret = process_session_rotation_schedules_node(
+							attributes_child,
+							&rotation_timer_interval,
+							&rotation_size);
+					if (ret) {
+						ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+						goto error;
+					}
 
-				ret = parse_uint(timer_interval_content, &live_timer_interval);
-				free(timer_interval_content);
-				if (ret) {
-					ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
-					goto error;
 				}
 			}
 		}
@@ -2739,13 +3171,11 @@ domain_init_error:
 				overrides);
 	} else if (live_timer_interval &&
 		live_timer_interval != UINT64_MAX) {
-		ret = create_session((const char *) name, kernel_domain,
-				ust_domain, jul_domain, log4j_domain,
+		ret = create_session((const char *) name,
 				output_node, live_timer_interval, overrides);
 	} else {
 		/* regular session */
-		ret = create_session((const char *) name, kernel_domain,
-				ust_domain, jul_domain, log4j_domain,
+		ret = create_session((const char *) name,
 				output_node, UINT64_MAX, overrides);
 	}
 	if (ret) {
@@ -2765,6 +3195,21 @@ domain_init_error:
 		ret = process_domain_node(node, (const char *) name);
 		if (ret) {
 			goto end;
+		}
+	}
+
+	if (rotation_timer_interval) {
+		ret = add_periodic_rotation((const char *) name,
+				rotation_timer_interval);
+		if (ret < 0) {
+			goto error;
+		}
+	}
+	if (rotation_size) {
+		ret = add_size_rotation((const char *) name,
+				rotation_size);
+		if (ret < 0) {
+			goto error;
 		}
 	}
 
@@ -2878,23 +3323,6 @@ end:
 	return ret;
 }
 
-/* Allocate dirent as recommended by READDIR(3), NOTES on readdir_r */
-static
-struct dirent *alloc_dirent(const char *path)
-{
-	size_t len;
-	long name_max;
-	struct dirent *entry;
-
-	name_max = pathconf(path, _PC_NAME_MAX);
-	if (name_max == -1) {
-		name_max = PATH_MAX;
-	}
-	len = offsetof(struct dirent, d_name) + name_max + 1;
-	entry = zmalloc(len);
-	return entry;
-}
-
 static
 int load_session_from_path(const char *path, const char *session_name,
 	struct session_config_validation_ctx *validation_ctx, int overwrite,
@@ -2902,9 +3330,19 @@ int load_session_from_path(const char *path, const char *session_name,
 {
 	int ret, session_found = !session_name;
 	DIR *directory = NULL;
+	struct lttng_dynamic_buffer file_path;
+	size_t path_len;
 
 	assert(path);
 	assert(validation_ctx);
+	path_len = strlen(path);
+	lttng_dynamic_buffer_init(&file_path);
+	if (path_len >= LTTNG_PATH_MAX) {
+		ERR("Session configuration load path \"%s\" length (%zu) exceeds the maximal length allowed (%d)",
+				path, path_len, LTTNG_PATH_MAX);
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
 
 	directory = opendir(path);
 	if (!directory) {
@@ -2921,67 +3359,107 @@ int load_session_from_path(const char *path, const char *session_name,
 		}
 	}
 	if (directory) {
-		struct dirent *entry;
-		struct dirent *result;
-		char *file_path = NULL;
-		size_t path_len = strlen(path);
+		size_t file_path_root_len;
 
-		if (path_len >= PATH_MAX) {
-			ret = -LTTNG_ERR_INVALID;
-			goto end;
-		}
-
-		entry = alloc_dirent(path);
-		if (!entry) {
+		ret = lttng_dynamic_buffer_set_capacity(&file_path,
+				LTTNG_PATH_MAX);
+		if (ret) {
 			ret = -LTTNG_ERR_NOMEM;
 			goto end;
 		}
 
-		file_path = zmalloc(PATH_MAX);
-		if (!file_path) {
+	        ret = lttng_dynamic_buffer_append(&file_path, path, path_len);
+		if (ret) {
 			ret = -LTTNG_ERR_NOMEM;
-			free(entry);
 			goto end;
 		}
 
-		strncpy(file_path, path, path_len);
-		if (file_path[path_len - 1] != '/') {
-			file_path[path_len++] = '/';
+		if (file_path.data[file_path.size - 1] != '/') {
+		        ret = lttng_dynamic_buffer_append(&file_path, "/", 1);
+			if (ret) {
+				ret = -LTTNG_ERR_NOMEM;
+				goto end;
+			}
 		}
+		file_path_root_len = file_path.size;
 
-		ret = 0;
 		/* Search for *.lttng files */
-		while (!readdir_r(directory, entry, &result) && result) {
-			size_t file_name_len = strlen(result->d_name);
+		for (;;) {
+			size_t file_name_len;
+			struct dirent *result;
+
+			/*
+			 * When the end of the directory stream is reached, NULL
+			 * is returned and errno is kept unchanged. When an
+			 * error occurs, NULL is returned and errno is set
+			 * accordingly. To distinguish between the two, set
+			 * errno to zero before calling readdir().
+			 *
+			 * On success, readdir() returns a pointer to a dirent
+			 * structure. This structure may be statically
+			 * allocated, do not attempt to free(3) it.
+			 */
+			errno = 0;
+			result = readdir(directory);
+
+			/* Reached end of dir stream or error out. */
+			if (!result) {
+				if (errno) {
+					PERROR("Failed to enumerate the contents of path \"%s\" while loading session, readdir returned", path);
+					ret = -LTTNG_ERR_LOAD_IO_FAIL;
+					goto end;
+				}
+				break;
+			}
+
+			file_name_len = strlen(result->d_name);
 
 			if (file_name_len <=
 				sizeof(DEFAULT_SESSION_CONFIG_FILE_EXTENSION)) {
 				continue;
 			}
 
-			if (path_len + file_name_len >= PATH_MAX) {
+			if (file_path.size + file_name_len >= LTTNG_PATH_MAX) {
+				WARN("Ignoring file \"%s\" since the path's length (%zu) would exceed the maximal permitted size (%d)",
+						result->d_name,
+						/* +1 to account for NULL terminator. */
+						file_path.size + file_name_len + 1,
+						LTTNG_PATH_MAX);
 				continue;
 			}
 
+			/* Does the file end with .lttng? */
 			if (strcmp(DEFAULT_SESSION_CONFIG_FILE_EXTENSION,
-				result->d_name + file_name_len - sizeof(
-				DEFAULT_SESSION_CONFIG_FILE_EXTENSION) + 1)) {
+					result->d_name + file_name_len - sizeof(
+					DEFAULT_SESSION_CONFIG_FILE_EXTENSION) + 1)) {
 				continue;
 			}
 
-			strncpy(file_path + path_len, result->d_name, file_name_len);
-			file_path[path_len + file_name_len] = '\0';
+			ret = lttng_dynamic_buffer_append(&file_path, result->d_name,
+					file_name_len + 1);
+			if (ret) {
+				ret = -LTTNG_ERR_NOMEM;
+				goto end;
+			}
 
-			ret = load_session_from_file(file_path, session_name,
+			ret = load_session_from_file(file_path.data, session_name,
 				validation_ctx, overwrite, overrides);
 			if (session_name && !ret) {
 				session_found = 1;
 				break;
 			}
+			/*
+			 * Reset the buffer's size to the location of the
+			 * path's trailing '/'.
+			 */
+			ret = lttng_dynamic_buffer_set_size(&file_path,
+					file_path_root_len);
+			if (ret) {
+				ret = -LTTNG_ERR_UNK;
+				goto end;
+			}
 		}
 
-		free(entry);
-		free(file_path);
 	} else {
 		ret = load_session_from_file(path, session_name,
 			validation_ctx, overwrite, overrides);
@@ -2998,11 +3476,10 @@ end:
 			PERROR("closedir");
 		}
 	}
-
 	if (session_found && !ret) {
 		ret = 0;
 	}
-
+	lttng_dynamic_buffer_reset(&file_path);
 	return ret;
 }
 
@@ -3055,7 +3532,7 @@ int config_load_session(const char *path, const char *session_name,
 	}
 
 	if (!path) {
-		char *home_path;
+		const char *home_path;
 		const char *sys_path;
 
 		/* Try home path */

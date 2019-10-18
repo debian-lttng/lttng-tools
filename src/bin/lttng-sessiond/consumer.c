@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
+ *               2018 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License, version 2 only, as
@@ -29,11 +30,68 @@
 #include <common/defaults.h>
 #include <common/uri.h>
 #include <common/relayd/relayd.h>
+#include <common/string-utils/format.h>
 
 #include "consumer.h"
 #include "health-sessiond.h"
 #include "ust-app.h"
 #include "utils.h"
+#include "lttng-sessiond.h"
+
+/*
+ * Return allocated full pathname of the session using the consumer trace path
+ * and subdir if available.
+ *
+ * The caller can safely free(3) the returned value. On error, NULL is
+ * returned.
+ */
+char *setup_channel_trace_path(struct consumer_output *consumer,
+		const char *session_path)
+{
+	int ret;
+	char *pathname;
+
+	assert(consumer);
+	assert(session_path);
+
+	health_code_update();
+
+	/*
+	 * Allocate the string ourself to make sure we never exceed
+	 * LTTNG_PATH_MAX.
+	 */
+	pathname = zmalloc(LTTNG_PATH_MAX);
+	if (!pathname) {
+		goto error;
+	}
+
+	/* Get correct path name destination */
+	if (consumer->type == CONSUMER_DST_NET &&
+			consumer->relay_major_version == 2 &&
+			consumer->relay_minor_version < 11) {
+		ret = snprintf(pathname, LTTNG_PATH_MAX, "%s%s/%s%s",
+				consumer->dst.net.base_dir,
+				consumer->chunk_path, consumer->domain_subdir,
+				session_path);
+	} else {
+		ret = snprintf(pathname, LTTNG_PATH_MAX, "%s%s",
+				consumer->domain_subdir, session_path);
+	}
+	DBG3("Consumer trace path relative to current trace chunk: \"%s\"",
+			pathname);
+	if (ret < 0) {
+		PERROR("Failed to format channel path");
+		goto error;
+	} else if (ret >= LTTNG_PATH_MAX) {
+		ERR("Truncation occurred while formatting channel path");
+		goto error;
+	}
+
+	return pathname;
+error:
+	free(pathname);
+	return NULL;
+}
 
 /*
  * Send a data payload using a given consumer socket of size len.
@@ -312,7 +370,7 @@ error:
  * object reference is not needed anymore.
  */
 struct consumer_socket *consumer_find_socket_by_bitness(int bits,
-		struct consumer_output *consumer)
+		const struct consumer_output *consumer)
 {
 	int consumer_fd;
 	struct consumer_socket *socket = NULL;
@@ -345,7 +403,7 @@ end:
  * returned consumer_socket.
  */
 struct consumer_socket *consumer_find_socket(int key,
-		struct consumer_output *consumer)
+		const struct consumer_output *consumer)
 {
 	struct lttng_ht_iter iter;
 	struct lttng_ht_node_ulong *node;
@@ -402,7 +460,7 @@ void consumer_add_socket(struct consumer_socket *sock,
 }
 
 /*
- * Delte consumer socket to consumer output object. Read side lock must be
+ * Delete consumer socket to consumer output object. Read side lock must be
  * acquired before calling this function.
  */
 void consumer_del_socket(struct consumer_socket *sock,
@@ -548,25 +606,26 @@ void consumer_output_put(struct consumer_output *obj)
  *
  * Should *NOT* be called with RCU read-side lock held.
  */
-struct consumer_output *consumer_copy_output(struct consumer_output *obj)
+struct consumer_output *consumer_copy_output(struct consumer_output *src)
 {
 	int ret;
 	struct consumer_output *output;
 
-	assert(obj);
+	assert(src);
 
-	output = consumer_create_output(obj->type);
+	output = consumer_create_output(src->type);
 	if (output == NULL) {
 		goto end;
 	}
-	output->enabled = obj->enabled;
-	output->net_seq_index = obj->net_seq_index;
-	memcpy(output->subdir, obj->subdir, PATH_MAX);
-	output->snapshot = obj->snapshot;
-	output->relay_major_version = obj->relay_major_version;
-	output->relay_minor_version = obj->relay_minor_version;
-	memcpy(&output->dst, &obj->dst, sizeof(output->dst));
-	ret = consumer_copy_sockets(output, obj);
+	output->enabled = src->enabled;
+	output->net_seq_index = src->net_seq_index;
+	memcpy(output->domain_subdir, src->domain_subdir,
+			sizeof(output->domain_subdir));
+	output->snapshot = src->snapshot;
+	output->relay_major_version = src->relay_major_version;
+	output->relay_minor_version = src->relay_minor_version;
+	memcpy(&output->dst, &src->dst, sizeof(output->dst));
+	ret = consumer_copy_sockets(output, src);
 	if (ret < 0) {
 		goto error_put;
 	}
@@ -625,33 +684,32 @@ error:
 }
 
 /*
- * Set network URI to the consumer output object.
+ * Set network URI to the consumer output.
  *
  * Return 0 on success. Return 1 if the URI were equal. Else, negative value on
  * error.
  */
-int consumer_set_network_uri(struct consumer_output *obj,
+int consumer_set_network_uri(const struct ltt_session *session,
+		struct consumer_output *output,
 		struct lttng_uri *uri)
 {
 	int ret;
-	char tmp_path[PATH_MAX];
-	char hostname[HOST_NAME_MAX];
 	struct lttng_uri *dst_uri = NULL;
 
 	/* Code flow error safety net. */
-	assert(obj);
+	assert(output);
 	assert(uri);
 
 	switch (uri->stype) {
 	case LTTNG_STREAM_CONTROL:
-		dst_uri = &obj->dst.net.control;
-		obj->dst.net.control_isset = 1;
+		dst_uri = &output->dst.net.control;
+		output->dst.net.control_isset = 1;
 		if (uri->port == 0) {
 			/* Assign default port. */
 			uri->port = DEFAULT_NETWORK_CONTROL_PORT;
 		} else {
-			if (obj->dst.net.data_isset && uri->port ==
-					obj->dst.net.data.port) {
+			if (output->dst.net.data_isset && uri->port ==
+					output->dst.net.data.port) {
 				ret = -LTTNG_ERR_INVALID;
 				goto error;
 			}
@@ -659,14 +717,14 @@ int consumer_set_network_uri(struct consumer_output *obj,
 		DBG3("Consumer control URI set with port %d", uri->port);
 		break;
 	case LTTNG_STREAM_DATA:
-		dst_uri = &obj->dst.net.data;
-		obj->dst.net.data_isset = 1;
+		dst_uri = &output->dst.net.data;
+		output->dst.net.data_isset = 1;
 		if (uri->port == 0) {
 			/* Assign default port. */
 			uri->port = DEFAULT_NETWORK_DATA_PORT;
 		} else {
-			if (obj->dst.net.control_isset && uri->port ==
-					obj->dst.net.control.port) {
+			if (output->dst.net.control_isset && uri->port ==
+					output->dst.net.control.port) {
 				ret = -LTTNG_ERR_INVALID;
 				goto error;
 			}
@@ -687,41 +745,89 @@ int consumer_set_network_uri(struct consumer_output *obj,
 	}
 
 	/* URIs were not equal, replacing it. */
-	memset(dst_uri, 0, sizeof(struct lttng_uri));
 	memcpy(dst_uri, uri, sizeof(struct lttng_uri));
-	obj->type = CONSUMER_DST_NET;
+	output->type = CONSUMER_DST_NET;
+	if (dst_uri->stype != LTTNG_STREAM_CONTROL) {
+		/* Only the control uri needs to contain the path. */
+		goto end;
+	}
 
-	/* Handle subdir and add hostname in front. */
-	if (dst_uri->stype == LTTNG_STREAM_CONTROL) {
-		/* Get hostname to append it in the pathname */
-		ret = gethostname(hostname, sizeof(hostname));
-		if (ret < 0) {
-			PERROR("gethostname. Fallback on default localhost");
-			strncpy(hostname, "localhost", sizeof(hostname));
-		}
-		hostname[sizeof(hostname) - 1] = '\0';
-
-		/* Setup consumer subdir if none present in the control URI */
-		if (strlen(dst_uri->subdir) == 0) {
-			ret = snprintf(tmp_path, sizeof(tmp_path), "%s/%s",
-					hostname, obj->subdir);
-		} else {
-			ret = snprintf(tmp_path, sizeof(tmp_path), "%s/%s",
-					hostname, dst_uri->subdir);
-		}
-		if (ret < 0) {
-			PERROR("snprintf set consumer uri subdir");
-			ret = -LTTNG_ERR_NOMEM;
-			goto error;
-		}
-
-		if (lttng_strncpy(obj->subdir, tmp_path, sizeof(obj->subdir))) {
+	/*
+	 * If the user has specified a subdir as part of the control
+	 * URL, the session's base output directory is:
+	 *   /RELAYD_OUTPUT_PATH/HOSTNAME/USER_SPECIFIED_DIR
+	 *
+	 * Hence, the "base_dir" from which all stream files and
+	 * session rotation chunks are created takes the form
+	 *   /HOSTNAME/USER_SPECIFIED_DIR
+	 *
+	 * If the user has not specified an output directory as part of
+	 * the control URL, the base output directory has the form:
+	 *   /RELAYD_OUTPUT_PATH/HOSTNAME/SESSION_NAME-CREATION_TIME
+	 *
+	 * Hence, the "base_dir" from which all stream files and
+	 * session rotation chunks are created takes the form
+	 *   /HOSTNAME/SESSION_NAME-CREATION_TIME
+	 *
+	 * Note that automatically generated session names already
+	 * contain the session's creation time. In that case, the
+	 * creation time is omitted to prevent it from being duplicated
+	 * in the final directory hierarchy.
+	 */
+	if (*uri->subdir) {
+		if (strstr(uri->subdir, "../")) {
+			ERR("Network URI subdirs are not allowed to walk up the path hierarchy");
 			ret = -LTTNG_ERR_INVALID;
 			goto error;
 		}
-		DBG3("Consumer set network uri subdir path %s", tmp_path);
+		ret = snprintf(output->dst.net.base_dir,
+				sizeof(output->dst.net.base_dir),
+				"/%s/%s/", session->hostname, uri->subdir);
+	} else {
+		if (session->has_auto_generated_name) {
+			ret = snprintf(output->dst.net.base_dir,
+					sizeof(output->dst.net.base_dir),
+					"/%s/%s/", session->hostname,
+					session->name);
+		} else {
+			char session_creation_datetime[16];
+			size_t strftime_ret;
+			struct tm *timeinfo;
+
+			timeinfo = localtime(&session->creation_time);
+			if (!timeinfo) {
+				ret = -LTTNG_ERR_FATAL;
+				goto error;
+			}
+			strftime_ret = strftime(session_creation_datetime,
+					sizeof(session_creation_datetime),
+					"%Y%m%d-%H%M%S", timeinfo);
+			if (strftime_ret == 0) {
+				ERR("Failed to format session creation timestamp while setting network URI");
+				ret = -LTTNG_ERR_FATAL;
+				goto error;
+			}
+			ret = snprintf(output->dst.net.base_dir,
+					sizeof(output->dst.net.base_dir),
+					"/%s/%s-%s/", session->hostname,
+					session->name,
+					session_creation_datetime);
+		}
+	}
+	if (ret >= sizeof(output->dst.net.base_dir)) {
+		ret = -LTTNG_ERR_INVALID;
+		ERR("Truncation occurred while setting network output base directory");
+		goto error;
+	} else if (ret == -1) {
+		ret = -LTTNG_ERR_INVALID;
+		PERROR("Error occurred while setting network output base directory");
+		goto error;
 	}
 
+	DBG3("Consumer set network uri base_dir path %s",
+			output->dst.net.base_dir);
+
+end:
 	return 0;
 equal:
 	return 1;
@@ -734,7 +840,8 @@ error:
  *
  * The consumer socket lock must be held by the caller.
  */
-int consumer_send_fds(struct consumer_socket *sock, int *fds, size_t nb_fd)
+int consumer_send_fds(struct consumer_socket *sock, const int *fds,
+		size_t nb_fd)
 {
 	int ret;
 
@@ -819,8 +926,6 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t session_id,
 		const char *pathname,
 		const char *name,
-		uid_t uid,
-		gid_t gid,
 		uint64_t relayd_id,
 		uint64_t key,
 		unsigned char *uuid,
@@ -832,12 +937,27 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint32_t ust_app_uid,
 		int64_t blocking_timeout,
 		const char *root_shm_path,
-		const char *shm_path)
+		const char *shm_path,
+		struct lttng_trace_chunk *trace_chunk,
+		const struct lttng_credentials *buffer_credentials)
 {
 	assert(msg);
 
-	/* Zeroed structure */
+        /* Zeroed structure */
 	memset(msg, 0, sizeof(struct lttcomm_consumer_msg));
+	msg->u.ask_channel.buffer_credentials.uid = UINT32_MAX;
+	msg->u.ask_channel.buffer_credentials.gid = UINT32_MAX;
+
+        if (trace_chunk) {
+		uint64_t chunk_id;
+		enum lttng_trace_chunk_status chunk_status;
+
+		chunk_status = lttng_trace_chunk_get_id(trace_chunk, &chunk_id);
+		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+		LTTNG_OPTIONAL_SET(&msg->u.ask_channel.chunk_id, chunk_id);
+        }
+	msg->u.ask_channel.buffer_credentials.uid = buffer_credentials->uid;
+	msg->u.ask_channel.buffer_credentials.gid = buffer_credentials->gid;
 
 	msg->cmd_type = LTTNG_CONSUMER_ASK_CHANNEL_CREATION;
 	msg->u.ask_channel.subbuf_size = subbuf_size;
@@ -851,8 +971,6 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 	msg->u.ask_channel.type = type;
 	msg->u.ask_channel.session_id = session_id;
 	msg->u.ask_channel.session_id_per_pid = session_id_per_pid;
-	msg->u.ask_channel.uid = uid;
-	msg->u.ask_channel.gid = gid;
 	msg->u.ask_channel.relayd_id = relayd_id;
 	msg->u.ask_channel.key = key;
 	msg->u.ask_channel.chan_id = chan_id;
@@ -888,8 +1006,7 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 /*
  * Init channel communication message structure.
  */
-void consumer_init_channel_comm_msg(struct lttcomm_consumer_msg *msg,
-		enum lttng_consumer_command cmd,
+void consumer_init_add_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t channel_key,
 		uint64_t session_id,
 		const char *pathname,
@@ -904,19 +1021,27 @@ void consumer_init_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t tracefile_count,
 		unsigned int monitor,
 		unsigned int live_timer_interval,
-		unsigned int monitor_timer_interval)
+		unsigned int monitor_timer_interval,
+		struct lttng_trace_chunk *trace_chunk)
 {
 	assert(msg);
 
 	/* Zeroed structure */
 	memset(msg, 0, sizeof(struct lttcomm_consumer_msg));
 
+        if (trace_chunk) {
+		uint64_t chunk_id;
+		enum lttng_trace_chunk_status chunk_status;
+
+		chunk_status = lttng_trace_chunk_get_id(trace_chunk, &chunk_id);
+		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+		LTTNG_OPTIONAL_SET(&msg->u.channel.chunk_id, chunk_id);
+        }
+
 	/* Send channel */
-	msg->cmd_type = cmd;
+	msg->cmd_type = LTTNG_CONSUMER_ADD_CHANNEL;
 	msg->u.channel.channel_key = channel_key;
 	msg->u.channel.session_id = session_id;
-	msg->u.channel.uid = uid;
-	msg->u.channel.gid = gid;
 	msg->u.channel.relayd_id = relayd_id;
 	msg->u.channel.nb_init_streams = nb_init_streams;
 	msg->u.channel.output = output;
@@ -938,17 +1063,16 @@ void consumer_init_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 /*
  * Init stream communication message structure.
  */
-void consumer_init_stream_comm_msg(struct lttcomm_consumer_msg *msg,
-		enum lttng_consumer_command cmd,
+void consumer_init_add_stream_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t channel_key,
 		uint64_t stream_key,
-		int cpu)
+		int32_t cpu)
 {
 	assert(msg);
 
 	memset(msg, 0, sizeof(struct lttcomm_consumer_msg));
 
-	msg->cmd_type = cmd;
+	msg->cmd_type = LTTNG_CONSUMER_ADD_STREAM;
 	msg->u.stream.channel_key = channel_key;
 	msg->u.stream.stream_key = stream_key;
 	msg->u.stream.cpu = cpu;
@@ -972,7 +1096,7 @@ void consumer_init_streams_sent_comm_msg(struct lttcomm_consumer_msg *msg,
  */
 int consumer_send_stream(struct consumer_socket *sock,
 		struct consumer_output *dst, struct lttcomm_consumer_msg *msg,
-		int *fds, size_t nb_fd)
+		const int *fds, size_t nb_fd)
 {
 	int ret;
 
@@ -1005,7 +1129,10 @@ error:
 int consumer_send_relayd_socket(struct consumer_socket *consumer_sock,
 		struct lttcomm_relayd_sock *rsock, struct consumer_output *consumer,
 		enum lttng_stream_type type, uint64_t session_id,
-		char *session_name, char *hostname, int session_live_timer)
+		const char *session_name, const char *hostname,
+		const char *base_path, int session_live_timer,
+		const uint64_t *current_chunk_id, time_t session_creation_time,
+		bool session_name_contains_creation_time)
 {
 	int ret;
 	struct lttcomm_consumer_msg msg;
@@ -1023,15 +1150,26 @@ int consumer_send_relayd_socket(struct consumer_socket *consumer_sock,
 	}
 
 	if (type == LTTNG_STREAM_CONTROL) {
+		char output_path[LTTNG_PATH_MAX] = {};
+		uint64_t relayd_session_id;
+
 		ret = relayd_create_session(rsock,
-				&msg.u.relayd_sock.relayd_session_id,
-				session_name, hostname, session_live_timer,
-				consumer->snapshot);
+				&relayd_session_id,
+				session_name, hostname, base_path,
+				session_live_timer,
+				consumer->snapshot, session_id,
+				sessiond_uuid, current_chunk_id,
+				session_creation_time,
+				session_name_contains_creation_time,
+				output_path);
 		if (ret < 0) {
 			/* Close the control socket. */
 			(void) relayd_close(rsock);
 			goto error;
 		}
+		msg.u.relayd_sock.relayd_session_id = relayd_session_id;
+		DBG("Created session on relay, output path reply: %s",
+			output_path);
 	}
 
 	msg.cmd_type = LTTNG_CONSUMER_ADD_RELAYD_SOCKET;
@@ -1063,87 +1201,57 @@ error:
 	return ret;
 }
 
-int consumer_send_channel_monitor_pipe(struct consumer_socket *consumer_sock,
-		int pipe)
+static
+int consumer_send_pipe(struct consumer_socket *consumer_sock,
+		enum lttng_consumer_command cmd, int pipe)
 {
 	int ret;
 	struct lttcomm_consumer_msg msg;
+	const char *pipe_name;
+	const char *command_name;
+
+	switch (cmd) {
+	case LTTNG_CONSUMER_SET_CHANNEL_MONITOR_PIPE:
+		pipe_name = "channel monitor";
+		command_name = "SET_CHANNEL_MONITOR_PIPE";
+		break;
+	default:
+		ERR("Unexpected command received in %s (cmd = %d)", __func__,
+				(int) cmd);
+		abort();
+	}
 
 	/* Code flow error. Safety net. */
 
 	memset(&msg, 0, sizeof(msg));
-	msg.cmd_type = LTTNG_CONSUMER_SET_CHANNEL_MONITOR_PIPE;
+	msg.cmd_type = cmd;
 
 	pthread_mutex_lock(consumer_sock->lock);
-	DBG3("Sending set_channel_monitor_pipe command to consumer");
+	DBG3("Sending %s command to consumer", command_name);
 	ret = consumer_send_msg(consumer_sock, &msg);
 	if (ret < 0) {
 		goto error;
 	}
 
-	DBG3("Sending channel monitoring pipe %d to consumer on socket %d",
+	DBG3("Sending %s pipe %d to consumer on socket %d",
+			pipe_name,
 			pipe, *consumer_sock->fd_ptr);
 	ret = consumer_send_fds(consumer_sock, &pipe, 1);
 	if (ret < 0) {
 		goto error;
 	}
 
-	DBG2("Channel monitoring pipe successfully sent");
+	DBG2("%s pipe successfully sent", pipe_name);
 error:
 	pthread_mutex_unlock(consumer_sock->lock);
 	return ret;
 }
 
-/*
- * Set consumer subdirectory using the session name and a generated datetime if
- * needed. This is appended to the current subdirectory.
- */
-int consumer_set_subdir(struct consumer_output *consumer,
-		const char *session_name)
+int consumer_send_channel_monitor_pipe(struct consumer_socket *consumer_sock,
+		int pipe)
 {
-	int ret = 0;
-	unsigned int have_default_name = 0;
-	char datetime[16], tmp_path[PATH_MAX];
-	time_t rawtime;
-	struct tm *timeinfo;
-
-	assert(consumer);
-	assert(session_name);
-
-	memset(tmp_path, 0, sizeof(tmp_path));
-
-	/* Flag if we have a default session. */
-	if (strncmp(session_name, DEFAULT_SESSION_NAME "-",
-				strlen(DEFAULT_SESSION_NAME) + 1) == 0) {
-		have_default_name = 1;
-	} else {
-		/* Get date and time for session path */
-		time(&rawtime);
-		timeinfo = localtime(&rawtime);
-		strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
-	}
-
-	if (have_default_name) {
-		ret = snprintf(tmp_path, sizeof(tmp_path),
-				"%s/%s", consumer->subdir, session_name);
-	} else {
-		ret = snprintf(tmp_path, sizeof(tmp_path),
-				"%s/%s-%s/", consumer->subdir, session_name, datetime);
-	}
-	if (ret < 0) {
-		PERROR("snprintf session name date");
-		goto error;
-	}
-
-	if (lttng_strncpy(consumer->subdir, tmp_path,
-			sizeof(consumer->subdir))) {
-		ret = -EINVAL;
-		goto error;
-	}
-	DBG2("Consumer subdir set to %s", consumer->subdir);
-
-error:
-	return ret;
+	return consumer_send_pipe(consumer_sock,
+			LTTNG_CONSUMER_SET_CHANNEL_MONITOR_PIPE, pipe);
 }
 
 /*
@@ -1391,18 +1499,19 @@ end:
 /*
  * Ask the consumer to snapshot a specific channel using the key.
  *
- * Return 0 on success or else a negative error.
+ * Returns LTTNG_OK on success or else an LTTng error code.
  */
-int consumer_snapshot_channel(struct consumer_socket *socket, uint64_t key,
-		struct snapshot_output *output, int metadata, uid_t uid, gid_t gid,
-		const char *session_path, int wait, uint64_t nb_packets_per_stream)
+enum lttng_error_code consumer_snapshot_channel(struct consumer_socket *socket,
+		uint64_t key, const struct consumer_output *output, int metadata,
+		uid_t uid, gid_t gid, const char *channel_path, int wait,
+		uint64_t nb_packets_per_stream)
 {
 	int ret;
+	enum lttng_error_code status = LTTNG_OK;
 	struct lttcomm_consumer_msg msg;
 
 	assert(socket);
 	assert(output);
-	assert(output->consumer);
 
 	DBG("Consumer snapshot channel key %" PRIu64, key);
 
@@ -1412,39 +1521,23 @@ int consumer_snapshot_channel(struct consumer_socket *socket, uint64_t key,
 	msg.u.snapshot_channel.nb_packets_per_stream = nb_packets_per_stream;
 	msg.u.snapshot_channel.metadata = metadata;
 
-	if (output->consumer->type == CONSUMER_DST_NET) {
-		msg.u.snapshot_channel.relayd_id = output->consumer->net_seq_index;
+	if (output->type == CONSUMER_DST_NET) {
+		msg.u.snapshot_channel.relayd_id =
+				output->net_seq_index;
 		msg.u.snapshot_channel.use_relayd = 1;
-		ret = snprintf(msg.u.snapshot_channel.pathname,
-				sizeof(msg.u.snapshot_channel.pathname),
-				"%s/%s-%s-%" PRIu64 "%s", output->consumer->subdir,
-				output->name, output->datetime, output->nb_snapshot,
-				session_path);
-		if (ret < 0) {
-			ret = -LTTNG_ERR_NOMEM;
-			goto error;
-		}
 	} else {
-		ret = snprintf(msg.u.snapshot_channel.pathname,
-				sizeof(msg.u.snapshot_channel.pathname),
-				"%s/%s-%s-%" PRIu64 "%s", output->consumer->dst.trace_path,
-				output->name, output->datetime, output->nb_snapshot,
-				session_path);
-		if (ret < 0) {
-			ret = -LTTNG_ERR_NOMEM;
-			goto error;
-		}
 		msg.u.snapshot_channel.relayd_id = (uint64_t) -1ULL;
-
-		/* Create directory. Ignore if exist. */
-		ret = run_as_mkdir_recursive(msg.u.snapshot_channel.pathname,
-				S_IRWXU | S_IRWXG, uid, gid);
-		if (ret < 0) {
-			if (errno != EEXIST) {
-				ERR("Trace directory creation error");
-				goto error;
-			}
-		}
+	}
+	ret = lttng_strncpy(msg.u.snapshot_channel.pathname,
+			channel_path,
+			sizeof(msg.u.snapshot_channel.pathname));
+	if (ret < 0) {
+		ERR("Snapshot path exceeds the maximal allowed length of %zu bytes (%zu bytes required) with path \"%s\"",
+				sizeof(msg.u.snapshot_channel.pathname),
+				strlen(channel_path),
+				channel_path);
+		status = LTTNG_ERR_SNAPSHOT_FAIL;
+		goto error;
 	}
 
 	health_code_update();
@@ -1452,12 +1545,20 @@ int consumer_snapshot_channel(struct consumer_socket *socket, uint64_t key,
 	ret = consumer_send_msg(socket, &msg);
 	pthread_mutex_unlock(socket->lock);
 	if (ret < 0) {
+		switch (-ret) {
+		case LTTCOMM_CONSUMERD_CHAN_NOT_FOUND:
+			status = LTTNG_ERR_CHAN_NOT_FOUND;
+			break;
+		default:
+			status = LTTNG_ERR_SNAPSHOT_FAIL;
+			break;
+		}
 		goto error;
 	}
 
 error:
 	health_code_update();
-	return ret;
+	return status;
 }
 
 /*
@@ -1571,5 +1672,420 @@ int consumer_get_lost_packets(uint64_t session_id, uint64_t channel_key,
 
 end:
 	rcu_read_unlock();
+	return ret;
+}
+
+/*
+ * Ask the consumer to rotate a channel.
+ *
+ * The new_chunk_id is the session->rotate_count that has been incremented
+ * when the rotation started. On the relay, this allows to keep track in which
+ * chunk each stream is currently writing to (for the rotate_pending operation).
+ */
+int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
+		uid_t uid, gid_t gid, struct consumer_output *output,
+		bool is_metadata_channel)
+{
+	int ret;
+	struct lttcomm_consumer_msg msg;
+
+	assert(socket);
+
+	DBG("Consumer rotate channel key %" PRIu64, key);
+
+	pthread_mutex_lock(socket->lock);
+	memset(&msg, 0, sizeof(msg));
+	msg.cmd_type = LTTNG_CONSUMER_ROTATE_CHANNEL;
+	msg.u.rotate_channel.key = key;
+	msg.u.rotate_channel.metadata = !!is_metadata_channel;
+
+	if (output->type == CONSUMER_DST_NET) {
+		msg.u.rotate_channel.relayd_id = output->net_seq_index;
+	} else {
+		msg.u.rotate_channel.relayd_id = (uint64_t) -1ULL;
+	}
+
+	health_code_update();
+	ret = consumer_send_msg(socket, &msg);
+	if (ret < 0) {
+		switch (-ret) {
+		case LTTCOMM_CONSUMERD_CHAN_NOT_FOUND:
+			ret = -LTTNG_ERR_CHAN_NOT_FOUND;
+			break;
+		default:
+			ret = -LTTNG_ERR_ROTATION_FAIL_CONSUMER;
+			break;
+		}
+		goto error;
+	}
+error:
+	pthread_mutex_unlock(socket->lock);
+	health_code_update();
+	return ret;
+}
+
+int consumer_init(struct consumer_socket *socket,
+		const lttng_uuid sessiond_uuid)
+{
+	int ret;
+	struct lttcomm_consumer_msg msg = {
+		.cmd_type = LTTNG_CONSUMER_INIT,
+	};
+
+	assert(socket);
+
+	DBG("Sending consumer initialization command");
+	lttng_uuid_copy(msg.u.init.sessiond_uuid, sessiond_uuid);
+
+	health_code_update();
+	ret = consumer_send_msg(socket, &msg);
+	if (ret < 0) {
+		goto error;
+	}
+
+error:
+	health_code_update();
+	return ret;
+}
+
+/*
+ * Ask the consumer to create a new chunk for a given session.
+ *
+ * Called with the consumer socket lock held.
+ */
+int consumer_create_trace_chunk(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		struct lttng_trace_chunk *chunk)
+{
+	int ret;
+	enum lttng_trace_chunk_status chunk_status;
+	struct lttng_credentials chunk_credentials;
+	const struct lttng_directory_handle *chunk_directory_handle;
+	int chunk_dirfd;
+	const char *chunk_name;
+	bool chunk_name_overridden;
+	uint64_t chunk_id;
+	time_t creation_timestamp;
+	char creation_timestamp_buffer[ISO8601_STR_LEN];
+	const char *creation_timestamp_str = "(none)";
+	const bool chunk_has_local_output = relayd_id == -1ULL;
+	struct lttcomm_consumer_msg msg = {
+		.cmd_type = LTTNG_CONSUMER_CREATE_TRACE_CHUNK,
+		.u.create_trace_chunk.session_id = session_id,
+	};
+
+	assert(socket);
+	assert(chunk);
+
+	if (relayd_id != -1ULL) {
+		LTTNG_OPTIONAL_SET(&msg.u.create_trace_chunk.relayd_id,
+				relayd_id);
+	}
+
+	chunk_status = lttng_trace_chunk_get_name(chunk, &chunk_name,
+			&chunk_name_overridden);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK &&
+			chunk_status != LTTNG_TRACE_CHUNK_STATUS_NONE) {
+		ERR("Failed to get name of trace chunk");
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+	if (chunk_name_overridden) {
+		ret = lttng_strncpy(msg.u.create_trace_chunk.override_name,
+				chunk_name,
+				sizeof(msg.u.create_trace_chunk.override_name));
+		if (ret) {
+			ERR("Trace chunk name \"%s\" exceeds the maximal length allowed by the consumer protocol",
+					chunk_name);
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
+	}
+
+	chunk_status = lttng_trace_chunk_get_creation_timestamp(chunk,
+			&creation_timestamp);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+	msg.u.create_trace_chunk.creation_timestamp =
+			(uint64_t) creation_timestamp;
+	/* Only used for logging purposes. */
+	ret = time_to_iso8601_str(creation_timestamp,
+			creation_timestamp_buffer,
+			sizeof(creation_timestamp_buffer));
+	creation_timestamp_str = !ret ? creation_timestamp_buffer :
+			"(formatting error)";
+
+	chunk_status = lttng_trace_chunk_get_id(chunk, &chunk_id);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		/*
+		 * Anonymous trace chunks should never be transmitted
+		 * to remote peers (consumerd and relayd). They are used
+		 * internally for backward-compatibility purposes.
+		 */
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+	msg.u.create_trace_chunk.chunk_id = chunk_id;
+
+	if (chunk_has_local_output) {
+		chunk_status = lttng_trace_chunk_get_chunk_directory_handle(
+				chunk, &chunk_directory_handle);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
+
+		/*
+		 * This will only compile on platforms that support
+		 * dirfd (POSIX.2008). This is fine as the session daemon
+		 * is only built for such platforms.
+		 *
+		 * The ownership of the chunk directory handle's is maintained
+		 * by the trace chunk.
+		 */
+		chunk_dirfd = lttng_directory_handle_get_dirfd(
+				chunk_directory_handle);
+		assert(chunk_dirfd >= 0);
+
+		chunk_status = lttng_trace_chunk_get_credentials(
+				chunk, &chunk_credentials);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			/*
+			 * Not associating credentials to a sessiond chunk is a
+			 * fatal internal error.
+			 */
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
+		msg.u.create_trace_chunk.credentials.value.uid =
+				chunk_credentials.uid;
+		msg.u.create_trace_chunk.credentials.value.gid =
+				chunk_credentials.gid;
+		msg.u.create_trace_chunk.credentials.is_set = 1;
+	}
+
+	DBG("Sending consumer create trace chunk command: relayd_id = %" PRId64
+			", session_id = %" PRIu64 ", chunk_id = %" PRIu64
+			", creation_timestamp = %s",
+			relayd_id, session_id, chunk_id,
+			creation_timestamp_str);
+	health_code_update();
+	ret = consumer_send_msg(socket, &msg);
+	health_code_update();
+	if (ret < 0) {
+		ERR("Trace chunk creation error on consumer");
+		ret = -LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+
+	if (chunk_has_local_output) {
+		DBG("Sending trace chunk directory fd to consumer");
+		health_code_update();
+		ret = consumer_send_fds(socket, &chunk_dirfd, 1);
+		health_code_update();
+		if (ret < 0) {
+			ERR("Trace chunk creation error on consumer");
+			ret = -LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
+			goto error;
+		}
+	}
+error:
+	return ret;
+}
+
+/*
+ * Ask the consumer to close a trace chunk for a given session.
+ *
+ * Called with the consumer socket lock held.
+ */
+int consumer_close_trace_chunk(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		struct lttng_trace_chunk *chunk,
+		char *closed_trace_chunk_path)
+{
+	int ret;
+	enum lttng_trace_chunk_status chunk_status;
+	struct lttcomm_consumer_msg msg = {
+			.cmd_type = LTTNG_CONSUMER_CLOSE_TRACE_CHUNK,
+			.u.close_trace_chunk.session_id = session_id,
+	};
+	struct lttcomm_consumer_close_trace_chunk_reply reply;
+	uint64_t chunk_id;
+	time_t close_timestamp;
+	enum lttng_trace_chunk_command_type close_command;
+	const char *close_command_name = "none";
+	struct lttng_dynamic_buffer path_reception_buffer;
+
+	assert(socket);
+	lttng_dynamic_buffer_init(&path_reception_buffer);
+
+	if (relayd_id != -1ULL) {
+		LTTNG_OPTIONAL_SET(
+				&msg.u.close_trace_chunk.relayd_id, relayd_id);
+	}
+
+	chunk_status = lttng_trace_chunk_get_close_command(
+			chunk, &close_command);
+	switch (chunk_status) {
+	case LTTNG_TRACE_CHUNK_STATUS_OK:
+		LTTNG_OPTIONAL_SET(&msg.u.close_trace_chunk.close_command,
+				(uint32_t) close_command);
+		break;
+	case LTTNG_TRACE_CHUNK_STATUS_NONE:
+		break;
+	default:
+		ERR("Failed to get trace chunk close command");
+		ret = -1;
+		goto error;
+	}
+
+	chunk_status = lttng_trace_chunk_get_id(chunk, &chunk_id);
+	/*
+	 * Anonymous trace chunks should never be transmitted to remote peers
+	 * (consumerd and relayd). They are used internally for
+	 * backward-compatibility purposes.
+	 */
+	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+	msg.u.close_trace_chunk.chunk_id = chunk_id;
+
+	chunk_status = lttng_trace_chunk_get_close_timestamp(chunk,
+			&close_timestamp);
+	/*
+	 * A trace chunk should be closed locally before being closed remotely.
+	 * Otherwise, the close timestamp would never be transmitted to the
+	 * peers.
+	 */
+	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+	msg.u.close_trace_chunk.close_timestamp = (uint64_t) close_timestamp;
+
+	if (msg.u.close_trace_chunk.close_command.is_set) {
+		close_command_name = lttng_trace_chunk_command_type_get_name(
+				close_command);
+	}
+	DBG("Sending consumer close trace chunk command: relayd_id = %" PRId64
+			", session_id = %" PRIu64 ", chunk_id = %" PRIu64
+			", close command = \"%s\"",
+			relayd_id, session_id, chunk_id, close_command_name);
+
+	health_code_update();
+	ret = consumer_socket_send(socket, &msg, sizeof(struct lttcomm_consumer_msg));
+	if (ret < 0) {
+		ret = -LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+	ret = consumer_socket_recv(socket, &reply, sizeof(reply));
+	if (ret < 0) {
+		ret = -LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+	if (reply.path_length >= LTTNG_PATH_MAX) {
+		ERR("Invalid path returned by relay daemon: %" PRIu32 "bytes exceeds maximal allowed length of %d bytes",
+				reply.path_length, LTTNG_PATH_MAX);
+		ret = -LTTNG_ERR_INVALID_PROTOCOL;
+		goto error;
+	}
+	ret = lttng_dynamic_buffer_set_size(&path_reception_buffer,
+			reply.path_length);
+	if (ret) {
+		ERR("Failed to allocate reception buffer of path returned by the \"close trace chunk\" command");
+		ret = -LTTNG_ERR_NOMEM;
+		goto error;
+	}
+	ret = consumer_socket_recv(socket, path_reception_buffer.data,
+			path_reception_buffer.size);
+	if (ret < 0) {
+		ERR("Communication error while receiving path of closed trace chunk");
+		ret = -LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+	if (path_reception_buffer.data[path_reception_buffer.size - 1] != '\0') {
+		ERR("Invalid path returned by relay daemon: not null-terminated");
+		ret = -LTTNG_ERR_INVALID_PROTOCOL;
+		goto error;
+	}
+	if (closed_trace_chunk_path) {
+		/*
+		 * closed_trace_chunk_path is assumed to have a length >=
+		 * LTTNG_PATH_MAX
+		 */
+		memcpy(closed_trace_chunk_path, path_reception_buffer.data,
+				path_reception_buffer.size);
+	}
+error:
+	lttng_dynamic_buffer_reset(&path_reception_buffer);
+	health_code_update();
+	return ret;
+}
+
+/*
+ * Ask the consumer if a trace chunk exists.
+ *
+ * Called with the consumer socket lock held.
+ * Returns 0 on success, or a negative value on error.
+ */
+int consumer_trace_chunk_exists(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		struct lttng_trace_chunk *chunk,
+		enum consumer_trace_chunk_exists_status *result)
+{
+	int ret;
+	enum lttng_trace_chunk_status chunk_status;
+	struct lttcomm_consumer_msg msg = {
+		.cmd_type = LTTNG_CONSUMER_TRACE_CHUNK_EXISTS,
+		.u.trace_chunk_exists.session_id = session_id,
+	};
+	uint64_t chunk_id;
+	const char *consumer_reply_str;
+
+	assert(socket);
+
+	if (relayd_id != -1ULL) {
+		LTTNG_OPTIONAL_SET(&msg.u.trace_chunk_exists.relayd_id,
+				relayd_id);
+	}
+
+	chunk_status = lttng_trace_chunk_get_id(chunk, &chunk_id);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		/*
+		 * Anonymous trace chunks should never be transmitted
+		 * to remote peers (consumerd and relayd). They are used
+		 * internally for backward-compatibility purposes.
+		 */
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+	msg.u.trace_chunk_exists.chunk_id = chunk_id;
+
+	DBG("Sending consumer trace chunk exists command: relayd_id = %" PRId64
+			", session_id = %" PRIu64
+			", chunk_id = %" PRIu64, relayd_id, session_id, chunk_id);
+
+	health_code_update();
+	ret = consumer_send_msg(socket, &msg);
+	switch (-ret) {
+	case LTTCOMM_CONSUMERD_UNKNOWN_TRACE_CHUNK:
+		consumer_reply_str = "unknown trace chunk";
+		*result = CONSUMER_TRACE_CHUNK_EXISTS_STATUS_UNKNOWN_CHUNK;
+		break;
+	case LTTCOMM_CONSUMERD_TRACE_CHUNK_EXISTS_LOCAL:
+		consumer_reply_str = "trace chunk exists locally";
+		*result = CONSUMER_TRACE_CHUNK_EXISTS_STATUS_EXISTS_LOCAL;
+		break;
+	case LTTCOMM_CONSUMERD_TRACE_CHUNK_EXISTS_REMOTE:
+		consumer_reply_str = "trace chunk exists on remote peer";
+		*result = CONSUMER_TRACE_CHUNK_EXISTS_STATUS_EXISTS_REMOTE;
+		break;
+	default:
+		ERR("Consumer returned an error from TRACE_CHUNK_EXISTS command");
+		ret = -1;
+		goto error;
+	}
+	DBG("Consumer reply to TRACE_CHUNK_EXISTS command: %s",
+			consumer_reply_str);
+	ret = 0;
+error:
+	health_code_update();
 	return ret;
 }

@@ -23,6 +23,7 @@
 #include <common/error.h>
 
 #include "utils.h"
+#include "snapshot.h"
 #include "lttng-sessiond.h"
 
 int ht_cleanup_pipe[2] = { -1, -1 };
@@ -94,4 +95,16 @@ int loglevels_match(int a_loglevel_type, int a_loglevel_value,
 	}
 
 	return match;
+}
+
+const char *session_get_base_path(const struct ltt_session *session)
+{
+	return consumer_output_get_base_path(session->consumer);
+}
+
+const char *consumer_output_get_base_path(const struct consumer_output *output)
+{
+	return output->type == CONSUMER_DST_LOCAL ?
+			output->dst.session_root_path :
+			output->dst.net.base_dir;
 }

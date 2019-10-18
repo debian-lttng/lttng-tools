@@ -19,6 +19,7 @@
  */
 
 #include <lttng/health-internal.h>
+#include <stdbool.h>
 
 enum health_type_sessiond {
 	HEALTH_SESSIOND_TYPE_CMD		= 0,
@@ -30,11 +31,15 @@ enum health_type_sessiond {
 	HEALTH_SESSIOND_TYPE_APP_MANAGE_NOTIFY	= 6,
 	HEALTH_SESSIOND_TYPE_APP_REG_DISPATCH	= 7,
 	HEALTH_SESSIOND_TYPE_NOTIFICATION	= 8,
+	HEALTH_SESSIOND_TYPE_ROTATION		= 9,
+	HEALTH_SESSIOND_TYPE_TIMER		= 10,
 
 	NR_HEALTH_SESSIOND_TYPES,
 };
 
 /* Application health monitoring */
 extern struct health_app *health_sessiond;
+
+bool launch_health_management_thread(void);
 
 #endif /* HEALTH_SESSIOND_H */

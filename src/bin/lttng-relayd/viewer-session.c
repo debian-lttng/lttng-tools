@@ -47,12 +47,13 @@ int viewer_session_attach(struct relay_viewer_session *vsession,
 {
 	int ret = 0;
 
+	ASSERT_LOCKED(session->lock);
+
 	/* Will not fail, as per the ownership guarantee. */
 	if (!session_get(session)) {
 		ret = -1;
 		goto end;
 	}
-	pthread_mutex_lock(&session->lock);
 	if (session->viewer_attached) {
 		ret = -1;
 	} else {
@@ -69,8 +70,6 @@ int viewer_session_attach(struct relay_viewer_session *vsession,
 		/* Put our local ref. */
 		session_put(session);
 	}
-	/* Safe since we know the session exists. */
-	pthread_mutex_unlock(&session->lock);
 end:
 	return ret;
 }
@@ -102,6 +101,7 @@ static int viewer_session_detach(struct relay_viewer_session *vsession,
 
 void viewer_session_destroy(struct relay_viewer_session *vsession)
 {
+	lttng_trace_chunk_put(vsession->current_trace_chunk);
 	free(vsession);
 }
 
@@ -183,4 +183,26 @@ end_rcu_unlock:
 end:
 	pthread_mutex_unlock(&session->lock);
 	return found;
+}
+
+int viewer_session_set_trace_chunk(struct relay_viewer_session *vsession,
+		struct lttng_trace_chunk *relay_session_trace_chunk)
+{
+	int ret = 0;
+	struct lttng_trace_chunk *viewer_chunk;
+
+	assert(relay_session_trace_chunk);
+	assert(!vsession->current_trace_chunk);
+
+	DBG("Copying relay session's current trace chunk to the viewer session");
+	viewer_chunk = lttng_trace_chunk_copy(relay_session_trace_chunk);
+	if (!viewer_chunk) {
+		ERR("Failed to create a viewer trace chunk from the relay session's current chunk");
+		ret = -1;
+		goto end;
+	}
+
+	vsession->current_trace_chunk = viewer_chunk;
+end:
+	return ret;
 }

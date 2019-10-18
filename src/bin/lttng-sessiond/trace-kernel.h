@@ -58,11 +58,13 @@ struct ltt_kernel_event {
 	struct cds_list_head list;
 	char *filter_expression;
 	struct lttng_filter_bytecode *filter;
+	struct lttng_userspace_probe_location *userspace_probe_location;
 };
 
 /* Kernel channel */
 struct ltt_kernel_channel {
 	int fd;
+	uint64_t key; /* Key to reference this channel with the consumer. */
 	int enabled;
 	unsigned int stream_count;
 	unsigned int event_count;
@@ -80,6 +82,7 @@ struct ltt_kernel_channel {
 /* Metadata */
 struct ltt_kernel_metadata {
 	int fd;
+	uint64_t key; /* Key to reference this channel with the consumer. */
 	struct lttng_channel *conf;
 };
 
@@ -117,6 +120,8 @@ struct ltt_kernel_session {
 	unsigned int output_traces;
 	unsigned int snapshot_mode;
 	unsigned int has_non_default_channel;
+	/* Current trace chunk of the ltt_session. */
+	struct lttng_trace_chunk *current_trace_chunk;
 };
 
 /*
@@ -130,7 +135,7 @@ struct ltt_kernel_event *trace_kernel_find_event(
 		enum lttng_event_type type,
 		struct lttng_filter_bytecode *filter);
 struct ltt_kernel_channel *trace_kernel_get_channel_by_name(
-		char *name, struct ltt_kernel_session *session);
+		const char *name, struct ltt_kernel_session *session);
 
 /*
  * Create functions malloc() the data structure.
@@ -138,8 +143,9 @@ struct ltt_kernel_channel *trace_kernel_get_channel_by_name(
 struct ltt_kernel_session *trace_kernel_create_session(void);
 struct ltt_kernel_channel *trace_kernel_create_channel(
 		struct lttng_channel *chan);
-struct ltt_kernel_event *trace_kernel_create_event(struct lttng_event *ev,
-		char *filter_expression, struct lttng_filter_bytecode *filter);
+enum lttng_error_code trace_kernel_create_event(struct lttng_event *ev,
+		char *filter_expression, struct lttng_filter_bytecode *filter,
+		struct ltt_kernel_event **kernel_event);
 struct ltt_kernel_metadata *trace_kernel_create_metadata(void);
 struct ltt_kernel_stream *trace_kernel_create_stream(const char *name,
 		unsigned int count);
@@ -158,5 +164,6 @@ void trace_kernel_destroy_channel(struct ltt_kernel_channel *channel);
 void trace_kernel_destroy_event(struct ltt_kernel_event *event);
 void trace_kernel_destroy_stream(struct ltt_kernel_stream *stream);
 void trace_kernel_destroy_context(struct ltt_kernel_context *ctx);
+void trace_kernel_free_session(struct ltt_kernel_session *session);
 
 #endif /* _LTT_TRACE_KERNEL_H */

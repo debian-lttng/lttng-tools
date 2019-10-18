@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: lttng-enable-event
-.\"    Author: [see the "AUTHORS" section]
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 10/01/2019
+.\"      Date: 10/17/2019
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.10.8
+.\"    Source: LTTng 2.11.0
 .\"  Language: English
 .\"
-.TH "LTTNG\-ENABLE\-EVENT" "1" "10/01/2019" "LTTng 2\&.10\&.8" "LTTng Manual"
+.TH "LTTNG\-ENABLE\-EVENT" "1" "10/17/2019" "LTTng 2\&.11\&.0" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -35,7 +35,8 @@ Create or enable Linux kernel event rules:
 .sp
 .nf
 \fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBenable\-event\fR \fB--kernel\fR
-      [\fB--probe\fR=\fISOURCE\fR | \fB--function\fR=\fISOURCE\fR | \fB--syscall\fR]
+      [\fB--probe\fR=\fISOURCE\fR | \fB--function\fR=\fISOURCE\fR | \fB--syscall\fR |
+       \fB--userspace-probe\fR=\fISOURCE\fR]
       [\fB--filter\fR=\fIEXPR\fR] [\fB--session\fR=\fISESSION\fR]
       [\fB--channel\fR=\fICHANNEL\fR] \fIEVENT\fR[,\fIEVENT\fR]\&...
 .fi
@@ -47,7 +48,7 @@ Create or enable an "all" Linux kernel event rule:
       [\fB--filter\fR=\fIEXPR\fR] [\fB--session\fR=\fISESSION\fR] [\fB--channel\fR=\fICHANNEL\fR]
 .fi
 .sp
-Create or enable application event rules:
+Create or enable application/library event rules:
 .sp
 .nf
 \fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBenable\-event\fR
@@ -60,7 +61,7 @@ Create or enable application event rules:
 .sp
 The \fBlttng enable-event\fR command can create a new event rule, or enable one or more existing and disabled ones\&.
 .sp
-An event rule created by \fBlttng enable-event\fR is a set of conditions that must be satisfied in order for an actual event to be emitted by an LTTng tracer when the execution of an application or the Linux kernel reaches an event source (tracepoint, system call, dynamic probe)\&. Event sources can be listed with the \fBlttng-list\fR(1) command\&.
+An event rule created by \fBlttng enable-event\fR is a set of conditions that must be satisfied in order for an actual event to be emitted by an LTTng tracer when the execution of an application or a library or the Linux kernel reaches an event source (tracepoint, system call, dynamic probe)\&. Event sources can be listed with the \fBlttng-list\fR(1) command\&.
 .sp
 The \fBlttng-disable-event\fR(1) command can be used to disable existing event rules\&.
 .sp
@@ -71,16 +72,25 @@ If the \fB--session\fR option is omitted, the chosen channel is picked from the 
 Events can be enabled while tracing is active (use \fBlttng-start\fR(1) to make a tracing session active)\&.
 .SS "Event source types"
 .sp
-Four types of event sources are available in the Linux kernel tracing domain (\fB--kernel\fR option):
+Five types of event sources are available in the Linux kernel tracing domain (\fB--kernel\fR option):
 .PP
 Tracepoint (\fB--tracepoint\fR option; default)
 .RS 4
 A Linux kernel tracepoint, that is, a static instrumentation point placed in the kernel source code\&. Standard tracepoints are designed and placed in the source code by developers and record useful payload fields\&.
 .RE
 .PP
-Dynamic probe (\fB--probe\fR option)
+Dynamic kernel probe (\fB--probe\fR option)
 .RS 4
 A Linux kernel kprobe, that is, an instrumentation point placed dynamically in the compiled kernel code\&. Dynamic probe events do not record any payload field\&.
+.RE
+.PP
+Dynamic user space probe (\fB--userspace-probe\fR option)
+.RS 4
+A Linux kernel uprobe, that is, an instrumentation point placed dynamically in the compiled user space application/library through the kernel\&. Dynamic user space probe events do not record any payload field\&.
+.sp
+See the
+\fIDynamic user space probes\fR
+section for more information\&.
 .RE
 .PP
 Function probe (\fB--function\fR option)
@@ -158,8 +168,8 @@ argument with
 \fB--tracepoint\fR
 or
 \fB--syscall\fR
-options) or dynamic probe/function name/address (\fB--probe\fR
-or
+options) or dynamic probe/function name/address (\fB--probe\fR,
+\fB--userspace-probe\fR, and
 \fB--function\fR
 option\(cqs argument) which must match event source\(cqs equivalent\&.
 .sp
@@ -181,7 +191,7 @@ character, use
 .\}
 Filter expression (\fB--filter\fR
 option) executed against the dynamic values of event fields at execution time that must evaluate to true\&. See the
-\fIFilter expression syntax\fR
+\fIFilter expression\fR
 section below for more information\&.
 .RE
 .sp
@@ -220,7 +230,7 @@ option\&.
 .\}
 Filter expression (\fB--filter\fR
 option) executed against the dynamic values of event fields at execution time that must evaluate to true\&. See the
-\fIFilter expression syntax\fR
+\fIFilter expression\fR
 section below for more information\&.
 .RE
 .sp
@@ -240,7 +250,7 @@ option)\&.
 When using \fBlttng enable-event\fR with a set of conditions that does not currently exist for the chosen tracing session, domain, and channel, a new event rule is created\&. Otherwise, the existing event rule is enabled if it is currently disabled (see \fBlttng-disable-event\fR(1))\&.
 .sp
 The \fB--all\fR option can be used alongside the \fB--tracepoint\fR or \fB--syscall\fR options\&. When this option is used, no \fIEVENT\fR argument must be specified\&. This option defines a single event rule matching \fIall\fR the possible events of a given tracing domain for the chosen channel and tracing session\&. It is the equivalent of an \fIEVENT\fR argument named \fB*\fR (wildcard)\&.
-.SS "Filter expression syntax"
+.SS "Filter expression"
 .sp
 A filter expression can be specified with the \fB--filter\fR option when creating a new event rule\&. If the filter expression evaluates to true when executed against the dynamic values of an event\(cqs fields when tracing, the filtering condition passes\&.
 .if n \{\
@@ -260,121 +270,402 @@ Make sure to \fBsingle\-quote\fR the filter expression when running the command 
 .sp .5v
 .RE
 .sp
-The filter expression syntax is very similar to C language conditional expressions (expressions that can be evaluated by an \fBif\fR statement)\&.
+The filter expression syntax is similar to C language conditional expressions (expressions that can be evaluated by an \fBif\fR statement), albeit with a few differences:
 .sp
-The following logical operators are supported:
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+C integer and floating point number constants are supported, as well as literal strings between double quotes (\fB"\fR)\&. You can use
+\fB*\fR
+characters at any place in a literal string as wildcards to match zero or more characters\&. To use a literal
+\fB*\fR
+character, use
+\fB\e*\fR\&.
+.sp
+Examples:
+\fB32\fR,
+\fB-0x17\fR,
+\fB0755\fR,
+\fB12.34\fR,
+\fB"a \e"literal string\e""\fR,
+\fB"src/*/*.h"\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The dynamic value of an event field is read by using its name as a C identifier\&.
+.sp
+The dot and square bracket notations are available, like in the C language, to access nested structure and array/sequence fields\&. Only a constant, positive integer number can be used within square brackets\&. If the index is out of bounds, the whole filter expression evaluates to false (the event is discarded)\&.
+.sp
+An enumeration field\(cqs value is an integer\&.
+.sp
+When the expression\(cqs field does not exist, the whole filter expression evaluates to false\&.
+.sp
+Examples:
+\fBmy_field\fR,
+\fBtarget_cpu\fR,
+\fBseq[7]\fR,
+\fBmsg.user[1].data[2][17]\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The dynamic value of a statically\-known context field is read by prefixing its name with
+\fB$ctx.\fR\&. Statically\-known context fields are context fields added to channels without the
+\fB$app.\fR
+prefix using the
+\fBlttng-add-context\fR(1)
+command\&.
+.sp
+When the expression\(cqs statically\-known context field does not exist, the whole filter expression evaluates to false\&.
+.sp
+Examples:
+\fB$ctx.prio\fR,
+\fB$ctx.preemptible\fR,
+\fB$ctx.perf:cpu:stalled-cycles-frontend\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The dynamic value of an application\-specific context field is read by prefixing its name with
+\fB$app.\fR
+(follows the format used to add such a context field with the
+\fBlttng-add-context\fR(1)
+command)\&.
+.sp
+When the expression\(cqs application\-specific context field does not exist, the whole filter expression evaluates to false\&.
+.sp
+Example:
+\fB$app.server:cur_user\fR\&.
+.RE
+.sp
+The following precedence table shows the operators which are supported in a filter expression\&. In this table, the highest precedence is 1\&. Parentheses are supported to bypass the default order\&.
+.if n \{\
+.sp
+.\}
+.RS 4
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBImportant\fR
+.ps -1
+.br
+.sp
+Unlike the C language, the \fBlttng enable-event\fR filter expression syntax\(cqs bitwise AND and OR operators (\fB&\fR and \fB|\fR) take precedence over relational operators (\fB<\fR, \fB<=\fR, \fB>\fR, \fB>=\fR, \fB==\fR, and \fB!=\fR)\&. This means the filter expression \fB2 & 2 == 2\fR is true while the equivalent C expression is false\&.
+.sp .5v
+.RE
 .TS
 allbox tab(:);
-ltB ltB.
+ltB ltB ltB ltB.
 T{
-Name
+Precedence
 T}:T{
-Syntax
+Operator
+T}:T{
+Description
+T}:T{
+Associativity
 T}
 .T&
-lt lt
-lt lt
-lt lt.
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt.
 T{
 .sp
-Logical negation (NOT)
+1
 T}:T{
 .sp
-\fB!a\fR
+\fB-\fR
+T}:T{
+.sp
+Unary minus
+T}:T{
+.sp
+Right\-to\-left
 T}
 T{
 .sp
-Logical conjunction (AND)
+1
 T}:T{
 .sp
-\fBa && b\fR
+\fB+\fR
+T}:T{
+.sp
+Unary plus
+T}:T{
+.sp
+Right\-to\-left
 T}
 T{
 .sp
-Logical disjunction (OR)
+1
 T}:T{
 .sp
-\fBa || b\fR
-T}
-.TE
-.sp 1
-.sp
-The following comparison operators/relational operators are supported:
-.TS
-allbox tab(:);
-ltB ltB.
-T{
-Name
-T}:T{
-Syntax
-T}
-.T&
-lt lt
-lt lt
-lt lt
-lt lt
-lt lt
-lt lt.
-T{
-.sp
-Equal to
+\fB!\fR
 T}:T{
 .sp
-\fBa == b\fR
+Logical NOT
+T}:T{
+.sp
+Right\-to\-left
 T}
 T{
 .sp
-Not equal to
+1
 T}:T{
 .sp
-\fBa != b\fR
+\fB~\fR
+T}:T{
+.sp
+Bitwise NOT
+T}:T{
+.sp
+Right\-to\-left
 T}
 T{
 .sp
-Greater than
+2
 T}:T{
 .sp
-\fBa > b\fR
+\fB<<\fR
+T}:T{
+.sp
+Bitwise left shift
+T}:T{
+.sp
+Left\-to\-right
 T}
 T{
+.sp
+2
+T}:T{
+.sp
+\fB>>\fR
+T}:T{
+.sp
+Bitwise right shift
+T}:T{
+.sp
+Left\-to\-right
+T}
+T{
+.sp
+3
+T}:T{
+.sp
+\fB&\fR
+T}:T{
+.sp
+Bitwise AND
+T}:T{
+.sp
+Left\-to\-right
+T}
+T{
+.sp
+4
+T}:T{
+.sp
+\fB^\fR
+T}:T{
+.sp
+Bitwise XOR
+T}:T{
+.sp
+Left\-to\-right
+T}
+T{
+.sp
+5
+T}:T{
+.sp
+\fB|\fR
+T}:T{
+.sp
+Bitwise OR
+T}:T{
+.sp
+Left\-to\-right
+T}
+T{
+.sp
+6
+T}:T{
+.sp
+\fB<\fR
+T}:T{
 .sp
 Less than
 T}:T{
 .sp
-\fBa < b\fR
+Left\-to\-right
 T}
 T{
 .sp
-Greater than or equal to
+6
 T}:T{
 .sp
-\fBa >= b\fR
-T}
-T{
+\fB<=\fR
+T}:T{
 .sp
 Less than or equal to
 T}:T{
 .sp
-\fBa <= b\fR
+Left\-to\-right
+T}
+T{
+.sp
+6
+T}:T{
+.sp
+\fB>\fR
+T}:T{
+.sp
+Greater than
+T}:T{
+.sp
+Left\-to\-right
+T}
+T{
+.sp
+6
+T}:T{
+.sp
+\fB>=\fR
+T}:T{
+.sp
+Greater than or equal to
+T}:T{
+.sp
+Left\-to\-right
+T}
+T{
+.sp
+7
+T}:T{
+.sp
+\fB==\fR
+T}:T{
+.sp
+Equal to
+T}:T{
+.sp
+Left\-to\-right
+T}
+T{
+.sp
+7
+T}:T{
+.sp
+\fB!=\fR
+T}:T{
+.sp
+Not equal to
+T}:T{
+.sp
+Left\-to\-right
+T}
+T{
+.sp
+8
+T}:T{
+.sp
+\fB&&\fR
+T}:T{
+.sp
+Logical AND
+T}:T{
+.sp
+Left\-to\-right
+T}
+T{
+.sp
+9
+T}:T{
+.sp
+\fB||\fR
+T}:T{
+.sp
+Logical OR
+T}:T{
+.sp
+Left\-to\-right
 T}
 .TE
 .sp 1
 .sp
-The arithmetic and bitwise operators are NOT supported\&.
+The arithmetic operators are NOT supported\&.
 .sp
-The precedence table of the operators above is the same as the one of the C language\&. Parentheses are supported to bypass this\&.
+All integer constants and fields are first casted to signed 64\-bit integers\&. The representation of negative integers is two\(cqs complement\&. This means that, for example, the signed 8\-bit integer field 0xff (\-1) becomes 0xffffffffffffffff (still \-1) once casted\&.
 .sp
-The dynamic value of an event field is read by using its name as a C identifier\&.
+Before a bitwise operator is applied, all its operands are casted to unsigned 64\-bit integers, and the result is casted back to a signed 64\-bit integer\&. For the bitwise NOT operator, it is the equivalent of this C expression:
 .sp
-The dynamic value of a statically\-known context field is read by prefixing its name with \fB$ctx.\fR\&. Statically\-known context fields are context fields added to channels without the \fB$app.\fR prefix using the \fBlttng-add-context\fR(1) command\&. \fB$ctx.cpu_id\fR is also available as the ID of the CPU which emits the event\&.
+.if n \{\
+.RS 4
+.\}
+.nf
+(int64_t) ~((uint64_t) val)
+.fi
+.if n \{\
+.RE
+.\}
 .sp
-The dynamic value of an application\-specific context field is read by prefixing its name with \fB$app.\fR (follows the format used to add such a context field with the \fBlttng-add-context\fR(1) command)\&.
+For the binary bitwise operators, it is the equivalent of those C expressions:
 .sp
-When a comparison includes a non existent event field, the whole filter expression evaluates to false (the event is discarded)\&.
+.if n \{\
+.RS 4
+.\}
+.nf
+(int64_t) ((uint64_t) lhs >> (uint64_t) rhs)
+(int64_t) ((uint64_t) lhs << (uint64_t) rhs)
+(int64_t) ((uint64_t) lhs & (uint64_t) rhs)
+(int64_t) ((uint64_t) lhs ^ (uint64_t) rhs)
+(int64_t) ((uint64_t) lhs | (uint64_t) rhs)
+.fi
+.if n \{\
+.RE
+.\}
 .sp
-C integer and floating point number constants are supported, as well as literal strings between double quotes (\fB"\fR)\&. You can use \fB*\fR characters at any place in a literal string as wildcards to match zero or more characters\&. To use a literal \fB*\fR character, use \fB\e*\fR\&.
-.sp
-LTTng\-UST enumeration fields can be compared to integer values (fields or constants)\&.
+If the right\-hand side of a bitwise shift operator (\fB<<\fR and \fB>>\fR) is not in the [0,\ \&63] range, the whole filter expression evaluates to false\&.
 .if n \{\
 .sp
 .\}
@@ -392,7 +683,7 @@ Although it is possible to filter the process ID of an event when the \fBpid\fR 
 .sp .5v
 .RE
 .sp
-Examples:
+Filter expression examples:
 .sp
 .if n \{\
 .RS 4
@@ -429,6 +720,16 @@ $app\&.my_provider:my_context == 17\&.34e9 || some_enum >= 14
 .\}
 .nf
 $ctx\&.cpu_id == 2 && filename != "*\&.log"
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+eax_reg & 0xff7 == 0x240 && x[4] >> 12 <= 0x1234
 .fi
 .if n \{\
 .RE
@@ -924,6 +1225,13 @@ are allowed\&.
 (0)
 .RE
 .RE
+.SS "Dynamic user space probes"
+.sp
+With the \fB--userspace-probe\fR option, you can instrument function entries of any user space binary (application or library) using either an available symbol name or a SystemTap User\-level Statically Defined Tracing (USDT, a DTrace\-style marker) probe\(cqs provider and probe names\&. As of this version, only USDT probes that are NOT surrounded by a reference counter (semaphore) are supported\&.
+.sp
+The \fB--userspace-probe\fR option must be specified with the \fB--kernel\fR option because it uses Linux\(cqs uprobe feature to dynamically instrument a user space application or library\&.
+.sp
+As of this version, dynamic probe events do not record any payload field\&.
 .SH "OPTIONS"
 .sp
 General options are described in \fBlttng\fR(1)\&.
@@ -979,7 +1287,7 @@ One of:
 .PP
 \fB--function\fR=\fISOURCE\fR
 .RS 4
-Linux kernel kretprobe\&. Only available with the
+Dynamic kernel return probe (kretprobe)\&. Only available with the
 \fB--kernel\fR
 domain option\&.
 \fISOURCE\fR
@@ -1005,7 +1313,7 @@ prefix supported)
 .sp -1
 .IP \(bu 2.3
 .\}
-Function symbol
+Function symbol name
 .RE
 .sp
 .RS 4
@@ -1016,14 +1324,14 @@ Function symbol
 .sp -1
 .IP \(bu 2.3
 .\}
-Function symbol and offset (\fBSYMBOL+OFFSET\fR
+Function symbol name and offset (\fISYMBOL\fR\fB+\fR\fIOFFSET\fR
 format)
 .RE
 .RE
 .PP
 \fB--probe\fR=\fISOURCE\fR
 .RS 4
-Linux kernel kprobe\&. Only available with the
+Dynamic kernel probe (kprobe)\&. Only available with the
 \fB--kernel\fR
 domain option\&.
 \fISOURCE\fR
@@ -1049,7 +1357,7 @@ prefix supported)
 .sp -1
 .IP \(bu 2.3
 .\}
-Symbol
+Symbol nane
 .RE
 .sp
 .RS 4
@@ -1060,8 +1368,198 @@ Symbol
 .sp -1
 .IP \(bu 2.3
 .\}
-Symbol and offset (\fBSYMBOL+OFFSET\fR
+Symbol name and offset (\fISYMBOL\fR\fB+\fR\fIOFFSET\fR
 format)
+.RE
+.RE
+.PP
+\fB--userspace-probe\fR=\fISOURCE\fR
+.RS 4
+Dynamic user space probe (uprobe)\&. Only available with the
+\fB--kernel\fR
+domain option\&. See the
+\fIDynamic user space probes\fR
+section\&.
+.sp
+\fISOURCE\fR
+is one of:
+.PP
+[\fBelf:\fR]\fIPATH\fR\fB:\fR\fISYMBOL\fR
+.RS 4
+Dynamically instrument an available symbol within a user space application or library\&.
+.PP
+\fIPATH\fR
+.RS 4
+Application or library path\&.
+.sp
+This can be:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An absolute path\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A relative path\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An application\(cqs name as found in the directories listed in the
+\fBPATH\fR
+environment variable\&.
+.RE
+.RE
+.PP
+\fISYMBOL\fR
+.RS 4
+Symbol name of the function of which to instrument the entry\&.
+.sp
+This can be any defined code symbol listed by the
+\fBnm\fR(1)
+command (including with its
+\fB--dynamic\fR
+option which lists dynamic symbols)\&.
+.RE
+.sp
+As of this version, not specifying
+\fBelf:\fR
+is equivalent to specifying it\&.
+.sp
+Examples:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--userspace-probe=/usr/lib/libc.so.6:malloc\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--userspace-probe=./myapp:createUser\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--userspace-probe=httpd:ap_run_open_htaccess\fR
+.RE
+.RE
+.PP
+\fBsdt:\fR\fIPATH\fR\fB:\fR\fIPROVIDER\fR\fB:\fR\fINAME\fR
+.RS 4
+Dynamically instrument a USDT probe within a user space application or library\&.
+.PP
+\fIPATH\fR
+.RS 4
+Application or library path\&.
+.sp
+This can be:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An absolute path\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A relative path\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An application\(cqs name as found in the directories listed in the
+\fBPATH\fR
+environment variable\&.
+.RE
+.RE
+.PP
+\fIPROVIDER\fR\fB:\fR\fINAME\fR
+.RS 4
+USDT provider and probe names\&.
+.sp
+For example, with the following USDT probe:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+DTRACE_PROBE2("server", "accept_request",
+              request_id, ip_addr);
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+The provider/probe name pair is
+\fBserver:accept_request\fR\&.
+.RE
+.sp
+Example:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--userspace-probe=sdt:./build/server:server:accept_request\fR
+.RE
 .RE
 .RE
 .PP
@@ -1118,7 +1616,7 @@ domain\&.
 Add filter expression condition to the event rule\&. Expression
 \fIEXPR\fR
 must evaluate to true when executed against the dynamic values of event fields\&. See the
-\fIFilter expression syntax\fR
+\fIFilter expression\fR
 section above for more information\&.
 .RE
 .SS "Shortcuts"
@@ -1289,7 +1787,7 @@ If you encounter any issue or usability problem, please report it on the LTTng b
 .sp -1
 .IP \(bu 2.3
 .\}
-LTTng project website <http://lttng.org>
+LTTng project website <https://lttng.org>
 .RE
 .sp
 .RS 4
@@ -1300,7 +1798,7 @@ LTTng project website <http://lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-LTTng documentation <http://lttng.org/docs>
+LTTng documentation <https://lttng.org/docs>
 .RE
 .sp
 .RS 4
@@ -1372,11 +1870,6 @@ LTTng\-tools is distributed under the GNU General Public License version 2 <http
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
 .sp
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
-.SH "AUTHORS"
-.sp
-LTTng\-tools was originally written by Mathieu Desnoyers, Julien Desfossez, and David Goulet\&. More people have since contributed to it\&.
-.sp
-LTTng\-tools is currently maintained by J\('er\('emie Galarneau <mailto:jeremie.galarneau@efficios.com>\&.
 .SH "SEE ALSO"
 .sp
 \fBlttng-disable-event\fR(1), \fBlttng\fR(1)

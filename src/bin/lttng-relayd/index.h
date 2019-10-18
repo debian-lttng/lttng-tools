@@ -29,12 +29,13 @@
 #include "stream-fd.h"
 
 struct relay_stream;
+struct relay_connection;
+struct lttcomm_relayd_index;
 
 struct relay_index {
 	/*
 	 * index lock nests inside stream lock.
 	 */
-	pthread_mutex_t reflock;	/* Protects refcounting. */
 	struct urcu_ref ref;		/* Reference from getters. */
 	struct relay_stream *stream;	/* Back ref to stream */
 
@@ -47,6 +48,8 @@ struct relay_index {
 
 	/* Index packet data. This is the data that is written on disk. */
 	struct ctf_packet_index index_data;
+	/* Data + padding size of this packet, filled by the data thread. */
+	uint64_t total_size;
 
 	bool has_index_data;
 	bool flushed;
@@ -74,5 +77,9 @@ int relay_index_try_flush(struct relay_index *index);
 void relay_index_close_all(struct relay_stream *stream);
 void relay_index_close_partial_fd(struct relay_stream *stream);
 uint64_t relay_index_find_last(struct relay_stream *stream);
+int relay_index_switch_all_files(struct relay_stream *stream);
+int relay_index_set_control_data(struct relay_index *index,
+		const struct lttcomm_relayd_index *data,
+		unsigned int minor_version);
 
 #endif /* _RELAY_INDEX_H */

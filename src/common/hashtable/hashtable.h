@@ -26,7 +26,7 @@
 
 extern unsigned long lttng_ht_seed;
 
-typedef unsigned long (*hash_fct)(void *_key, unsigned long seed);
+typedef unsigned long (*hash_fct)(const void *_key, unsigned long seed);
 typedef cds_lfht_match_fct hash_match_fct;
 
 enum lttng_ht_type {
@@ -103,7 +103,7 @@ LTTNG_HIDDEN
 void lttng_ht_node_free_two_u64(struct lttng_ht_node_two_u64 *node);
 
 LTTNG_HIDDEN
-void lttng_ht_lookup(struct lttng_ht *ht, void *key,
+void lttng_ht_lookup(struct lttng_ht *ht, const void *key,
 		struct lttng_ht_iter *iter);
 
 /* Specialized add unique functions */

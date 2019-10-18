@@ -45,13 +45,15 @@ struct relay_stream;
  */
 struct relay_viewer_stream {
 	struct urcu_ref ref;
-	pthread_mutex_t reflock;
 
 	/* Back ref to stream. */
 	struct relay_stream *stream;
 
-	/* FD from which to read the stream data. */
-	struct stream_fd *stream_fd;
+	struct {
+		/* FD from which to read the stream data. */
+		struct stream_fd *fd;
+		struct lttng_trace_chunk *trace_chunk;
+	} stream_file;
 	/* index file from which to read the index data. */
 	struct lttng_index_file *index_file;
 
@@ -79,6 +81,7 @@ struct relay_viewer_stream {
 };
 
 struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
+		struct lttng_trace_chunk *viewer_trace_chunk,
 		enum lttng_viewer_seek seek_t);
 
 struct relay_viewer_stream *viewer_stream_get_by_id(uint64_t id);

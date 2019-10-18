@@ -1,5 +1,8 @@
 /* include/config.h.in.  Generated from configure.ac by autoheader.  */
 
+/* This platform supports directory file descriptors. */
+#undef COMPAT_DIRFD
+
 /* Location of the babeltrace viewer executable. */
 #undef CONFIG_BABELTRACE_BIN
 
@@ -18,11 +21,17 @@
 /* CMD_DESCR_DISABLE_EVENT */
 #undef CONFIG_CMD_DESCR_DISABLE_EVENT
 
+/* CMD_DESCR_DISABLE_ROTATION */
+#undef CONFIG_CMD_DESCR_DISABLE_ROTATION
+
 /* CMD_DESCR_ENABLE_CHANNEL */
 #undef CONFIG_CMD_DESCR_ENABLE_CHANNEL
 
 /* CMD_DESCR_ENABLE_EVENT */
 #undef CONFIG_CMD_DESCR_ENABLE_EVENT
+
+/* CMD_DESCR_ENABLE_ROTATION */
+#undef CONFIG_CMD_DESCR_ENABLE_ROTATION
 
 /* CMD_DESCR_HELP */
 #undef CONFIG_CMD_DESCR_HELP
@@ -35,6 +44,9 @@
 
 /* CMD_DESCR_REGENERATE */
 #undef CONFIG_CMD_DESCR_REGENERATE
+
+/* CMD_DESCR_ROTATE */
+#undef CONFIG_CMD_DESCR_ROTATE
 
 /* CMD_DESCR_SAVE */
 #undef CONFIG_CMD_DESCR_SAVE
@@ -150,11 +162,17 @@
 /* DEFAULT_NETWORK_DATA_PORT */
 #undef CONFIG_DEFAULT_NETWORK_DATA_PORT
 
+/* DEFAULT_NETWORK_RELAYD_CTRL_MAX_PAYLOAD_SIZE */
+#undef CONFIG_DEFAULT_NETWORK_RELAYD_CTRL_MAX_PAYLOAD_SIZE
+
 /* DEFAULT_NETWORK_VIEWER_BIND_ADDRESS */
 #undef CONFIG_DEFAULT_NETWORK_VIEWER_BIND_ADDRESS
 
 /* DEFAULT_NETWORK_VIEWER_PORT */
 #undef CONFIG_DEFAULT_NETWORK_VIEWER_PORT
+
+/* DEFAULT_ROTATE_PENDING_TIMER */
+#undef CONFIG_DEFAULT_ROTATE_PENDING_TIMER
 
 /* DEFAULT_UST_PID_CHANNEL_BLOCKING_TIMEOUT */
 #undef CONFIG_DEFAULT_UST_PID_CHANNEL_BLOCKING_TIMEOUT
@@ -237,6 +255,9 @@
 /* Define to 1 if you have the `dup2' function. */
 #undef HAVE_DUP2
 
+/* Define to 1 if you have the <elf.h> header file. */
+#undef HAVE_ELF_H
+
 /* This platform supports epoll(7). */
 #undef HAVE_EPOLL
 
@@ -303,11 +324,17 @@
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
 
+/* Define to 1 if you have the `memrchr' function. */
+#undef HAVE_MEMRCHR
+
 /* Define to 1 if you have the `memset' function. */
 #undef HAVE_MEMSET
 
 /* Define to 1 if you have the `mkdir' function. */
 #undef HAVE_MKDIR
+
+/* Define if you have LTTng-modules userspace callstack tracing support */
+#undef HAVE_MODULES_USERSPACE_CALLSTACK_CONTEXT
 
 /* Define to 1 if you have the `munmap' function. */
 #undef HAVE_MUNMAP
@@ -464,9 +491,6 @@
 
 /* Define if you have libuuid support */
 #undef LTTNG_HAVE_LIBUUID
-
-/* Has open_memstream support. */
-#undef LTTNG_HAVE_OPEN_MEMSTREAM
 
 /* Define to the sub-directory where libtool stores uninstalled libraries. */
 #undef LT_OBJDIR

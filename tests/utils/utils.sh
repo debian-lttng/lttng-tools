@@ -290,6 +290,41 @@ function lttng_disable_kernel_syscall_fail()
 	lttng_disable_kernel_syscall 1 "$@"
 }
 
+function lttng_enable_kernel_userspace_probe_event ()
+{
+	local expected_to_fail="$1"
+	local sess_name="$2"
+	local target="$3"
+	local event_name="$4"
+
+	"$TESTDIR/../src/bin/lttng/$LTTNG_BIN" enable-event --kernel --userspace-probe="$target" "$event_name" -s "$sess_name" > "$OUTPUT_DEST" 2> "$ERROR_OUTPUT_DEST"
+	ret=$?
+	if [[ $expected_to_fail -eq "1" ]]; then
+		test $ret -ne "0"
+		ok $? "Enable kernel userspace probe event for session $sess_name failed as expected"
+	else
+		ok $ret "Enable kernel userspace probe event for session $sess_name"
+	fi
+}
+
+function lttng_enable_kernel_userspace_probe_event_fail ()
+{
+	lttng_enable_kernel_userspace_probe_event 1 "$@"
+}
+
+function lttng_enable_kernel_userspace_probe_event_ok ()
+{
+	lttng_enable_kernel_userspace_probe_event 0 "$@"
+}
+
+function disable_kernel_lttng_userspace_probe_event_ok ()
+{
+	local sess_name="$1"
+	local event_name="$2"
+
+	"$TESTDIR/../src/bin/lttng/$LTTNG_BIN" disable-event --kernel "$event_name" -s "$sess_name" > "$OUTPUT_DEST" 2> "$ERROR_OUTPUT_DEST"
+	ok $? "Disable kernel event $target for session $sess_name"
+}
 function lttng_enable_kernel_channel()
 {
 	local withtap=$1
@@ -842,9 +877,19 @@ function list_lttng_with_opts ()
 function create_lttng_session_no_output ()
 {
 	local sess_name=$1
+	local opts="${@:2}"
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create $sess_name --no-output 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create $sess_name --no-output $opts 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ok $? "Create session $sess_name in no-output mode"
+}
+
+function create_lttng_session_uri () {
+	local sess_name=$1
+	local uri=$2
+	local opts="${@:3}"
+
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create $sess_name -U $uri $opts 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	ok $? "Create session $sess_name with uri:$uri and opts: $opts"
 }
 
 function create_lttng_session ()
@@ -855,7 +900,14 @@ function create_lttng_session ()
 	local trace_path=$4
 	local opt=$5
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create $sess_name -o $trace_path $opt > $OUTPUT_DEST
+	if [ -z "$trace_path" ]; then
+		# Use lttng-sessiond default output.
+		trace_path=""
+	else
+		trace_path="-o $trace_path"
+	fi
+
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create "$sess_name" $trace_path $opt 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ret=$?
 	if [ $expected_to_fail -eq "1" ]; then
 		test "$ret" -ne "0"
@@ -1196,54 +1248,76 @@ function disable_python_lttng_event ()
 	ok $? "Disable Python event $event_name for session $sess_name"
 }
 
-function start_lttng_tracing ()
+function start_lttng_tracing_opt ()
 {
-	local expected_to_fail=$1
-	local sess_name=$2
+	local withtap=$1
+	local expected_to_fail=$2
+	local sess_name=$3
 
 	$TESTDIR/../src/bin/lttng/$LTTNG_BIN start $sess_name 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ret=$?
 	if [[ $expected_to_fail -eq "1" ]]; then
 		test "$ret" -ne "0"
-		ok $? "Start tracing for session $sess_name failed as expected"
+		ret=$?
+		if [ $withtap -eq "1" ]; then
+			ok $? "Start tracing for session $sess_name failed as expected"
+		fi
 	else
-		ok $ret "Start tracing for session $sess_name"
+		if [ $withtap -eq "1" ]; then
+			ok $ret "Start tracing for session $sess_name"
+		fi
 	fi
 }
 
 function start_lttng_tracing_ok ()
 {
-	start_lttng_tracing 0 "$@"
+	start_lttng_tracing_opt 1 0 "$@"
 }
 
 function start_lttng_tracing_fail ()
 {
-	start_lttng_tracing 1 "$@"
+	start_lttng_tracing_opt 1 1 "$@"
 }
 
-function stop_lttng_tracing ()
+function start_lttng_tracing_notap ()
 {
-	local expected_to_fail=$1
-	local sess_name=$2
+	start_lttng_tracing_opt 0 1 "$@"
+}
+
+function stop_lttng_tracing_opt ()
+{
+	local withtap=$1
+	local expected_to_fail=$2
+	local sess_name=$3
 
 	$TESTDIR/../src/bin/lttng/$LTTNG_BIN stop $sess_name 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ret=$?
 	if [[ $expected_to_fail -eq "1" ]]; then
 		test "$ret" -ne "0"
-		ok $? "Stop lttng tracing for session $sess_name failed as expected"
+		ret=$?
+		if [ $withtap -eq "1" ]; then
+			ok $? "Stop lttng tracing for session $sess_name failed as expected"
+		fi
 	else
-		ok $ret "Stop lttng tracing for session $sess_name"
+		if [ $withtap -eq "1" ]; then
+			ok $ret "Stop lttng tracing for session $sess_name"
+		fi
 	fi
 }
 
 function stop_lttng_tracing_ok ()
 {
-	stop_lttng_tracing 0 "$@"
+	stop_lttng_tracing_opt 1 0 "$@"
 }
 
 function stop_lttng_tracing_fail ()
 {
-	stop_lttng_tracing 1 "$@"
+	stop_lttng_tracing_opt 1 1 "$@"
+}
+
+function stop_lttng_tracing_notap ()
+{
+	stop_lttng_tracing_opt 0 0 "$@"
 }
 
 function destroy_lttng_session ()
@@ -1295,7 +1369,7 @@ function lttng_snapshot_add_output ()
 	local sess_name=$2
 	local trace_path=$3
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot add-output -s $sess_name file://$trace_path 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot add-output -s $sess_name $trace_path 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ret=$?
 	if [[ $expected_to_fail -eq 1 ]]; then
 		test "$ret" -ne "0"
@@ -1346,7 +1420,7 @@ function lttng_snapshot_record ()
 	local sess_name=$1
 	local trace_path=$2
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot record -s $sess_name 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot record -s $sess_name $trace_path 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ok $? "Snapshot recorded"
 }
 
@@ -1439,6 +1513,26 @@ function lttng_untrack_fail()
 	lttng_untrack 1 "$@"
 }
 
+function lttng_track_pid_ok()
+{
+	PID=$1
+	"$TESTDIR/../src/bin/lttng/$LTTNG_BIN" track --kernel --pid=$PID 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	ok $? "Lttng track pid on the kernel domain"
+}
+
+function lttng_untrack_kernel_all_ok()
+{
+	"$TESTDIR/../src/bin/lttng/$LTTNG_BIN" untrack --kernel --pid --all 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	ok $? "Lttng untrack all pid on the kernel domain"
+}
+
+function lttng_add_context_list()
+{
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN add-context --list 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	ret=$?
+	ok $ret "Context listing"
+}
+
 function add_context_lttng()
 {
 	local expected_to_fail="$1"
@@ -1477,6 +1571,29 @@ function add_context_kernel_fail()
 	add_context_lttng 1 -k "$@"
 }
 
+function validate_metadata_event ()
+{
+	local event_name=$1
+	local nr_event_id=$2
+	local trace_path=$3
+
+	local metadata_file=$(find $trace_path | grep metadata)
+	local metadata_path=$(dirname $metadata_file)
+
+	which $BABELTRACE_BIN >/dev/null
+	skip $? -ne 0 "Babeltrace binary not found. Skipping trace matches"
+
+	local count=$($BABELTRACE_BIN --output-format=ctf-metadata $metadata_path | grep $event_name | wc -l)
+
+	if [ "$count" -ne "$nr_event_id" ]; then
+		fail "Metadata match with the metadata of $count event(s) named $event_name"
+		diag "$count matching event id found in metadata"
+	else
+		pass "Metadata match with the metadata of $count event(s) named $event_name"
+	fi
+
+}
+
 function trace_matches ()
 {
 	local event_name=$1
@@ -1508,12 +1625,12 @@ function trace_match_only()
 	local count=$($BABELTRACE_BIN $trace_path | grep $event_name | wc -l)
 	local total=$($BABELTRACE_BIN $trace_path | wc -l)
 
-    if [ "$nr_iter" -eq "$count" ] && [ "$total" -eq "$nr_iter" ]; then
-        pass "Trace match with $total event $event_name"
-    else
-        fail "Trace match"
-        diag "$total event(s) found, expecting $nr_iter of event $event_name and only found $count"
-    fi
+	if [ "$nr_iter" -eq "$count" ] && [ "$total" -eq "$nr_iter" ]; then
+		pass "Trace match with $total event $event_name"
+	else
+		fail "Trace match"
+		diag "$total event(s) found, expecting $nr_iter of event $event_name and only found $count"
+	fi
 }
 
 function validate_trace
@@ -1591,7 +1708,7 @@ function validate_trace_exp()
 	which $BABELTRACE_BIN >/dev/null
 	skip $? -ne 0 "Babeltrace binary not found. Skipping trace validation"
 
-	traced=$($BABELTRACE_BIN $trace_path 2>/dev/null | grep ${event_exp} | wc -l)
+	traced=$($BABELTRACE_BIN $trace_path 2>/dev/null | grep --extended-regexp ${event_exp} | wc -l)
 	if [ "$traced" -ne 0 ]; then
 		pass "Validate trace for expression '${event_exp}', $traced events"
 	else
@@ -1610,11 +1727,11 @@ function validate_trace_only_exp()
 	which $BABELTRACE_BIN >/dev/null
 	skip $? -ne 0 "Babeltrace binary not found. Skipping trace matches"
 
-	local count=$($BABELTRACE_BIN $trace_path | grep ${event_exp} | wc -l)
+	local count=$($BABELTRACE_BIN $trace_path | grep --extended-regexp ${event_exp} | wc -l)
 	local total=$($BABELTRACE_BIN $trace_path | wc -l)
 
 	if [ "$count" -ne 0 ] && [ "$total" -eq "$count" ]; then
-		pass "Trace match with $total for expression '${event_exp}"
+		pass "Trace match with $total for expression '${event_exp}'"
 	else
 		fail "Trace match"
 		diag "$total syscall event(s) found, only syscalls matching expression '${event_exp}' ($count occurrences) are expected"
@@ -1700,6 +1817,31 @@ function regenerate_statedump_fail ()
 	regenerate_statedump 1 "$@"
 }
 
+function rotate_session ()
+{
+	local expected_to_fail=$1
+	local sess_name=$2
+
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN rotate $sess_name 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	ret=$?
+	if [[ $expected_to_fail -eq "1" ]]; then
+		test "$ret" -ne "0"
+		ok $? "Expected fail on rotate session $sess_name"
+	else
+		ok $ret "Rotate session $sess_name"
+	fi
+}
+
+function rotate_session_ok ()
+{
+	rotate_session 0 "$@"
+}
+
+function rotate_session_fail ()
+{
+	rotate_session 1 "$@"
+}
+
 function destructive_tests_enabled ()
 {
 	if [ ${LTTNG_ENABLE_DESTRUCTIVE_TESTS} = "will-break-my-system" ]; then
@@ -1707,4 +1849,56 @@ function destructive_tests_enabled ()
 	else
 		return 1
 	fi
+}
+
+function lttng_enable_rotation_timer ()
+{
+	local expected_to_fail=$1
+	local sess_name=$2
+	local period=$3
+
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-rotation -s $sess_name --timer $period 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	ret=$?
+	if [[ $expected_to_fail -eq "1" ]]; then
+		test "$ret" -ne "0"
+		ok $? "Expected fail when setting periodic rotation ($period) of session $sess_name"
+	else
+		ok $ret "Set periodic rotation ($period) of session $sess_name"
+	fi
+}
+
+function lttng_enable_rotation_timer_ok ()
+{
+	lttng_enable_rotation_timer 0 $@
+}
+
+function lttng_enable_rotation_timer_fail ()
+{
+	lttng_enable_rotation_timer 1 $@
+}
+
+function lttng_enable_rotation_size ()
+{
+	local expected_to_fail=$1
+	local sess_name=$2
+	local size=$3
+
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-rotation -s $sess_name --size $size 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	ret=$?
+	if [[ $expected_to_fail -eq "1" ]]; then
+		test "$ret" -ne "0"
+		ok $? "Expected fail on rotate session $sess_name"
+	else
+		ok $ret "Rotate session $sess_name"
+	fi
+}
+
+function lttng_enable_rotation_size_ok ()
+{
+	lttng_enable_rotation_size 0 $@
+}
+
+function lttng_enable_rotation_size_fail ()
+{
+	lttng_enable_rotation_size 1 $@
 }

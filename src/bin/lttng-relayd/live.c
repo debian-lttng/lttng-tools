@@ -197,7 +197,7 @@ end:
  */
 static
 ssize_t send_viewer_streams(struct lttcomm_sock *sock,
-		struct relay_session *session, unsigned int ignore_sent_flag)
+		uint64_t session_id, unsigned int ignore_sent_flag)
 {
 	ssize_t ret;
 	struct lttng_viewer_stream send_stream;
@@ -218,7 +218,7 @@ ssize_t send_viewer_streams(struct lttcomm_sock *sock,
 
 		pthread_mutex_lock(&vstream->stream->lock);
 		/* Ignore if not the same session. */
-		if (vstream->stream->trace->session->id != session->id ||
+		if (vstream->stream->trace->session->id != session_id ||
 				(!ignore_sent_flag && vstream->sent_flag)) {
 			pthread_mutex_unlock(&vstream->stream->lock);
 			viewer_stream_put(vstream);
@@ -271,24 +271,25 @@ end_unlock:
  * viewer stream of the session, the number of unsent stream and the number of
  * stream created. Those counters can be NULL and thus will be ignored.
  *
+ * session must be locked to ensure that we see either none or all initial
+ * streams for a session, but no intermediate state..
+ *
  * Return 0 on success or else a negative value.
  */
-static
-int make_viewer_streams(struct relay_session *session,
-		enum lttng_viewer_seek seek_t, uint32_t *nb_total, uint32_t *nb_unsent,
-		uint32_t *nb_created, bool *closed)
+static int make_viewer_streams(struct relay_session *session,
+		struct lttng_trace_chunk *viewer_trace_chunk,
+		enum lttng_viewer_seek seek_t,
+		uint32_t *nb_total,
+		uint32_t *nb_unsent,
+		uint32_t *nb_created,
+		bool *closed)
 {
 	int ret;
 	struct lttng_ht_iter iter;
 	struct ctf_trace *ctf_trace;
 
 	assert(session);
-
-	/*
-	 * Hold the session lock to ensure that we see either none or
-	 * all initial streams for a session, but no intermediate state.
-	 */
-	pthread_mutex_lock(&session->lock);
+	ASSERT_LOCKED(session->lock);
 
 	if (session->connection_closed) {
 		*closed = true;
@@ -323,7 +324,8 @@ int make_viewer_streams(struct relay_session *session,
 			}
 			vstream = viewer_stream_get_by_id(stream->stream_handle);
 			if (!vstream) {
-				vstream = viewer_stream_create(stream, seek_t);
+				vstream = viewer_stream_create(stream,
+						viewer_trace_chunk, seek_t);
 				if (!vstream) {
 					ret = -1;
 					ctf_trace_put(ctf_trace);
@@ -358,7 +360,7 @@ int make_viewer_streams(struct relay_session *session,
 					}
 				} else {
 					if (!stream->closed ||
-						!(((int64_t) (stream->prev_seq - stream->last_net_seq_num)) >= 0)) {
+						!(((int64_t) (stream->prev_data_seq - stream->last_net_seq_num)) >= 0)) {
 
 						(*nb_total)++;
 					}
@@ -376,7 +378,6 @@ int make_viewer_streams(struct relay_session *session,
 
 error_unlock:
 	rcu_read_unlock();
-	pthread_mutex_unlock(&session->lock);
 	return ret;
 }
 
@@ -542,11 +543,6 @@ restart:
 			/* Fetch once the poll data */
 			revents = LTTNG_POLL_GETEV(&events, i);
 			pollfd = LTTNG_POLL_GETFD(&events, i);
-
-			if (!revents) {
-				/* No activity for this FD (poll implementation). */
-				continue;
-			}
 
 			/* Thread quit pipe has been closed. Killing thread. */
 			ret = check_thread_quit_pipe(pollfd, revents);
@@ -914,7 +910,7 @@ int viewer_get_new_streams(struct relay_connection *conn)
 	uint32_t nb_created = 0, nb_unsent = 0, nb_streams = 0, nb_total = 0;
 	struct lttng_viewer_new_streams_request request;
 	struct lttng_viewer_new_streams_response response;
-	struct relay_session *session;
+	struct relay_session *session = NULL;
 	uint64_t session_id;
 	bool closed = false;
 
@@ -951,11 +947,24 @@ int viewer_get_new_streams(struct relay_connection *conn)
 	send_streams = 1;
 	response.status = htobe32(LTTNG_VIEWER_NEW_STREAMS_OK);
 
-	ret = make_viewer_streams(session, LTTNG_VIEWER_SEEK_LAST, &nb_total, &nb_unsent,
+	pthread_mutex_lock(&session->lock);
+	if (!conn->viewer_session->current_trace_chunk &&
+			session->current_trace_chunk) {
+		ret = viewer_session_set_trace_chunk(conn->viewer_session,
+				session->current_trace_chunk);
+		if (ret) {
+			goto error_unlock_session;
+		}
+	}
+	ret = make_viewer_streams(session,
+			conn->viewer_session->current_trace_chunk,
+			LTTNG_VIEWER_SEEK_LAST, &nb_total, &nb_unsent,
 			&nb_created, &closed);
 	if (ret < 0) {
-		goto end_put_session;
+		goto error_unlock_session;
 	}
+	pthread_mutex_unlock(&session->lock);
+
 	/* Only send back the newly created streams with the unsent ones. */
 	nb_streams = nb_created + nb_unsent;
 	response.streams_count = htobe32(nb_streams);
@@ -993,7 +1002,7 @@ send_reply:
 	 * streams that were not sent from that point will be sent to
 	 * the viewer.
 	 */
-	ret = send_viewer_streams(conn->sock, session, 0);
+	ret = send_viewer_streams(conn->sock, session_id, 0);
 	if (ret < 0) {
 		goto end_put_session;
 	}
@@ -1003,6 +1012,10 @@ end_put_session:
 		session_put(session);
 	}
 error:
+	return ret;
+error_unlock_session:
+	pthread_mutex_unlock(&session->lock);
+	session_put(session);
 	return ret;
 }
 
@@ -1020,6 +1033,7 @@ int viewer_attach_session(struct relay_connection *conn)
 	struct lttng_viewer_attach_session_response response;
 	struct relay_session *session = NULL;
 	bool closed = false;
+	uint64_t session_id;
 
 	assert(conn);
 
@@ -1031,6 +1045,7 @@ int viewer_attach_session(struct relay_connection *conn)
 		goto error;
 	}
 
+	session_id = be64toh(request.session_id);
 	health_code_update();
 
 	memset(&response, 0, sizeof(response));
@@ -1041,16 +1056,15 @@ int viewer_attach_session(struct relay_connection *conn)
 		goto send_reply;
 	}
 
-	session = session_get_by_id(be64toh(request.session_id));
+	session = session_get_by_id(session_id);
 	if (!session) {
-		DBG("Relay session %" PRIu64 " not found",
-				(uint64_t) be64toh(request.session_id));
+		DBG("Relay session %" PRIu64 " not found", session_id);
 		response.status = htobe32(LTTNG_VIEWER_ATTACH_UNK);
 		goto send_reply;
 	}
-	DBG("Attach session ID %" PRIu64 " received",
-		(uint64_t) be64toh(request.session_id));
+	DBG("Attach session ID %" PRIu64 " received", session_id);
 
+	pthread_mutex_lock(&session->lock);
 	if (session->live_timer == 0) {
 		DBG("Not live session");
 		response.status = htobe32(LTTNG_VIEWER_ATTACH_NOT_LIVE);
@@ -1078,13 +1092,25 @@ int viewer_attach_session(struct relay_connection *conn)
 		goto send_reply;
 	}
 
-	ret = make_viewer_streams(session, seek_type, &nb_streams, NULL,
-			NULL, &closed);
+	if (!conn->viewer_session->current_trace_chunk &&
+			session->current_trace_chunk) {
+		ret = viewer_session_set_trace_chunk(conn->viewer_session,
+				session->current_trace_chunk);
+		if (ret) {
+			goto end_put_session;
+		}
+	}
+	ret = make_viewer_streams(session,
+			conn->viewer_session->current_trace_chunk, seek_type,
+			&nb_streams, NULL, NULL, &closed);
 	if (ret < 0) {
 		goto end_put_session;
 	}
-	response.streams_count = htobe32(nb_streams);
+	pthread_mutex_unlock(&session->lock);
+	session_put(session);
+	session = NULL;
 
+	response.streams_count = htobe32(nb_streams);
 	/*
 	 * If the session is closed when the viewer is attaching, it
 	 * means some of the streams may have been concurrently removed,
@@ -1116,13 +1142,14 @@ send_reply:
 	}
 
 	/* Send stream and ignore the sent flag. */
-	ret = send_viewer_streams(conn->sock, session, 1);
+	ret = send_viewer_streams(conn->sock, session_id, 1);
 	if (ret < 0) {
 		goto end_put_session;
 	}
 
 end_put_session:
 	if (session) {
+		pthread_mutex_unlock(&session->lock);
 		session_put(session);
 	}
 error:
@@ -1143,6 +1170,8 @@ static int try_open_index(struct relay_viewer_stream *vstream,
 		struct relay_stream *rstream)
 {
 	int ret = 0;
+	const uint32_t connection_major = rstream->trace->session->major;
+	const uint32_t connection_minor = rstream->trace->session->minor;
 
 	if (vstream->index_file) {
 		goto end;
@@ -1155,10 +1184,12 @@ static int try_open_index(struct relay_viewer_stream *vstream,
 		ret = -ENOENT;
 		goto end;
 	}
-	vstream->index_file = lttng_index_file_open(vstream->path_name,
-			vstream->channel_name,
-			vstream->stream->tracefile_count,
-			vstream->current_tracefile_id);
+	vstream->index_file = lttng_index_file_create_from_trace_chunk_read_only(
+			vstream->stream_file.trace_chunk, rstream->path_name,
+			rstream->channel_name, rstream->tracefile_size,
+			vstream->current_tracefile_id,
+			lttng_to_index_major(connection_major, connection_minor),
+			lttng_to_index_minor(connection_major, connection_minor));
 	if (!vstream->index_file) {
 		ret = -1;
 	}
@@ -1366,31 +1397,30 @@ int viewer_get_next_index(struct relay_connection *conn)
 	 * overwrite caused by tracefile rotation (in association with
 	 * unlink performed before overwrite).
 	 */
-	if (!vstream->stream_fd) {
-		char fullpath[PATH_MAX];
+	if (!vstream->stream_file.fd) {
+		int fd;
+		char file_path[LTTNG_PATH_MAX];
+		enum lttng_trace_chunk_status status;
 
-		if (vstream->stream->tracefile_count > 0) {
-			ret = snprintf(fullpath, PATH_MAX, "%s/%s_%" PRIu64,
-					vstream->path_name,
-					vstream->channel_name,
-					vstream->current_tracefile_id);
-		} else {
-			ret = snprintf(fullpath, PATH_MAX, "%s/%s",
-					vstream->path_name,
-					vstream->channel_name);
-		}
+		ret = utils_stream_file_path(rstream->path_name,
+				rstream->channel_name, rstream->tracefile_size,
+				vstream->current_tracefile_id, NULL, file_path,
+				sizeof(file_path));
 		if (ret < 0) {
 			goto error_put;
 		}
-		ret = open(fullpath, O_RDONLY);
-		if (ret < 0) {
-			PERROR("Relay opening trace file");
+
+		status = lttng_trace_chunk_open_file(
+				vstream->stream_file.trace_chunk,
+				file_path, O_RDONLY, 0, &fd);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			PERROR("Failed to open trace file for viewer stream");
 			goto error_put;
 		}
-		vstream->stream_fd = stream_fd_create(ret);
-		if (!vstream->stream_fd) {
-			if (close(ret)) {
-				PERROR("close");
+		vstream->stream_file.fd = stream_fd_create(fd);
+		if (!vstream->stream_file.fd) {
+			if (close(fd)) {
+				PERROR("Failed to close viewer stream file");
 			}
 			goto error_put;
 		}
@@ -1531,19 +1561,19 @@ int viewer_get_packet(struct relay_connection *conn)
 	}
 
 	pthread_mutex_lock(&vstream->stream->lock);
-	lseek_ret = lseek(vstream->stream_fd->fd, be64toh(get_packet_info.offset),
-			SEEK_SET);
+	lseek_ret = lseek(vstream->stream_file.fd->fd,
+			be64toh(get_packet_info.offset), SEEK_SET);
 	if (lseek_ret < 0) {
-		PERROR("lseek fd %d to offset %" PRIu64, vstream->stream_fd->fd,
-			(uint64_t) be64toh(get_packet_info.offset));
+		PERROR("lseek fd %d to offset %" PRIu64,
+				vstream->stream_file.fd->fd,
+				(uint64_t) be64toh(get_packet_info.offset));
 		goto error;
 	}
-	read_len = lttng_read(vstream->stream_fd->fd,
-			reply + sizeof(reply_header),
-			packet_data_len);
+	read_len = lttng_read(vstream->stream_file.fd->fd,
+			reply + sizeof(reply_header), packet_data_len);
 	if (read_len < packet_data_len) {
 		PERROR("Relay reading trace file, fd: %d, offset: %" PRIu64,
-				vstream->stream_fd->fd,
+				vstream->stream_file.fd->fd,
 				(uint64_t) be64toh(get_packet_info.offset));
 		goto error;
 	}
@@ -1649,23 +1679,31 @@ int viewer_get_metadata(struct relay_connection *conn)
 	}
 
 	/* first time, we open the metadata file */
-	if (!vstream->stream_fd) {
-		char fullpath[PATH_MAX];
+	if (!vstream->stream_file.fd) {
+		int fd;
+		char file_path[LTTNG_PATH_MAX];
+		enum lttng_trace_chunk_status status;
+		struct relay_stream *rstream = vstream->stream;
 
-		ret = snprintf(fullpath, PATH_MAX, "%s/%s", vstream->path_name,
-				vstream->channel_name);
+		ret = utils_stream_file_path(rstream->path_name,
+				rstream->channel_name, rstream->tracefile_size,
+				vstream->current_tracefile_id, NULL, file_path,
+				sizeof(file_path));
 		if (ret < 0) {
 			goto error;
 		}
-		ret = open(fullpath, O_RDONLY);
-		if (ret < 0) {
-			PERROR("Relay opening metadata file");
+
+		status = lttng_trace_chunk_open_file(
+				vstream->stream_file.trace_chunk,
+				file_path, O_RDONLY, 0, &fd);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			PERROR("Failed to open metadata file for viewer stream");
 			goto error;
 		}
-		vstream->stream_fd = stream_fd_create(ret);
-		if (!vstream->stream_fd) {
-			if (close(ret)) {
-				PERROR("close");
+		vstream->stream_file.fd = stream_fd_create(fd);
+		if (!vstream->stream_file.fd) {
+			if (close(fd)) {
+				PERROR("Failed to close viewer metadata file");
 			}
 			goto error;
 		}
@@ -1678,7 +1716,7 @@ int viewer_get_metadata(struct relay_connection *conn)
 		goto error;
 	}
 
-	read_len = lttng_read(vstream->stream_fd->fd, data, len);
+	read_len = lttng_read(vstream->stream_file.fd->fd, data, len);
 	if (read_len < len) {
 		PERROR("Relay reading metadata file");
 		goto error;
@@ -2000,11 +2038,6 @@ restart:
 
 			health_code_update();
 
-			if (!revents) {
-				/* No activity for this FD (poll implementation). */
-				continue;
-			}
-
 			/* Thread quit pipe has been closed. Killing thread. */
 			ret = check_thread_quit_pipe(pollfd, revents);
 			if (ret) {
@@ -2022,8 +2055,13 @@ restart:
 					if (ret < 0) {
 						goto error;
 					}
-					lttng_poll_add(&events, conn->sock->fd,
+					ret = lttng_poll_add(&events,
+							conn->sock->fd,
 							LPOLLIN | LPOLLRDHUP);
+					if (ret) {
+						ERR("Failed to add new live connection file descriptor to poll set");
+						goto error;
+					}
 					connection_ht_add(viewer_connections_ht, conn);
 					DBG("Connection socket %d added to poll", conn->sock->fd);
 				} else if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
@@ -2080,7 +2118,7 @@ exit:
 error:
 	lttng_poll_clean(&events);
 
-	/* Cleanup reamaining connection object. */
+	/* Cleanup remaining connection object. */
 	rcu_read_lock();
 	cds_lfht_for_each_entry(viewer_connections_ht->ht, &iter.iter,
 			destroy_conn,

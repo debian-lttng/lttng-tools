@@ -55,8 +55,8 @@
 #define DEFAULT_TRACE_OUTPUT                    DEFAULT_HOME_DIR "/lttng"
 
 /* Default directory where the trace are written in per domain */
-#define DEFAULT_KERNEL_TRACE_DIR                "/kernel"
-#define DEFAULT_UST_TRACE_DIR                   "/ust"
+#define DEFAULT_KERNEL_TRACE_DIR                "kernel"
+#define DEFAULT_UST_TRACE_DIR                   "ust"
 
 /* Subpath for per PID or UID sessions. */
 #define DEFAULT_UST_TRACE_PID_PATH               "/pid"
@@ -284,7 +284,7 @@
  * Wait period before retrying the lttng_data_pending command in the lttng
  * stop command of liblttng-ctl.
  */
-#define DEFAULT_DATA_AVAILABILITY_WAIT_TIME 200000  /* usec */
+#define DEFAULT_DATA_AVAILABILITY_WAIT_TIME_US 200000  /* usec */
 
 /*
  * Wait period before retrying the lttng_consumer_flushed_cache when
@@ -298,6 +298,10 @@
  * 2.2 thus using the highest value. See tcp(7) for more details.
  */
 #define DEFAULT_INET_TCP_TIMEOUT			180	/* sec */
+
+/* Maximum payload size for a control connection */
+
+#define DEFAULT_NETWORK_RELAYD_CTRL_MAX_PAYLOAD_SIZE CONFIG_DEFAULT_NETWORK_RELAYD_CTRL_MAX_PAYLOAD_SIZE
 
 /*
  * Default receiving and sending timeout for an application socket.
@@ -321,13 +325,16 @@
 #define DEFAULT_RUN_AS_WORKER_NAME			"lttng-runas"
 
 /* Default LTTng MI XML namespace. */
-#define DEFAULT_LTTNG_MI_NAMESPACE		"http://lttng.org/xml/ns/lttng-mi"
+#define DEFAULT_LTTNG_MI_NAMESPACE		"https://lttng.org/xml/ns/lttng-mi"
 
 /* Default thread stack size; the default mandated by pthread_create(3) */
 #define DEFAULT_LTTNG_THREAD_STACK_SIZE		2097152
 
 /* Default maximal size of message notification channel message payloads. */
 #define DEFAULT_MAX_NOTIFICATION_CLIENT_MESSAGE_PAYLOAD_SIZE	65536
+
+/* Default maximal size of trace archive location. */
+#define DEFAULT_MAX_TRACE_ARCHIVE_LOCATION_PAYLOAD_SIZE		65536
 
 /* Default maximal size of message notification channel message payloads. */
 #define DEFAULT_CLIENT_MAX_QUEUED_NOTIFICATIONS_COUNT		100
@@ -338,6 +345,19 @@
 #define DEFAULT_LTTNG_RELAYD_TCP_KEEP_ALIVE_MAX_PROBE_COUNT_ENV "LTTNG_RELAYD_TCP_KEEP_ALIVE_MAX_PROBE_COUNT"
 #define DEFAULT_LTTNG_RELAYD_TCP_KEEP_ALIVE_PROBE_INTERVAL_ENV "LTTNG_RELAYD_TCP_KEEP_ALIVE_PROBE_INTERVAL"
 #define DEFAULT_LTTNG_RELAYD_TCP_KEEP_ALIVE_ABORT_THRESHOLD_ENV "LTTNG_RELAYD_TCP_KEEP_ALIVE_ABORT_THRESHOLD"
+
+/*
+ * Name of the intermediate directory used to rename the trace chunk of a
+ * session's first rotation.
+ */
+#define DEFAULT_TEMPORARY_CHUNK_RENAME_DIRECTORY	".tmp_rename_chunk"
+#define DEFAULT_ARCHIVED_TRACE_CHUNKS_DIRECTORY		"archives"
+
+/*
+ * Default timer value in usec for the rotate pending polling check on the
+ * relay when a rotation has completed on the consumer.
+ */
+#define DEFAULT_ROTATE_PENDING_TIMER	CONFIG_DEFAULT_ROTATE_PENDING_TIMER
 
 /*
  * Returns the default subbuf size.

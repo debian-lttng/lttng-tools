@@ -38,6 +38,7 @@ int kernctl_stop_session(int fd);
 
 /* Apply on event FD */
 int kernctl_filter(int fd, struct lttng_filter_bytecode *filter);
+int kernctl_add_callsite(int fd, struct lttng_kernel_event_callsite *callsite);
 
 int kernctl_tracepoint_list(int fd);
 int kernctl_syscall_list(int fd);
@@ -66,6 +67,8 @@ int kernctl_list_tracker_pids(int fd);
 
 int kernctl_session_regenerate_metadata(int fd);
 int kernctl_session_regenerate_statedump(int fd);
+int kernctl_session_set_name(int fd, const char *name);
+int kernctl_session_set_creation_time(int fd, time_t time);
 
 /* Buffer operations */
 
@@ -95,6 +98,7 @@ int kernctl_put_subbuf(int fd);
 int kernctl_buffer_flush(int fd);
 int kernctl_buffer_flush_empty(int fd);
 int kernctl_get_metadata_version(int fd, uint64_t *version);
+int kernctl_metadata_cache_dump(int fd);
 
 /* index */
 int kernctl_get_timestamp_begin(int fd, uint64_t *timestamp_begin);

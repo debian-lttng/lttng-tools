@@ -80,6 +80,9 @@ extern const char * const mi_lttng_element_command_success;
 extern const char * const mi_lttng_element_command_track;
 extern const char * const mi_lttng_element_command_untrack;
 extern const char * const mi_lttng_element_command_version;
+extern const char * const mi_lttng_element_command_rotate;
+extern const char * const mi_lttng_element_command_enable_rotation;
+extern const char * const mi_lttng_element_command_disable_rotation;
 
 /* Strings related to version command */
 extern const char * const mi_lttng_element_version;
@@ -185,12 +188,51 @@ extern const char * const mi_lttng_element_snapshots;
 /* String related to track/untrack command */
 const char * const mi_lttng_element_track_untrack_all_wildcard;
 
+LTTNG_HIDDEN const char * const mi_lttng_element_session_name;
+
+/* String related to rotate command */
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotate_status;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_schedule;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_schedules;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_schedule_periodic;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_schedule_periodic_time_us;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_schedule_size_threshold;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_schedule_size_threshold_bytes;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_schedule_result;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_schedule_results;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_state;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_location;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_location_local;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_location_local_absolute_path;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_location_relay;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_location_relay_host;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_location_relay_control_port;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_location_relay_data_port;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_location_relay_protocol;
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_location_relay_relative_path;
+
+/* String related to enum lttng_rotation_state */
+LTTNG_HIDDEN const char * const mi_lttng_rotation_state_str_ongoing;
+LTTNG_HIDDEN const char * const mi_lttng_rotation_state_str_completed;
+LTTNG_HIDDEN const char * const mi_lttng_rotation_state_str_expired;
+LTTNG_HIDDEN const char * const mi_lttng_rotation_state_str_error;
+
+/* String related to enum lttng_trace_archive_location_relay_protocol_type */
+LTTNG_HIDDEN const char * const mi_lttng_rotation_location_relay_protocol_str_tcp;
+
+/* String related to add-context command */
+LTTNG_HIDDEN extern const char * const mi_lttng_element_context_symbol;
+
 /* Utility string function  */
 const char *mi_lttng_loglevel_string(int value, enum lttng_domain_type domain);
 const char *mi_lttng_logleveltype_string(enum lttng_loglevel_type value);
 const char *mi_lttng_eventfieldtype_string(enum lttng_event_field_type value);
 const char *mi_lttng_domaintype_string(enum lttng_domain_type value);
 const char *mi_lttng_buffertype_string(enum lttng_buffer_type value);
+const char *mi_lttng_rotation_state_string(enum lttng_rotation_state value);
+const char *mi_lttng_trace_archive_location_relay_protocol_type_string(
+		enum lttng_trace_archive_location_relay_protocol_type value);
 
 /*
  * Create an instance of a machine interface writer.
@@ -791,5 +833,68 @@ int mi_lttng_snapshot_add_output(struct mi_writer *writer,
 int mi_lttng_snapshot_record(struct mi_writer *writer,
 		const char *current_session_name, const char *url,
 		const char *cmdline_ctrl_url, const char *cmdline_data_url);
+
+/*
+ * Machine interface representation of a session rotation schedule.
+ *
+ * The machine interface serializes the provided schedule as one of the choices
+ * from 'rotation_schedule_type'.
+ *
+ * writer: An instance of a machine interface writer.
+ *
+ * schedule: An lttng rotation schedule descriptor object.
+ *
+ * Returns zero if the element's value could be written.
+ * Negative values indicate an error.
+ */
+int mi_lttng_rotation_schedule(struct mi_writer *writer,
+		const struct lttng_rotation_schedule *schedule);
+
+/*
+ * Machine interface of a session rotation schedule result.
+ * This is an element that is part of the output of the enable-rotation and
+ * disable-rotation commands.
+ *
+ * The machine interface provides the following information:
+ * - schedule: the session rotation schedule descriptor.
+ * - success: whether the sub-command succeeded.
+ *
+ * writer: An instance of a machine interface writer.
+ *
+ * schedule: An lttng rotation schedule descriptor object.
+ *
+ * success: Whether the sub-command suceeded.
+ *
+ * Returns zero if the element's value could be written.
+ * Negative values indicate an error.
+ */
+int mi_lttng_rotation_schedule_result(struct mi_writer *writer,
+		const struct lttng_rotation_schedule *schedule,
+		bool success);
+
+/*
+ * Machine interface of a session rotation result.
+ * This is an element that is part of the output of the rotate command.
+ *
+ * The machine interface provides the following information:
+ * - session_name: the session to be rotated.
+ * - state: the session rotation state.
+ * - location: the location of the completed chunk archive.
+ *
+ * writer: An instance of a machine interface writer.
+ *
+ * session_name: The session to which the rotate command applies.
+ *
+ * location: A location descriptor object.
+ *
+ * success: Whether the sub-command suceeded.
+ *
+ * Returns zero if the element's value could be written.
+ * Negative values indicate an error.
+ */
+int mi_lttng_rotate(struct mi_writer *writer,
+		const char *session_name,
+		enum lttng_rotation_state rotation_state,
+		const struct lttng_trace_archive_location *location);
 
 #endif /* _MI_LTTNG_H */

@@ -41,11 +41,18 @@ static const char *str_ust = "UST";
 static const char *str_jul = "JUL";
 static const char *str_log4j = "LOG4J";
 static const char *str_python = "Python";
+static const char *str_all = "ALL";
+static const char *str_tracepoint = "Tracepoint";
+static const char *str_syscall = "Syscall";
+static const char *str_probe = "Probe";
+static const char *str_userspace_probe = "Userspace Probe";
+static const char *str_function = "Function";
 
 static
 char *_get_session_name(int quiet)
 {
-	char *path, *session_name = NULL;
+	const char *path;
+	char *session_name = NULL;
 
 	/* Get path to config file */
 	path = utils_get_home_dir();
@@ -311,6 +318,37 @@ const char *get_domain_str(enum lttng_domain_type domain)
 	return str_dom;
 }
 
+const char *get_event_type_str(enum lttng_event_type type)
+{
+	const char *str_event_type;
+
+	switch (type) {
+	case LTTNG_EVENT_ALL:
+		str_event_type = str_all;
+		break;
+	case LTTNG_EVENT_TRACEPOINT:
+		str_event_type = str_tracepoint;
+		break;
+	case LTTNG_EVENT_SYSCALL:
+		str_event_type = str_syscall;
+		break;
+	case LTTNG_EVENT_PROBE:
+		str_event_type = str_probe;
+		break;
+	case LTTNG_EVENT_USERSPACE_PROBE:
+		str_event_type = str_userspace_probe;
+		break;
+	case LTTNG_EVENT_FUNCTION:
+		str_event_type = str_function;
+		break;
+	default:
+		/* Should not have an unknown event type or else define it. */
+		assert(0);
+	}
+
+	return str_event_type;
+}
+
 /*
  * Spawn a lttng relayd daemon by forking and execv.
  */
@@ -515,5 +553,100 @@ int show_cmd_help(const char *cmd_name, const char *help_msg)
 		perror("exec");
 	}
 
+	return ret;
+}
+
+int print_trace_archive_location(
+		const struct lttng_trace_archive_location *location,
+		const char *session_name)
+{
+	int ret = 0;
+	enum lttng_trace_archive_location_type location_type;
+	enum lttng_trace_archive_location_status status;
+	bool printed_location = false;
+
+	location_type = lttng_trace_archive_location_get_type(location);
+
+	_MSG("Trace chunk archive for session %s is now readable",
+			session_name);
+	switch (location_type) {
+	case LTTNG_TRACE_ARCHIVE_LOCATION_TYPE_LOCAL:
+	{
+		const char *absolute_path;
+
+		status = lttng_trace_archive_location_local_get_absolute_path(
+				location, &absolute_path);
+		if (status != LTTNG_TRACE_ARCHIVE_LOCATION_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+		MSG(" at %s", absolute_path);
+		printed_location = true;
+		break;
+	}
+	case LTTNG_TRACE_ARCHIVE_LOCATION_TYPE_RELAY:
+	{
+		uint16_t control_port, data_port;
+		const char *host, *relative_path, *protocol_str;
+		enum lttng_trace_archive_location_relay_protocol_type protocol;
+
+		/* Fetch all relay location parameters. */
+		status = lttng_trace_archive_location_relay_get_protocol_type(
+				location, &protocol);
+		if (status != LTTNG_TRACE_ARCHIVE_LOCATION_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+
+		status = lttng_trace_archive_location_relay_get_host(
+				location, &host);
+		if (status != LTTNG_TRACE_ARCHIVE_LOCATION_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+
+		status = lttng_trace_archive_location_relay_get_control_port(
+				location, &control_port);
+		if (status != LTTNG_TRACE_ARCHIVE_LOCATION_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+
+		status = lttng_trace_archive_location_relay_get_data_port(
+				location, &data_port);
+		if (status != LTTNG_TRACE_ARCHIVE_LOCATION_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+
+		status = lttng_trace_archive_location_relay_get_relative_path(
+				location, &relative_path);
+		if (status != LTTNG_TRACE_ARCHIVE_LOCATION_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+
+		switch (protocol) {
+		case LTTNG_TRACE_ARCHIVE_LOCATION_RELAY_PROTOCOL_TYPE_TCP:
+			protocol_str = "tcp";
+			break;
+		default:
+			protocol_str = "unknown";
+			break;
+		}
+
+		MSG(" on relay %s://%s/%s [control port %" PRIu16 ", data port %"
+				PRIu16 "]", protocol_str, host,
+				relative_path, control_port, data_port);
+		printed_location = true;
+		break;
+	}
+	default:
+		break;
+	}
+end:
+	if (!printed_location) {
+		MSG(" at an unknown location");
+	}
 	return ret;
 }

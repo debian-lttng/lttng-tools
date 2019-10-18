@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: lttng-snapshot
-.\"    Author: [see the "AUTHORS" section]
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 10/01/2019
+.\"      Date: 10/17/2019
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.10.8
+.\"    Source: LTTng 2.11.0
 .\"  Language: English
 .\"
-.TH "LTTNG\-SNAPSHOT" "1" "10/01/2019" "LTTng 2\&.10\&.8" "LTTng Manual"
+.TH "LTTNG\-SNAPSHOT" "1" "10/17/2019" "LTTng 2\&.11\&.0" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -65,9 +65,11 @@ The \fBlttng snapshot\fR command manages the snapshot outputs and takes snapshot
 .sp
 A \fIsnapshot\fR is a dump of the current sub\-buffers of all the channels of a given tracing session\&. When a snapshot is taken, the memory dump is sent to the registered snapshot outputs\&.
 .sp
-The tracing session should be created in \fIsnapshot mode\fR to make sure taking snapshots is allowed\&. This is done at tracing session creation time using the \fBlttng-create\fR(1) command\&.
+The tracing session should be created in \fIsnapshot mode\fR to make sure that taking snapshots is allowed\&. This is done at tracing session creation time using the \fBlttng-create\fR(1) command\(cqs \fB--snapshot\fR option\&.
 .sp
 Note that, when a snapshot is taken, the sub\-buffers are not cleared\&. This means that different recorded snapshots may contain the same events\&.
+.sp
+If you want, instead, to keep all the trace data, but divide it into archived chunks which are then free to process (just like snapshots), see the lttng\-rotate(1) and lttng\-enable\-rotation(1) commands\&. Trace chunk archives do not overlap like snapshots can\&.
 .SS "Snapshot outputs"
 .sp
 Snapshot outputs are the destinations of snapshot files when a snapshot is taken using the \fBrecord\fR action\&.
@@ -318,7 +320,7 @@ If you encounter any issue or usability problem, please report it on the LTTng b
 .sp -1
 .IP \(bu 2.3
 .\}
-LTTng project website <http://lttng.org>
+LTTng project website <https://lttng.org>
 .RE
 .sp
 .RS 4
@@ -329,7 +331,7 @@ LTTng project website <http://lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-LTTng documentation <http://lttng.org/docs>
+LTTng documentation <https://lttng.org/docs>
 .RE
 .sp
 .RS 4
@@ -401,11 +403,6 @@ LTTng\-tools is distributed under the GNU General Public License version 2 <http
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
 .sp
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
-.SH "AUTHORS"
-.sp
-LTTng\-tools was originally written by Mathieu Desnoyers, Julien Desfossez, and David Goulet\&. More people have since contributed to it\&.
-.sp
-LTTng\-tools is currently maintained by J\('er\('emie Galarneau <mailto:jeremie.galarneau@efficios.com>\&.
 .SH "SEE ALSO"
 .sp
 \fBlttng\fR(1)

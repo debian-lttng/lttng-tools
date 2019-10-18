@@ -24,6 +24,7 @@
 #include <assert.h>
 
 #include <common/mi-lttng.h>
+#include <common/time.h>
 #include <lttng/constant.h>
 
 #include "../command.h"
@@ -249,6 +250,82 @@ end:
 	return exclusion_msg;
 }
 
+static void print_userspace_probe_location(struct lttng_event *event)
+{
+	const struct lttng_userspace_probe_location *location;
+	const struct lttng_userspace_probe_location_lookup_method *lookup_method;
+	enum lttng_userspace_probe_location_lookup_method_type lookup_type;
+
+	location = lttng_event_get_userspace_probe_location(event);
+	if (!location) {
+		MSG("Event has no userspace probe location");
+		return;
+	}
+
+	lookup_method = lttng_userspace_probe_location_get_lookup_method(location);
+	if (!lookup_method) {
+		MSG("Event has no userspace probe location lookup method");
+		return;
+	}
+
+	MSG("%s%s (type: userspace-probe)%s", indent6, event->name, enabled_string(event->enabled));
+
+	lookup_type = lttng_userspace_probe_location_lookup_method_get_type(lookup_method);
+
+	switch (lttng_userspace_probe_location_get_type(location)) {
+	case LTTNG_USERSPACE_PROBE_LOCATION_TYPE_UNKNOWN:
+		MSG("%sType: Unknown", indent8);
+		break;
+	case LTTNG_USERSPACE_PROBE_LOCATION_TYPE_FUNCTION:
+	{
+		const char *function_name;
+		const char *binary_path;
+
+		MSG("%sType: Function", indent8);
+		function_name = lttng_userspace_probe_location_function_get_function_name(location);
+		binary_path = realpath(lttng_userspace_probe_location_function_get_binary_path(location), NULL);
+
+		MSG("%sBinary path:   %s", indent8, binary_path ? binary_path : "NULL");
+		MSG("%sFunction:      %s()", indent8, function_name ? function_name : "NULL");
+		switch (lookup_type) {
+		case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF:
+			MSG("%sLookup method: ELF", indent8);
+			break;
+		case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_DEFAULT:
+			MSG("%sLookup method: default", indent8);
+			break;
+		default:
+			MSG("%sLookup method: INVALID LOOKUP TYPE ENCOUNTERED", indent8);
+			break;
+		}
+		break;
+	}
+	case LTTNG_USERSPACE_PROBE_LOCATION_TYPE_TRACEPOINT:
+	{
+		const char *probe_name, *provider_name;
+		const char *binary_path;
+
+		MSG("%sType: Tracepoint", indent8);
+		probe_name = lttng_userspace_probe_location_tracepoint_get_probe_name(location);
+		provider_name = lttng_userspace_probe_location_tracepoint_get_provider_name(location);
+		binary_path = realpath(lttng_userspace_probe_location_tracepoint_get_binary_path(location), NULL);
+		MSG("%sBinary path:   %s", indent8, binary_path ? binary_path : "NULL");
+		MSG("%sTracepoint:    %s:%s", indent8, provider_name ? provider_name : "NULL", probe_name ? probe_name : "NULL");
+		switch (lookup_type) {
+		case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_TRACEPOINT_SDT:
+			MSG("%sLookup method: SDT", indent8);
+			break;
+		default:
+			MSG("%sLookup method: INVALID LOOKUP TYPE ENCOUNTERED", indent8);
+			break;
+		}
+		break;
+	}
+	default:
+		ERR("Invalid probe type encountered");
+	}
+}
+
 /*
  * Pretty print single event.
  */
@@ -324,6 +401,9 @@ static void print_events(struct lttng_event *event)
 			MSG("%ssymbol: %s", indent8, event->attr.probe.symbol_name);
 		}
 		break;
+	case LTTNG_EVENT_USERSPACE_PROBE:
+		print_userspace_probe_location(event);
+		break;
 	case LTTNG_EVENT_FUNCTION_ENTRY:
 		MSG("%s%s (type: function)%s%s", indent6,
 				event->name, enabled_string(event->enabled),
@@ -343,6 +423,8 @@ static void print_events(struct lttng_event *event)
 				safe_string(filter_msg));
 		break;
 	case LTTNG_EVENT_ALL:
+		/* Fall-through. */
+	default:
 		/* We should never have "all" events in list. */
 		assert(0);
 		break;
@@ -1180,7 +1262,7 @@ void print_timer(const char *timer_name, uint32_t space_count, int64_t value)
 	}
 
 	if (value) {
-		MSG("%" PRId64 " µs", value);
+		MSG("%" PRId64 " %s", value, USEC_UNIT);
 	} else {
 		MSG("inactive");
 	}
@@ -1237,7 +1319,8 @@ static void print_channel(struct lttng_channel *channel)
 		if (blocking_timeout == -1) {
 			MSG("%sBlocking timeout: infinite", indent6);
 		} else {
-			MSG("%sBlocking timeout: %" PRId64 " µs", indent6, blocking_timeout);
+			MSG("%sBlocking timeout: %" PRId64 " %s", indent6,
+					blocking_timeout, USEC_UNIT);
 		}
 	}
 
@@ -1520,6 +1603,147 @@ end:
 	return ret;
 }
 
+static enum cmd_error_code print_periodic_rotation_schedule(
+		const struct lttng_rotation_schedule *schedule)
+{
+	enum cmd_error_code ret;
+	enum lttng_rotation_status status;
+	uint64_t value;
+
+	status = lttng_rotation_schedule_periodic_get_period(schedule,
+			&value);
+	if (status != LTTNG_ROTATION_STATUS_OK) {
+		ERR("Failed to retrieve period parameter from periodic rotation schedule.");
+		ret = CMD_ERROR;
+		goto end;
+	}
+
+	MSG("    timer period: %" PRIu64" %s", value, USEC_UNIT);
+	ret = CMD_SUCCESS;
+end:
+	return ret;
+}
+
+static enum cmd_error_code print_size_threshold_rotation_schedule(
+		const struct lttng_rotation_schedule *schedule)
+{
+	enum cmd_error_code ret;
+	enum lttng_rotation_status status;
+	uint64_t value;
+
+	status = lttng_rotation_schedule_size_threshold_get_threshold(schedule,
+			&value);
+	if (status != LTTNG_ROTATION_STATUS_OK) {
+		ERR("Failed to retrieve size parameter from size-based rotation schedule.");
+		ret = CMD_ERROR;
+		goto end;
+	}
+
+	MSG("    size threshold: %" PRIu64" bytes", value);
+	ret = CMD_SUCCESS;
+end:
+	return ret;
+}
+
+static enum cmd_error_code print_rotation_schedule(
+		const struct lttng_rotation_schedule *schedule)
+{
+	enum cmd_error_code ret;
+
+	switch (lttng_rotation_schedule_get_type(schedule)) {
+	case LTTNG_ROTATION_SCHEDULE_TYPE_SIZE_THRESHOLD:
+		ret = print_size_threshold_rotation_schedule(schedule);
+		break;
+	case LTTNG_ROTATION_SCHEDULE_TYPE_PERIODIC:
+		ret = print_periodic_rotation_schedule(schedule);
+		break;
+	default:
+		ret = CMD_ERROR;
+	}
+	return ret;
+}
+
+/*
+ * List the automatic rotation settings.
+ */
+static enum cmd_error_code list_rotate_settings(const char *session_name)
+{
+	int ret;
+	enum cmd_error_code cmd_ret = CMD_SUCCESS;
+	unsigned int count, i;
+	struct lttng_rotation_schedules *schedules = NULL;
+	enum lttng_rotation_status status;
+
+	ret = lttng_session_list_rotation_schedules(session_name, &schedules);
+	if (ret != LTTNG_OK) {
+		ERR("Failed to list session rotation schedules: %s", lttng_strerror(ret));
+		cmd_ret = CMD_ERROR;
+		goto end;
+	}
+
+	status = lttng_rotation_schedules_get_count(schedules, &count);
+	if (status != LTTNG_ROTATION_STATUS_OK) {
+		ERR("Failed to retrieve the number of session rotation schedules.");
+		cmd_ret = CMD_ERROR;
+		goto end;
+	}
+
+	if (count == 0) {
+		cmd_ret = CMD_SUCCESS;
+		goto end;
+	}
+
+	MSG("Automatic rotation schedules:");
+	if (lttng_opt_mi) {
+		ret = mi_lttng_writer_open_element(writer,
+				mi_lttng_element_rotation_schedules);
+		if (ret) {
+			cmd_ret = CMD_ERROR;
+			goto end;
+		}
+	}
+
+	for (i = 0; i < count; i++) {
+		enum cmd_error_code tmp_ret = CMD_SUCCESS;
+		const struct lttng_rotation_schedule *schedule;
+
+		schedule = lttng_rotation_schedules_get_at_index(schedules, i);
+		if (!schedule) {
+			ERR("Failed to retrieve session rotation schedule.");
+			cmd_ret = CMD_ERROR;
+			goto end;
+		}
+
+		if (lttng_opt_mi) {
+			ret = mi_lttng_rotation_schedule(writer, schedule);
+			if (ret) {
+				tmp_ret = CMD_ERROR;
+			}
+		} else {
+			tmp_ret = print_rotation_schedule(schedule);
+		}
+
+		/*
+		 * Report an error if the serialization of any of the
+		 * descriptors failed.
+		 */
+		cmd_ret = cmd_ret ? cmd_ret : tmp_ret;
+	}
+
+	_MSG("\n");
+	if (lttng_opt_mi) {
+		/* Close the rotation_schedules element. */
+		ret = mi_lttng_writer_close_element(writer);
+		if (ret) {
+			cmd_ret = CMD_ERROR;
+			goto end;
+		}
+	}
+end:
+	lttng_rotation_schedules_destroy(schedules);
+	return cmd_ret;
+}
+
 /*
  * Machine interface
  * Find the session with session_name as name
@@ -1635,7 +1859,6 @@ static int list_sessions(const char *session_name)
 			MSG("Available tracing sessions:");
 		}
 
-
 		for (i = 0; i < count; i++) {
 			if (session_name != NULL) {
 				if (strncmp(sessions[i].name, session_name, NAME_MAX) == 0) {
@@ -1643,20 +1866,25 @@ static int list_sessions(const char *session_name)
 					MSG("Tracing session %s: [%s%s]", session_name,
 							active_string(sessions[i].enabled),
 							snapshot_string(sessions[i].snapshot_mode));
-					MSG("%sTrace path: %s\n", indent4, sessions[i].path);
+					if (*sessions[i].path) {
+						MSG("%sTrace output: %s\n", indent4, sessions[i].path);
+					}
 					memcpy(&listed_session, &sessions[i],
 							sizeof(listed_session));
 					break;
 				}
 			} else {
-				MSG("  %d) %s (%s) [%s%s]", i + 1,
-						sessions[i].name, sessions[i].path,
+				MSG("  %d) %s [%s%s]", i + 1,
+						sessions[i].name,
 						active_string(sessions[i].enabled),
 						snapshot_string(sessions[i].snapshot_mode));
-				MSG("%sTrace path: %s", indent4, sessions[i].path);
+				if (*sessions[i].path) {
+					MSG("%sTrace output: %s", indent4, sessions[i].path);
+				}
 				if (sessions[i].live_timer_interval != 0) {
-					MSG("%sLive timer interval: %u µs", indent4,
-							sessions[i].live_timer_interval);
+					MSG("%sLive timer interval: %u %s", indent4,
+							sessions[i].live_timer_interval,
+							USEC_UNIT);
 				}
 				MSG("");
 			}
@@ -1921,6 +2149,11 @@ int cmd_list(int argc, const char **argv)
 		}
 		/* MI: the ouptut of list_sessions is an unclosed session element */
 		ret = list_sessions(session_name);
+		if (ret) {
+			goto end;
+		}
+
+		ret = list_rotate_settings(session_name);
 		if (ret) {
 			goto end;
 		}

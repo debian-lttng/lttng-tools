@@ -27,6 +27,7 @@
 #include <common/mi-lttng.h>
 
 #include "../command.h"
+#include "version.h"
 
 #ifdef LTTNG_EMBED_HELP
 static const char help_msg[] =
@@ -158,7 +159,7 @@ int cmd_version(int argc, const char **argv)
 		MSG("lttng version " VERSION " - " VERSION_NAME "%s",
 			GIT_VERSION[0] == '\0' ? "" : " - " GIT_VERSION);
 		MSG("\n" VERSION_DESCRIPTION "\n");
-		MSG("Web site: http://lttng.org");
+		MSG("Web site: https://lttng.org");
 		MSG("\n%s", lttng_license);
 	}
 

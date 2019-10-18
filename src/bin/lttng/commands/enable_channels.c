@@ -493,66 +493,74 @@ int cmd_enable_channels(int argc, const char **argv)
 		}
 		case OPT_SWITCH_TIMER:
 		{
-			unsigned long v;
+			uint64_t v;
 
 			errno = 0;
 			opt_arg = poptGetOptArg(pc);
-			v = strtoul(opt_arg, NULL, 0);
-			if (errno != 0 || !isdigit(opt_arg[0])) {
-				ERR("Wrong value in --switch-timer parameter: %s", opt_arg);
+
+			if (utils_parse_time_suffix(opt_arg, &v) < 0) {
+				ERR("Wrong value for --switch-timer parameter: %s", opt_arg);
 				ret = CMD_ERROR;
 				goto end;
 			}
+
 			if (v != (uint32_t) v) {
 				ERR("32-bit overflow in --switch-timer parameter: %s", opt_arg);
 				ret = CMD_ERROR;
 				goto end;
 			}
 			chan_opts.attr.switch_timer_interval = (uint32_t) v;
-			DBG("Channel switch timer interval set to %d", chan_opts.attr.switch_timer_interval);
+			DBG("Channel switch timer interval set to %d %s",
+					chan_opts.attr.switch_timer_interval,
+					USEC_UNIT);
 			break;
 		}
 		case OPT_READ_TIMER:
 		{
-			unsigned long v;
+			uint64_t v;
 
 			errno = 0;
 			opt_arg = poptGetOptArg(pc);
-			v = strtoul(opt_arg, NULL, 0);
-			if (errno != 0 || !isdigit(opt_arg[0])) {
-				ERR("Wrong value in --read-timer parameter: %s", opt_arg);
+
+			if (utils_parse_time_suffix(opt_arg, &v) < 0) {
+				ERR("Wrong value for --read-timer parameter: %s", opt_arg);
 				ret = CMD_ERROR;
 				goto end;
 			}
+
 			if (v != (uint32_t) v) {
 				ERR("32-bit overflow in --read-timer parameter: %s", opt_arg);
 				ret = CMD_ERROR;
 				goto end;
 			}
 			chan_opts.attr.read_timer_interval = (uint32_t) v;
-			DBG("Channel read timer interval set to %d", chan_opts.attr.read_timer_interval);
+			DBG("Channel read timer interval set to %d %s",
+					chan_opts.attr.read_timer_interval,
+					USEC_UNIT);
 			break;
 		}
 		case OPT_MONITOR_TIMER:
 		{
-			unsigned long long v;
+			uint64_t v;
 
 			errno = 0;
 			opt_arg = poptGetOptArg(pc);
-			v = strtoull(opt_arg, NULL, 0);
-			if (errno != 0 || !isdigit(opt_arg[0])) {
-				ERR("Wrong value in --monitor-timer parameter: %s", opt_arg);
+
+			if (utils_parse_time_suffix(opt_arg, &v) < 0) {
+				ERR("Wrong value for --monitor-timer parameter: %s", opt_arg);
 				ret = CMD_ERROR;
 				goto end;
 			}
 			opt_monitor_timer.interval = (uint64_t) v;
 			opt_monitor_timer.set = true;
-			DBG("Channel monitor timer interval set to %" PRIu64" (µs)", opt_monitor_timer.interval);
+			DBG("Channel monitor timer interval set to %" PRIu64 " %s",
+					opt_monitor_timer.interval,
+					USEC_UNIT);
 			break;
 		}
 		case OPT_BLOCKING_TIMEOUT:
 		{
-			long long v;	/* in usec */
+			uint64_t v;
 			long long v_msec;
 
 			errno = 0;
@@ -565,10 +573,8 @@ int cmd_enable_channels(int argc, const char **argv)
 				break;
 			}
 
-			v = strtoll(opt_arg, NULL, 0);
-			if (errno != 0 || (!isdigit(opt_arg[0]) && opt_arg[0] != '-')
-					|| v < 0) {
-				ERR("Wrong value in --blocking-timeout parameter: %s", opt_arg);
+			if (utils_parse_time_suffix(opt_arg, &v) < 0) {
+				ERR("Wrong value for --blocking-timeout parameter: %s", opt_arg);
 				ret = CMD_ERROR;
 				goto end;
 			}
@@ -597,8 +603,9 @@ int cmd_enable_channels(int argc, const char **argv)
 
 			opt_blocking_timeout.value = (int64_t) v;
 			opt_blocking_timeout.set = true;
-			DBG("Channel blocking timeout set to %" PRId64 " µs%s",
+			DBG("Channel blocking timeout set to %" PRId64 " %s%s",
 					opt_blocking_timeout.value,
+					USEC_UNIT,
 					opt_blocking_timeout.value == 0 ?
 						" (non-blocking)" : "");
 			break;

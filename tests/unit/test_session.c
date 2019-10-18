@@ -32,6 +32,7 @@
 #include <bin/lttng-sessiond/ust-app.h>
 #include <bin/lttng-sessiond/ht-cleanup.h>
 #include <bin/lttng-sessiond/health-sessiond.h>
+#include <bin/lttng-sessiond/thread.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/common.h>
 
@@ -45,7 +46,6 @@
 
 struct health_app *health_sessiond;
 static struct ltt_session_list *session_list;
-static pthread_t ht_cleanup_thread;
 
 /* For error.h */
 int lttng_opt_quiet = 1;
@@ -112,9 +112,11 @@ static void empty_session_list(void)
 {
 	struct ltt_session *iter, *tmp;
 
+	session_lock_list();
 	cds_list_for_each_entry_safe(iter, tmp, &session_list->head, list) {
 		session_destroy(iter);
 	}
+	session_unlock_list();
 
 	/* Session list must be 0 */
 	assert(!session_list_count());
@@ -126,27 +128,32 @@ static void empty_session_list(void)
 static int create_one_session(char *name)
 {
 	int ret;
+	enum lttng_error_code ret_code;
+	struct ltt_session *session = NULL;
 
-	ret = session_create(name, geteuid(), getegid());
-	if (ret == LTTNG_OK) {
+	session_lock_list();
+	ret_code = session_create(name, geteuid(), getegid(), NULL, &session);
+	session_put(session);
+	if (ret_code == LTTNG_OK) {
 		/* Validate */
 		ret = find_session_name(name);
 		if (ret < 0) {
 			/* Session not found by name */
 			printf("session not found after creation\n");
-			return -1;
+			ret = -1;
 		} else {
 			/* Success */
-			return 0;
+			ret = 0;
 		}
 	} else {
-		if (ret == LTTNG_ERR_EXIST_SESS) {
+		if (ret_code == LTTNG_ERR_EXIST_SESS) {
 			printf("(session already exists) ");
 		}
-		return -1;
+		ret = -1;
 	}
 
-	return 0;
+	session_unlock_list();
+	return ret;
 }
 
 /*
@@ -160,19 +167,18 @@ static int destroy_one_session(struct ltt_session *session)
 	strncpy(session_name, session->name, sizeof(session_name));
 	session_name[sizeof(session_name) - 1] = '\0';
 
-	ret = session_destroy(session);
-	if (ret == LTTNG_OK) {
-		ret = find_session_name(session_name);
-		if (ret < 0) {
-			/* Success, -1 means that the sesion is NOT found */
-			return 0;
-		} else {
-			/* Fail */
-			return -1;
-		}
-	}
+	session_destroy(session);
+	session_put(session);
 
-	return 0;
+	ret = find_session_name(session_name);
+	if (ret < 0) {
+		/* Success, -1 means that the sesion is NOT found */
+		ret = 0;
+	} else {
+		/* Fail */
+		ret = -1;
+	}
+	return ret;
 }
 
 /*
@@ -187,17 +193,27 @@ static int two_session_same_name(void)
 	ret = create_one_session(SESSION1);
 	if (ret < 0) {
 		/* Fail */
-		return -1;
+		ret = -1;
+		goto end;
 	}
 
+	session_lock_list();
 	sess = session_find_by_name(SESSION1);
 	if (sess) {
 		/* Success */
-		return 0;
+		session_put(sess);
+		session_unlock_list();
+		ret = 0;
+		goto end_unlock;
+	} else {
+		/* Fail */
+		ret = -1;
+		goto end_unlock;
 	}
-
-	/* Fail */
-	return -1;
+end_unlock:
+	session_unlock_list();
+end:
+	return ret;
 }
 
 void test_session_list(void)
@@ -217,31 +233,46 @@ void test_validate_session(void)
 {
 	struct ltt_session *tmp;
 
+	session_lock_list();
 	tmp = session_find_by_name(SESSION1);
 
 	ok(tmp != NULL,
 	   "Validating session: session found");
 
-	ok(tmp->kernel_session == NULL &&
-	   strlen(tmp->name),
-	   "Validating session: basic sanity check");
+	if (tmp) {
+		ok(tmp->kernel_session == NULL &&
+		   strlen(tmp->name),
+		   "Validating session: basic sanity check");
+	} else {
+		skip(1, "Skipping session validation check as session was not found");
+		goto end;
+	}
 
 	session_lock(tmp);
 	session_unlock(tmp);
+	session_put(tmp);
+end:
+	session_unlock_list();
 }
 
 void test_destroy_session(void)
 {
 	struct ltt_session *tmp;
 
+	session_lock_list();
 	tmp = session_find_by_name(SESSION1);
 
 	ok(tmp != NULL,
 	   "Destroying session: session found");
 
-	ok(destroy_one_session(tmp) == 0,
-	   "Destroying session: %s destroyed",
-	   SESSION1);
+	if (tmp) {
+		ok(destroy_one_session(tmp) == 0,
+		   "Destroying session: %s destroyed",
+		   SESSION1);
+	} else {
+		skip(1, "Skipping session destruction as it was not found");
+	}
+	session_unlock_list();
 }
 
 void test_duplicate_session(void)
@@ -250,13 +281,29 @@ void test_duplicate_session(void)
 	   "Duplicate session creation");
 }
 
-void test_bogus_session_param(void)
+void test_session_name_generation(void)
 {
-	ok(create_one_session(NULL) < 0,
-	   "Create session with bogus param: NULL should fail");
+	struct ltt_session *session = NULL;
+	enum lttng_error_code ret_code;
+	const char *expected_session_name_prefix = DEFAULT_SESSION_NAME;
 
-	ok(session_list_count() == 0,
-	   "Create session with bogus param: session list empty");
+	session_lock_list();
+	ret_code = session_create(NULL, geteuid(), getegid(), NULL, &session);
+	ok(ret_code == LTTNG_OK,
+		"Create session with a NULL name (auto-generate a name)");
+	if (!session) {
+		skip(1, "Skipping session name generation tests as session_create() failed.");
+		goto end;
+	}
+	diag("Automatically-generated session name: %s", *session->name ?
+		session->name : "ERROR");
+	ok(*session->name && !strncmp(expected_session_name_prefix, session->name,
+			sizeof(DEFAULT_SESSION_NAME) - 1),
+			"Auto-generated session name starts with %s",
+			DEFAULT_SESSION_NAME);
+end:
+	session_put(session);
+	session_unlock_list();
 }
 
 void test_large_session_number(void)
@@ -279,8 +326,10 @@ void test_large_session_number(void)
 
 	failed = 0;
 
+	session_lock_list();
 	for (i = 0; i < MAX_SESSIONS; i++) {
 		cds_list_for_each_entry_safe(iter, tmp, &session_list->head, list) {
+			assert(session_get(iter));
 			ret = destroy_one_session(iter);
 			if (ret < 0) {
 				diag("session %d destroy failed", i);
@@ -288,6 +337,7 @@ void test_large_session_number(void)
 			}
 		}
 	}
+	session_unlock_list();
 
 	ok(failed == 0 && session_list_count() == 0,
 	   "Large sessions number: destroyed %u sessions",
@@ -296,10 +346,14 @@ void test_large_session_number(void)
 
 int main(int argc, char **argv)
 {
+	struct lttng_thread *ht_cleanup_thread;
+
 	plan_tests(NUM_TESTS);
 
 	health_sessiond = health_app_create(NR_HEALTH_SESSIOND_TYPES);
-	assert(!init_ht_cleanup_thread(&ht_cleanup_thread));
+	ht_cleanup_thread = launch_ht_cleanup_thread();
+	assert(ht_cleanup_thread);
+	lttng_thread_put(ht_cleanup_thread);
 
 	diag("Sessions unit tests");
 
@@ -317,12 +371,12 @@ int main(int argc, char **argv)
 
 	empty_session_list();
 
-	test_bogus_session_param();
+	test_session_name_generation();
 
 	test_large_session_number();
 
 	rcu_unregister_thread();
-	assert(!fini_ht_cleanup_thread(&ht_cleanup_thread));
+	lttng_thread_list_shutdown_orphans();
 
 	return exit_status();
 }

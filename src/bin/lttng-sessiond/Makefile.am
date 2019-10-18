@@ -10,7 +10,7 @@ bin_PROGRAMS = lttng-sessiond
 lttng_sessiond_SOURCES = utils.c utils.h \
                        trace-kernel.c trace-kernel.h \
                        kernel.c kernel.h \
-                       ust-ctl.h ust-app.h trace-ust.h ust-thread.h \
+                       ust-ctl.h ust-app.h trace-ust.h notify-apps.h \
                        ust-registry.h \
                        context.c context.h \
                        channel.c channel.h \
@@ -30,16 +30,30 @@ lttng_sessiond_SOURCES = utils.c utils.h \
                        snapshot.c snapshot.h \
                        agent.c agent.h \
                        save.h save.c \
-                       load-session-thread.h load-session-thread.c \
-                       syscall.h syscall.c \
+                       lttng-syscall.h lttng-syscall.c \
                        notification-thread.h notification-thread.c \
+                       notification-thread-internal.h \
                        notification-thread-commands.h notification-thread-commands.c \
                        notification-thread-events.h notification-thread-events.c \
-                       sessiond-config.h sessiond-config.c
+                       sessiond-config.h sessiond-config.c \
+                       rotate.h rotate.c \
+                       rotation-thread.h rotation-thread.c \
+                       timer.c timer.h \
+                       globals.c \
+                       thread-utils.c \
+                       process-utils.c \
+                       thread.c thread.h \
+                       health.c \
+                       client.c client.h \
+                       dispatch.c dispatch.h \
+                       register.c register.h \
+                       manage-apps.c manage-apps.h \
+                       manage-kernel.c manage-kernel.h \
+                       manage-consumer.c manage-consumer.h
 
 if HAVE_LIBLTTNG_UST_CTL
 lttng_sessiond_SOURCES += trace-ust.c ust-registry.c ust-app.c \
-			ust-consumer.c ust-consumer.h ust-thread.c \
+			ust-consumer.c ust-consumer.h notify-apps.c \
 			ust-metadata.c ust-clock.h agent-thread.c agent-thread.h \
 			ust-field-utils.h ust-field-utils.c
 endif
