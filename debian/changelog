@@ -1,3 +1,17 @@
+ltt-control (2.11.0-1) unstable; urgency=medium
+
+  * [d85f2bc] New upstream version 2.11.0
+  * [285ec12] Bump build dependencies for 2.11.0
+  * [250a4bc] Bump debhelper to 11
+  * [d6d36b4] Bump standards version to 4.4.1
+  * [7a56691] Drop patch applied upstream
+  * [b118011] Update symbols for 2.11.0
+  * [b7b26d1] Add patch to fix typo 'Attemp'
+  * [8a79213] Add patch to fix typo 'occured'
+  * [37930b0] Update debian/copyright
+
+ -- Michael Jeanson <mjeanson@debian.org>  Mon, 21 Oct 2019 15:02:13 -0400
+
 ltt-control (2.10.8-1) unstable; urgency=medium
 
   * [546c25c] New upstream version 2.10.8
