@@ -1,3 +1,9 @@
+ltt-control (2.11.0-2) unstable; urgency=medium
+
+  * [8514592] Add patch to fix build on x32
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 29 Oct 2019 11:41:06 -0400
+
 ltt-control (2.11.0-1) unstable; urgency=medium
 
   * [d85f2bc] New upstream version 2.11.0
