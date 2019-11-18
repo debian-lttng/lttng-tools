@@ -1,3 +1,9 @@
+ltt-control (2.11.0-3) unstable; urgency=medium
+
+  * [e8b29e1] Add build dependency on dh-python (Closes: #944938)
+
+ -- Michael Jeanson <mjeanson@debian.org>  Mon, 18 Nov 2019 15:58:58 -0500
+
 ltt-control (2.11.0-2) unstable; urgency=medium
 
   * [8514592] Add patch to fix build on x32
