@@ -4,6 +4,7 @@ Priority: optional
 Maintainer: Jon Bernard <jbernard@debian.org>
 Uploaders: Michael Jeanson <mjeanson@debian.org>
 Build-Depends: debhelper (>= 11~),
+  dh-python,
   libpopt-dev, libxml2-dev, libkmod-dev,
   bison, bash-completion, pkg-config, uuid-dev,
   python3-all-dev, swig (>= 2.0),
