@@ -1,3 +1,11 @@
+ltt-control (2.11.0-4) unstable; urgency=medium
+
+  * [341510b] Add asciidoc and xmlto to builddeps (Closes: #948253)
+  * [a508e98] d/control: Set Rules-Requires-Root to no
+  * [fe600d9] Add patch to fix lttng-health-check manpage
+
+ -- Michael Jeanson <mjeanson@debian.org>  Mon, 06 Jan 2020 15:22:28 -0500
+
 ltt-control (2.11.0-3) unstable; urgency=medium
 
   * [e8b29e1] Add build dependency on dh-python (Closes: #944938)
