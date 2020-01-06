@@ -1,0 +1,12 @@
+Fix lintian manpage-has-bad-whatis-entry
+
+--- a/doc/man/lttng-health-check.3
++++ b/doc/man/lttng-health-check.3
+@@ -1,6 +1,6 @@
+ .TH LTTNG_HEALTH_CHECK 3 2012-09-19 "LTTng" "LTTng Developer Manual"
+-.SH NAME
+ .B DEPRECATED
++.SH NAME
+ 
+ lttng_health_check \- Monitor health of the session daemon
+ .SH SYNOPSIS
