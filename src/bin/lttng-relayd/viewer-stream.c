@@ -27,7 +27,6 @@
 
 static void viewer_stream_destroy(struct relay_viewer_stream *vstream)
 {
-	lttng_trace_chunk_put(vstream->stream_file.trace_chunk);
 	free(vstream->path_name);
 	free(vstream->channel_name);
 	free(vstream);
@@ -106,7 +105,7 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 	}
 	case LTTNG_VIEWER_SEEK_LAST:
 		vstream->current_tracefile_id =
-			tracefile_array_get_file_index_head(stream->tfa);
+			tracefile_array_get_read_file_index_head(stream->tfa);
 		/*
 		 * We seek at the very end of each stream, awaiting for
 		 * a future packet to eventually come in.
@@ -161,9 +160,8 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 
 	/* Globally visible after the add unique. */
 	lttng_ht_node_init_u64(&vstream->stream_n, stream->stream_handle);
-	lttng_ht_add_unique_u64(viewer_streams_ht, &vstream->stream_n);
-
 	urcu_ref_init(&vstream->ref);
+	lttng_ht_add_unique_u64(viewer_streams_ht, &vstream->stream_n);
 
 	return vstream;
 
@@ -173,7 +171,7 @@ error:
 	if (vstream) {
 		viewer_stream_destroy(vstream);
 	}
-	if (viewer_trace_chunk) {
+	if (viewer_trace_chunk && acquired_reference) {
 		lttng_trace_chunk_put(viewer_trace_chunk);
 	}
 	return NULL;
@@ -212,7 +210,8 @@ static void viewer_stream_release(struct urcu_ref *ref)
 		stream_put(vstream->stream);
 		vstream->stream = NULL;
 	}
-
+	lttng_trace_chunk_put(vstream->stream_file.trace_chunk);
+	vstream->stream_file.trace_chunk = NULL;
 	call_rcu(&vstream->rcu_node, viewer_stream_destroy_rcu);
 }
 

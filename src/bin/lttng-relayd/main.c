@@ -1404,7 +1404,7 @@ static int relay_close_stream(const struct lttcomm_relayd_hdr *recv_hdr,
 
 		vstream = viewer_stream_get_by_id(stream->stream_handle);
 		if (vstream) {
-			if (vstream->metadata_sent == stream->metadata_received) {
+			if (stream->no_new_metadata_notified) {
 				/*
 				 * Since all the metadata has been sent to the
 				 * viewer and that we have a request to close
@@ -2071,6 +2071,9 @@ static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
 		index_info.stream_instance_id =
 				be64toh(index_info.stream_instance_id);
 		index_info.packet_seq_num = be64toh(index_info.packet_seq_num);
+	} else {
+		index_info.stream_instance_id = -1ULL;
+		index_info.packet_seq_num = -1ULL;
 	}
 
 	stream = stream_get_by_id(index_info.relay_stream_id);

@@ -291,6 +291,13 @@ static int make_viewer_streams(struct relay_session *session,
 	assert(session);
 	ASSERT_LOCKED(session->lock);
 
+	if (!viewer_trace_chunk) {
+		ERR("Internal error: viewer session associated with session \"%s\" has a NULL trace chunk",
+				session->session_name);
+		ret = -1;
+		goto error;
+	}
+
 	if (session->connection_closed) {
 		*closed = true;
 	}
@@ -302,11 +309,36 @@ static int make_viewer_streams(struct relay_session *session,
 	rcu_read_lock();
 	cds_lfht_for_each_entry(session->ctf_traces_ht->ht, &iter.iter, ctf_trace,
 			node.node) {
+		bool trace_has_metadata_stream = false;
 		struct relay_stream *stream;
 
 		health_code_update();
 
 		if (!ctf_trace_get(ctf_trace)) {
+			continue;
+		}
+
+		/*
+		 * Iterate over all the streams of the trace to see if we have a
+		 * metadata stream.
+		 */
+		cds_list_for_each_entry_rcu(
+				stream, &ctf_trace->stream_list, stream_node)
+		{
+			if (stream->is_metadata) {
+				trace_has_metadata_stream = true;
+				break;
+			}
+		}
+
+		/*
+		 * If there is no metadata stream in this trace at the moment
+		 * and we never sent one to the viewer, skip the trace. We
+		 * accept that the viewer will not see this trace at all.
+		 */
+		if (!trace_has_metadata_stream &&
+				!ctf_trace->metadata_stream_sent_to_viewer) {
+			ctf_trace_put(ctf_trace);
 			continue;
 		}
 
@@ -324,6 +356,15 @@ static int make_viewer_streams(struct relay_session *session,
 			}
 			vstream = viewer_stream_get_by_id(stream->stream_handle);
 			if (!vstream) {
+				/*
+				 * Save that we sent the metadata stream to the
+				 * viewer. So that we know what trace the viewer
+				 * is aware of.
+				 */
+				if (stream->is_metadata) {
+					ctf_trace->metadata_stream_sent_to_viewer =
+							true;
+				}
 				vstream = viewer_stream_create(stream,
 						viewer_trace_chunk, seek_t);
 				if (!vstream) {
@@ -378,6 +419,7 @@ static int make_viewer_streams(struct relay_session *session,
 
 error_unlock:
 	rcu_read_unlock();
+error:
 	return ret;
 }
 
@@ -831,9 +873,18 @@ int viewer_list_sessions(struct relay_connection *conn)
 
 		health_code_update();
 
+		pthread_mutex_lock(&session->lock);
 		if (session->connection_closed) {
 			/* Skip closed session */
-			continue;
+			goto next_session;
+		}
+		if (!session->current_trace_chunk) {
+			/*
+			 * Skip un-attachable session. It is either
+			 * being destroyed or has not had a trace
+			 * chunk created against it yet.
+			 */
+			goto next_session;
 		}
 
 		if (count >= buf_count) {
@@ -844,7 +895,7 @@ int viewer_list_sessions(struct relay_connection *conn)
 				new_buf_count * sizeof(*send_session_buf));
 			if (!newbuf) {
 				ret = -1;
-				break;
+				goto break_loop;
 			}
 			send_session_buf = newbuf;
 			buf_count = new_buf_count;
@@ -854,12 +905,12 @@ int viewer_list_sessions(struct relay_connection *conn)
 				session->session_name,
 				sizeof(send_session->session_name))) {
 			ret = -1;
-			break;
+			goto break_loop;
 		}
 		if (lttng_strncpy(send_session->hostname, session->hostname,
 				sizeof(send_session->hostname))) {
 			ret = -1;
-			break;
+			goto break_loop;
 		}
 		send_session->id = htobe64(session->id);
 		send_session->live_timer = htobe32(session->live_timer);
@@ -870,6 +921,12 @@ int viewer_list_sessions(struct relay_connection *conn)
 		}
 		send_session->streams = htobe32(session->stream_count);
 		count++;
+	next_session:
+		pthread_mutex_unlock(&session->lock);
+		continue;
+	break_loop:
+		pthread_mutex_unlock(&session->lock);
+		break;
 	}
 	rcu_read_unlock();
 	if (ret < 0) {
@@ -939,23 +996,11 @@ int viewer_get_new_streams(struct relay_connection *conn)
 	}
 
 	if (!viewer_session_is_attached(conn->viewer_session, session)) {
-		send_streams = 0;
 		response.status = htobe32(LTTNG_VIEWER_NEW_STREAMS_ERR);
 		goto send_reply;
 	}
 
-	send_streams = 1;
-	response.status = htobe32(LTTNG_VIEWER_NEW_STREAMS_OK);
-
 	pthread_mutex_lock(&session->lock);
-	if (!conn->viewer_session->current_trace_chunk &&
-			session->current_trace_chunk) {
-		ret = viewer_session_set_trace_chunk(conn->viewer_session,
-				session->current_trace_chunk);
-		if (ret) {
-			goto error_unlock_session;
-		}
-	}
 	ret = make_viewer_streams(session,
 			conn->viewer_session->current_trace_chunk,
 			LTTNG_VIEWER_SEEK_LAST, &nb_total, &nb_unsent,
@@ -963,7 +1008,8 @@ int viewer_get_new_streams(struct relay_connection *conn)
 	if (ret < 0) {
 		goto error_unlock_session;
 	}
-	pthread_mutex_unlock(&session->lock);
+	send_streams = 1;
+	response.status = htobe32(LTTNG_VIEWER_NEW_STREAMS_OK);
 
 	/* Only send back the newly created streams with the unsent ones. */
 	nb_streams = nb_created + nb_unsent;
@@ -977,8 +1023,10 @@ int viewer_get_new_streams(struct relay_connection *conn)
 		send_streams = 0;
 		response.streams_count = 0;
 		response.status = htobe32(LTTNG_VIEWER_NEW_STREAMS_HUP);
-		goto send_reply;
+		goto send_reply_unlock;
 	}
+send_reply_unlock:
+	pthread_mutex_unlock(&session->lock);
 
 send_reply:
 	health_code_update();
@@ -1032,6 +1080,7 @@ int viewer_attach_session(struct relay_connection *conn)
 	struct lttng_viewer_attach_session_request request;
 	struct lttng_viewer_attach_session_response response;
 	struct relay_session *session = NULL;
+	enum lttng_viewer_attach_return_code viewer_attach_status;
 	bool closed = false;
 	uint64_t session_id;
 
@@ -1065,6 +1114,15 @@ int viewer_attach_session(struct relay_connection *conn)
 	DBG("Attach session ID %" PRIu64 " received", session_id);
 
 	pthread_mutex_lock(&session->lock);
+	if (!session->current_trace_chunk) {
+		/*
+		 * Session is either being destroyed or it never had a trace
+		 * chunk created against it.
+		 */
+		DBG("Session requested by live client has no current trace chunk, returning unknown session");
+		response.status = htobe32(LTTNG_VIEWER_ATTACH_UNK);
+		goto send_reply;
+	}
 	if (session->live_timer == 0) {
 		DBG("Not live session");
 		response.status = htobe32(LTTNG_VIEWER_ATTACH_NOT_LIVE);
@@ -1072,10 +1130,10 @@ int viewer_attach_session(struct relay_connection *conn)
 	}
 
 	send_streams = 1;
-	ret = viewer_session_attach(conn->viewer_session, session);
-	if (ret) {
-		DBG("Already a viewer attached");
-		response.status = htobe32(LTTNG_VIEWER_ATTACH_ALREADY);
+	viewer_attach_status = viewer_session_attach(conn->viewer_session,
+			session);
+	if (viewer_attach_status != LTTNG_VIEWER_ATTACH_OK) {
+		response.status = htobe32(viewer_attach_status);
 		goto send_reply;
 	}
 
@@ -1092,14 +1150,6 @@ int viewer_attach_session(struct relay_connection *conn)
 		goto send_reply;
 	}
 
-	if (!conn->viewer_session->current_trace_chunk &&
-			session->current_trace_chunk) {
-		ret = viewer_session_set_trace_chunk(conn->viewer_session,
-				session->current_trace_chunk);
-		if (ret) {
-			goto end_put_session;
-		}
-	}
 	ret = make_viewer_streams(session,
 			conn->viewer_session->current_trace_chunk, seek_type,
 			&nb_streams, NULL, NULL, &closed);
@@ -1674,7 +1724,23 @@ int viewer_get_metadata(struct relay_connection *conn)
 
 	len = vstream->stream->metadata_received - vstream->metadata_sent;
 	if (len == 0) {
+		/*
+		 * The live viewers expect to receive a NO_NEW_METADATA
+		 * status before a stream disappears, otherwise they abort the
+		 * entire live connection when receiving an error status.
+		 */
 		reply.status = htobe32(LTTNG_VIEWER_NO_NEW_METADATA);
+		/*
+		 * The live viewer considers a closed 0 byte metadata stream as
+		 * an error.
+		 */
+		if (vstream->metadata_sent > 0) {
+			vstream->stream->no_new_metadata_notified = true;
+			if (vstream->stream->closed) {
+				/* Release ownership for the viewer metadata stream. */
+				viewer_stream_put(vstream);
+			}
+		}
 		goto send_reply;
 	}
 
@@ -1722,12 +1788,6 @@ int viewer_get_metadata(struct relay_connection *conn)
 		goto error;
 	}
 	vstream->metadata_sent += read_len;
-	if (vstream->metadata_sent == vstream->stream->metadata_received
-			&& vstream->stream->closed) {
-		/* Release ownership for the viewer metadata stream. */
-		viewer_stream_put(vstream);
-	}
-
 	reply.status = htobe32(LTTNG_VIEWER_METADATA_OK);
 
 	goto send_reply;

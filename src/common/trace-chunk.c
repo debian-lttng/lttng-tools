@@ -840,7 +840,7 @@ enum lttng_trace_chunk_status lttng_trace_chunk_open_file(
 			chunk->credentials.value.use_current_user ?
 					NULL : &chunk->credentials.value.user);
 	if (ret < 0) {
-		ERR("Failed to open file relative to trace chunk file_path = \"%s\", flags = %d, mode = %d",
+		PERROR("Failed to open file relative to trace chunk file_path = \"%s\", flags = %d, mode = %d",
 				file_path, flags, (int) mode);
 		status = LTTNG_TRACE_CHUNK_STATUS_ERROR;
 		goto end;
@@ -1269,7 +1269,7 @@ lttng_trace_chunk_registry_publish_chunk(
 				 *
 				 * Re-attempt to publish.
 				 */
-				ERR("Attemp to publish a trace chunk to the chunk registry raced with a trace chunk deletion");
+				ERR("Attempt to publish a trace chunk to the chunk registry raced with a trace chunk deletion");
 				continue;
 			}
 		}

@@ -2,12 +2,12 @@
 .\"     Title: lttng-rotate
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 10/17/2019
+.\"      Date: 18 October 2019
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.11.0
+.\"    Source: LTTng 2.11.1
 .\"  Language: English
 .\"
-.TH "LTTNG\-ROTATE" "1" "10/17/2019" "LTTng 2\&.11\&.0" "LTTng Manual"
+.TH "LTTNG\-ROTATE" "1" "18 October 2019" "LTTng 2\&.11\&.1" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -38,9 +38,9 @@ lttng-rotate \- Archive a tracing session\*(Aqs current trace chunk
 .sp
 The \fBlttng rotate\fR command archives the current trace chunk of the current tracing session, or of the tracing session named \fISESSION\fR if provided, to the file system\&. This action is called a tracing session \fIrotation\fR\&.
 .sp
-Once a trace chunk is archived, LTTng does not manage it anymore: you can read it, modify it, move it, or remove it\&.
+Once LTTng archives a trace chunk, it does not manage it anymore: you can read it, modify it, move it, or remove it\&.
 .sp
-An archived trace chunk is a collection of metadata and data stream files which form a self\-contained trace\&.
+An \fIarchived trace chunk\fR is a collection of metadata and data stream files which form a self\-contained LTTng trace\&.
 .sp
 The \fIcurrent trace chunk\fR of a given tracing session includes:
 .sp
@@ -91,18 +91,44 @@ The last rotation, either an immediate one with
 The content of all the non\-flushed sub\-buffers of the tracing session\(cqs channels\&.
 .RE
 .sp
-You can use \fBlttng rotate\fR either at any time when the tracing session is active (see \fBlttng-start\fR(1)), or a single time once the tracing session becomes inactive (see \fBlttng-stop\fR(1))\&.
+You can use \fBlttng rotate\fR:
 .sp
-By default, the \fBlttng rotate\fR command ensures that the rotation is done before printing the archived trace chunk\(cqs path and returning to the prompt\&. The printed path is absolute when the tracing session was created in normal mode and relative to the relay daemon\(cqs output directory (see the \fB--output\fR option in \fBlttng-relayd\fR(8)) when it was created in network streaming mode (see \fBlttng-create\fR(1))\&.
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+At any time when the tracing session is active (see
+\fBlttng-start\fR(1))\&.
+.RE
 .sp
-With the \fB--no-wait\fR option, the command finishes immediately, hence a rotation might not be completed when the command is done\&. In this case, there is no easy way to know when the current trace chunk is archived, and the command does not print the archived trace chunk\(cqs path\&.
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A single time once the tracing session becomes inactive (see
+\fBlttng-stop\fR(1))\&.
+.RE
 .sp
-Because a rotation causes the tracing session\(cqs current sub\-buffers to be flushed, archived trace chunks are never redundant, that is, they do not overlap over time like snapshots can (see \fBlttng-snapshot\fR(1))\&. Also, a rotation does not directly cause discarded event records or packets\&.
+By default, the \fBlttng rotate\fR command ensures that LTTng finished performing the tracing session rotation before it prints the archived trace chunk\(cqs path and exits\&. The printed path is absolute when the tracing session was created in normal mode and relative to the relay daemon\(cqs output directory (see the \fB--output\fR option in \fBlttng-relayd\fR(8)) when it was created in network streaming mode (see \fBlttng-create\fR(1))\&.
+.sp
+With the \fB--no-wait\fR option, the command finishes immediately, so that LTTng might not have completed the rotation when the command exits\&. In this case, there is no easy way to know when the current trace chunk becomes archived, and the command does not print the archived trace chunk\(cqs path\&.
+.sp
+Because when LTTng performs a tracing session rotation, it flushes the tracing session\(cqs current sub\-buffers, archived trace chunks are never redundant, that is, they do not overlap over time like snapshots can (see \fBlttng-snapshot\fR(1))\&. Also, a rotation does not directly cause discarded event records or packets\&.
 .sp
 See \fILIMITATIONS\fR for important limitations regarding this command\&.
 .SS "Trace chunk archive naming"
 .sp
-A trace chunk archive is a subdirectory of a tracing session\(cqs output directory (see the \fB--output\fR option in \fBlttng-create\fR(1) and \fBlttng-relayd\fR(8)) which contains, through tracing domain and possibly UID/PID subdirectories, metadata and data stream files\&.
+A trace chunk archive is a subdirectory of the \fBarchives\fR subdirectory within a tracing session\(cqs output directory (see the \fB--output\fR option in \fBlttng-create\fR(1) and \fBlttng-relayd\fR(8))\&.
+.sp
+A trace chunk archive contains, through tracing domain and possibly UID/PID subdirectories, metadata and data stream files\&.
 .sp
 A trace chunk archive is, at the same time:
 .sp
@@ -130,13 +156,13 @@ A member of a set of trace chunk archives which form the complete trace of a tra
 .sp
 In other words, an LTTng trace reader can read both the tracing session output directory (all the trace chunk archives), or a single trace chunk archive\&.
 .sp
-When a tracing session rotation occurs, the created trace chunk archive is named:
+When LTTng performs a tracing session rotation, it names the resulting trace chunk archive as such, relative to the tracing session\(cqs output directory:
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
-\fIBEGIN\fR\-\fIEND\fR\-\fIID\fR
+archives/\fIBEGIN\fR\-\fIEND\fR\-\fIID\fR
 .fi
 .if n \{\
 .RE
@@ -144,7 +170,7 @@ When a tracing session rotation occurs, the created trace chunk archive is named
 .PP
 \fIBEGIN\fR
 .RS 4
-Date and time of the beginning of the trace chunk archive with the ISO 8601\-compatible
+Date and time of the beginning of the trace chunk archive with the ISO\ \&8601\-compatible
 \fBYYYYmmddTHHMMSS\(+-HHMM\fR
 form, where
 \fBYYYYmmdd\fR
@@ -158,7 +184,7 @@ Example:
 .PP
 \fIEND\fR
 .RS 4
-Date and time of the end of the trace chunk archive with the ISO 8601\-compatible
+Date and time of the end of the trace chunk archive with the ISO\ \&8601\-compatible
 \fBYYYYmmddTHHMMSS\(+-HHMM\fR
 form, where
 \fBYYYYmmdd\fR
@@ -175,7 +201,17 @@ Example:
 Unique numeric identifier of the trace chunk within its tracing session\&.
 .RE
 .sp
-Trace chunk archive name example: \fB20171119T152407-0500-20171119T151422-0500-3\fR
+Trace chunk archive name example:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+archives/20171119T152407\-0500\-20171119T151422\-0500\-3
+.fi
+.if n \{\
+.RE
+.\}
 .SH "OPTIONS"
 .sp
 General options are described in \fBlttng\fR(1)\&.

@@ -44,16 +44,12 @@
 /* Number of TAP tests in this file */
 #define NUM_TESTS 11
 
-struct health_app *health_sessiond;
 static struct ltt_session_list *session_list;
 
 /* For error.h */
 int lttng_opt_quiet = 1;
 int lttng_opt_verbose = 0;
 int lttng_opt_mi;
-
-int ust_consumerd32_fd;
-int ust_consumerd64_fd;
 
 static const char alphanum[] =
 	"0123456789"
@@ -132,7 +128,7 @@ static int create_one_session(char *name)
 	struct ltt_session *session = NULL;
 
 	session_lock_list();
-	ret_code = session_create(name, geteuid(), getegid(), NULL, &session);
+	ret_code = session_create(name, geteuid(), getegid(), &session);
 	session_put(session);
 	if (ret_code == LTTNG_OK) {
 		/* Validate */
@@ -288,7 +284,7 @@ void test_session_name_generation(void)
 	const char *expected_session_name_prefix = DEFAULT_SESSION_NAME;
 
 	session_lock_list();
-	ret_code = session_create(NULL, geteuid(), getegid(), NULL, &session);
+	ret_code = session_create(NULL, geteuid(), getegid(), &session);
 	ok(ret_code == LTTNG_OK,
 		"Create session with a NULL name (auto-generate a name)");
 	if (!session) {

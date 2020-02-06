@@ -81,7 +81,7 @@ struct ust_register_msg {
  * Global applications HT used by the session daemon. This table is indexed by
  * PID using the pid_n node and pid value of an ust_app.
  */
-struct lttng_ht *ust_app_ht;
+extern struct lttng_ht *ust_app_ht;
 
 /*
  * Global applications HT used by the session daemon. This table is indexed by
@@ -89,13 +89,13 @@ struct lttng_ht *ust_app_ht;
  *
  * The 'sock' in question here is the 'command' socket.
  */
-struct lttng_ht *ust_app_ht_by_sock;
+extern struct lttng_ht *ust_app_ht_by_sock;
 
 /*
  * Global applications HT used by the session daemon. This table is indexed by
  * socket using the notify_sock_n node and notify_sock value of an ust_app.
  */
-struct lttng_ht *ust_app_ht_by_notify_sock;
+extern struct lttng_ht *ust_app_ht_by_notify_sock;
 
 /* Stream list containing ust_app_stream. */
 struct ust_app_stream_list {
@@ -363,6 +363,8 @@ int ust_app_regenerate_statedump_all(struct ltt_ust_session *usess);
 enum lttng_error_code ust_app_rotate_session(struct ltt_session *session);
 enum lttng_error_code ust_app_create_channel_subdirectories(
 		const struct ltt_ust_session *session);
+int ust_app_release_object(struct ust_app *app,
+		struct lttng_ust_object_data *data);
 
 static inline
 int ust_app_supported(void)
@@ -599,6 +601,12 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 static inline
 enum lttng_error_code ust_app_create_channel_subdirectories(
 		const struct ltt_ust_session *session)
+{
+	return 0;
+}
+
+static inline
+int ust_app_release_object(struct ust_app *app, struct lttng_ust_object_data *data)
 {
 	return 0;
 }

@@ -329,6 +329,7 @@ DEPDIR = @DEPDIR@
 DLLTOOL = @DLLTOOL@
 DL_LIBS = @DL_LIBS@
 DSYMUTIL = @DSYMUTIL@
+DTRACE = @DTRACE@
 DUMPBIN = @DUMPBIN@
 ECHO_C = @ECHO_C@
 ECHO_N = @ECHO_N@
@@ -524,7 +525,7 @@ LIB_LTTNG_CTL = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la
 @NO_SHARED_FALSE@notification_LDADD = $(LIB_LTTNG_CTL) $(LIBTAP) -lm
 @NO_SHARED_FALSE@rotation_SOURCES = rotation.c
 @NO_SHARED_FALSE@rotation_LDADD = $(LIB_LTTNG_CTL) $(LIBTAP) -lm
-@NO_SHARED_FALSE@noinst_SCRIPTS = test_notification_ust test_notification_ust test_notification_multi_app test_rotation
+@NO_SHARED_FALSE@noinst_SCRIPTS = test_notification_ust test_notification_kernel test_notification_multi_app test_rotation
 all: all-am
 
 .SUFFIXES:
