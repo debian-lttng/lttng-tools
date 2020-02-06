@@ -3,7 +3,7 @@ Section: libs
 Priority: optional
 Maintainer: Jon Bernard <jbernard@debian.org>
 Uploaders: Michael Jeanson <mjeanson@debian.org>
-Build-Depends: debhelper (>= 11~),
+Build-Depends: debhelper (>= 10~),
   asciidoc,
   bash-completion,
   bison,
