@@ -1,4 +1,2 @@
-fix-typo-occured.patch
-fix-typo-attempt.patch
 0001-Fix-compile-fails-for-x32-arch.patch
 fix-lttng-health-check-manpage.patch

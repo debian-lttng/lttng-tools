@@ -22,11 +22,9 @@ Signed-off-by: Jérémie Galarneau <jeremie.galarneau@efficios.com>
  src/common/utils.c    | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
 
-diff --git a/src/bin/lttng/utils.c b/src/bin/lttng/utils.c
-index fa2d3c9da..81e93952a 100644
 --- a/src/bin/lttng/utils.c
 +++ b/src/bin/lttng/utils.c
-@@ -159,7 +159,7 @@ unsigned int fls_u32(uint32_t x)
+@@ -159,7 +159,7 @@
  #define HAS_FLS_U32
  #endif
  
@@ -35,11 +33,9 @@ index fa2d3c9da..81e93952a 100644
  static inline
  unsigned int fls_u64(uint64_t x)
  {
-diff --git a/src/common/utils.c b/src/common/utils.c
-index 17a313ee1..3cdb6b760 100644
 --- a/src/common/utils.c
 +++ b/src/common/utils.c
-@@ -1014,7 +1014,7 @@ static inline unsigned int fls_u32(uint32_t x)
+@@ -1015,7 +1015,7 @@
  #define HAS_FLS_U32
  #endif
  
@@ -48,6 +44,3 @@ index 17a313ee1..3cdb6b760 100644
  static inline
  unsigned int fls_u64(uint64_t x)
  {
--- 
-2.17.1
-
