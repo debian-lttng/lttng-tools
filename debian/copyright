@@ -196,7 +196,7 @@ Files: src/bin/lttng-sessiond/agent-thread.c
   src/bin/lttng-sessiond/notify-apps.h
   src/bin/lttng-sessiond/snapshot.c
   src/bin/lttng-sessiond/snapshot.h
-  src/bin/lttng-sessiond/ust-ctl.h
+  src/bin/lttng-sessiond/ust-ctl-internal.h
   src/bin/lttng-sessiond/ust-registry.c
   src/bin/lttng-sessiond/ust-registry.h
 Copyright: 2013, - David Goulet <dgoulet@efficios.com>
