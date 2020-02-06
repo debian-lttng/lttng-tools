@@ -1,3 +1,13 @@
+ltt-control (2.11.1-1) unstable; urgency=medium
+
+  * [47b26b1] New upstream version 2.11.1
+  * [2753be7] Drop patches merged upstream
+  * [1c19acb] Revert to dh 10 as recommended by the dh maintainer
+  * [95b46c1] Add upstream metadata file
+  * [2c6b8f9] d/copyright: Renamed ust-ctl.h to ust-ctl-internal.h
+
+ -- Michael Jeanson <mjeanson@debian.org>  Thu, 06 Feb 2020 16:50:54 -0500
+
 ltt-control (2.11.0-4) unstable; urgency=medium
 
   * [341510b] Add asciidoc and xmlto to builddeps (Closes: #948253)
