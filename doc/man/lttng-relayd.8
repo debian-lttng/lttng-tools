@@ -2,12 +2,12 @@
 .\"     Title: lttng-relayd
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 10/17/2019
+.\"      Date: 5 June 2018
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.11.0
+.\"    Source: LTTng 2.11.1
 .\"  Language: English
 .\"
-.TH "LTTNG\-RELAYD" "8" "10/17/2019" "LTTng 2\&.11\&.0" "LTTng Manual"
+.TH "LTTNG\-RELAYD" "8" "5 June 2018" "LTTng 2\&.11\&.1" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -46,7 +46,7 @@ The \fILTTng relay daemon\fR is responsible for receiving trace data from possib
 .sp
 The relay daemon listens by default on all network interfaces to gather trace data, but only on localhost for LTTng live connections\&.
 .sp
-The relay daemon does not require any particular permissions, as long as it can write to the output directory and listen on the configured ports\&. If a user is within a secured network and/or has proper firewall settings, \fBlttng-relayd\fR can listen to LTTng live connections from \fIall\fR network interfaces by specifying \fB--live-port=tcp://localhost:5344\fR\&.
+The relay daemon does not require any particular permissions, as long as it can write to the output directory and listen on the configured ports\&. If a user is within a secured network and/or has proper firewall settings, \fBlttng-relayd\fR can listen to LTTng live connections from \fIall\fR network interfaces by specifying \fB--live-port=tcp://0.0.0.0:5344\fR\&.
 .sp
 Once a trace has been streamed completely, the trace can be processed by any tool that can process an LTTng trace located on the local file system\&.
 .SS "Output directory"

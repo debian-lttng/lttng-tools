@@ -44,10 +44,15 @@ struct relay_stream_rotation {
 	bool data_rotated;
 	bool index_rotated;
 	/*
-	 * Sequence number of the first packet of the new trace chunk to which
-	 * the stream is rotating.
+	 * Packet sequence number of the first packet of the new trace chunk to
+	 * which the stream is rotating.
 	 */
-	uint64_t seq_num;
+	uint64_t packet_seq_num;
+	/*
+	 * Monotonically increasing previous network sequence number of first
+	 * data packet of the new trace chunk to which the stream is rotating.
+	 */
+	uint64_t prev_data_net_seq;
 	struct lttng_trace_chunk *next_trace_chunk;
 };
 
@@ -112,6 +117,12 @@ struct relay_stream {
 	uint64_t index_received_seqcount;
 
 	/*
+	 * Packet sequence number of the last received packet index.
+	 * Only populated when interacting with CTF_INDEX 1.1+.
+	 */
+	LTTNG_OPTIONAL(uint64_t) received_packet_seq_num;
+
+	/*
 	 * Tracefile array is an index of the stream trace files,
 	 * indexed by position. It allows keeping track of the oldest
 	 * available indexes when overwriting trace files in tracefile
@@ -164,6 +175,8 @@ struct relay_stream {
 	struct cds_list_head recv_node;
 	/* Protected by session lock. */
 	bool published;
+	/* Notified viewer that no new metadata is available. */
+	bool no_new_metadata_notified;
 	/*
 	 * Node of stream within global stream hash table.
 	 */

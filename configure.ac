@@ -1,5 +1,5 @@
 AC_PREREQ([2.64])
-AC_INIT([lttng-tools],[2.11.0],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
+AC_INIT([lttng-tools],[2.11.1],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
 
 AC_CONFIG_HEADERS([include/config.h])
 AC_CONFIG_AUX_DIR([config])
@@ -8,7 +8,7 @@ AC_CONFIG_MACRO_DIR([m4])
 AC_CANONICAL_TARGET
 AC_CANONICAL_HOST
 
-AM_INIT_AUTOMAKE([foreign dist-bzip2 no-dist-gzip tar-pax nostdinc])
+AM_INIT_AUTOMAKE([1.12 foreign dist-bzip2 no-dist-gzip tar-pax nostdinc])
 AM_MAINTAINER_MODE([enable])
 
 # Enable silent rules if available (Introduced in AM 1.11)
@@ -24,9 +24,6 @@ AC_PROG_CC_STDC
 AC_PROG_CXX
 RW_PROG_CXX_WORKS
 AM_CONDITIONAL([CXX_WORKS], [test "x$rw_cv_prog_cxx_works" = "xyes"])
-
-LTTNG_CHECK_SDT_WORKS
-AM_CONDITIONAL([SDT_WORKS], [test "x$lttng_cv_sdt_works" = "xyes"])
 
 # Checks for programs.
 AC_PROG_GREP
@@ -412,7 +409,6 @@ _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_STATUS], [Get the status of the current t
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_STOP], [Stop tracing])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_DISABLE_ROTATION], [Unset a rotation schedule])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ENABLE_ROTATION], [Set a rotation schedule])
-_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ROTATE], [Archive a tracing session’s current trace chunk])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_TRACK], [Track specific system resources])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_UNTRACK], [Untrack specific system resources])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_VERSION], [Show version information])
@@ -562,14 +558,13 @@ AC_ARG_WITH([lttng-ust],
 
 AS_IF([test "x$with_lttng_ust" = "xyes"],
   [
-    AC_CHECK_LIB([lttng-ust-ctl], [ustctl_recv_channel_from_consumer],
+    AC_CHECK_LIB([lttng-ust-ctl], [lttng_ust_enum_get_from_desc],
       [
         AC_DEFINE([HAVE_LIBLTTNG_UST_CTL], [1])
       ],
       [
-        AC_MSG_FAILURE([Cannot find LTTng-UST >= 2.2.x. Use [LDFLAGS]=-Ldir and [CPPFLAGS]=-Idir to specify its location, or specify --without-lttng-ust to build lttng-tools without LTTng-UST support.])
-      ],
-      [-lurcu-common -lurcu-bp -lurcu-cds -lrt -ldl]
+        AC_MSG_FAILURE([Cannot find LTTng-UST >= 2.11.x. Use [LDFLAGS]=-Ldir and [CPPFLAGS]=-Idir to specify its location, or specify --without-lttng-ust to build lttng-tools without LTTng-UST support.])
+      ]
     )
   ]
 )
@@ -857,6 +852,36 @@ AS_IF([test "x$enable_test_python3_agent" = "xyes" -o "x$test_python3_agent_auto
 AC_SUBST([RUN_PYTHON_AGENT_TEST])
 AC_SUBST([PYTHON2_AGENT])
 AC_SUBST([PYTHON3_AGENT])
+
+AC_ARG_ENABLE([test-sdt-uprobe],
+  [AS_HELP_STRING([--enable-test-sdt-uprobe], [enable the LTTng UST SDT uprobe tests [default=autodetect]])],
+  [test_sdt_uprobe="$enableval"],
+  [test_sdt_uprobe=autodetect]
+)
+
+AS_IF([test "$test_sdt_uprobe" != "no"], [
+  LTTNG_CHECK_SDT_WORKS
+  AC_PATH_PROG([DTRACE], [dtrace])
+])
+
+AS_IF([test "$test_sdt_uprobe" = "yes"], [
+  AS_IF([test "$lttng_cv_sdt_works" = "no"], [
+    AC_MSG_ERROR([Cannot find 'sys/sdt.h'.])
+  ])
+  AS_IF([test "x$DTRACE" = "x"], [
+    AC_MSG_ERROR([Cannot find SystemTap dtrace. You can set the DTRACE variable to override automatic detection.])
+  ])
+])
+
+AS_IF([test "$test_sdt_uprobe" = "autodetect"], [
+  AS_IF([test "$lttng_cv_sdt_works" = "yes"], [
+    AS_IF([test "x$DTRACE" != "x"], [
+      test_sdt_uprobe=yes
+    ])
+  ])
+])
+
+AM_CONDITIONAL([TEST_SDT_UPROBE], [test "$test_sdt_uprobe" = "yes"])
 
 # Arguments for binaries build exclusion
 AC_ARG_ENABLE([bin-lttng], AS_HELP_STRING([--disable-bin-lttng],[Disable the build of lttng binaries]))
@@ -1275,6 +1300,10 @@ PPRINT_PROP_BOOL([LTTng-UST Python2 agent tests], $value)
 
 test ! -z "$PYTHON3_AGENT" && value=1 || value=0
 PPRINT_PROP_BOOL([LTTng-UST Python3 agent tests], $value)
+
+# LTTng UST Java agent Log4j tests enabled/disabled
+test "x$test_sdt_uprobe" = "xyes" && value=1 || value=0
+PPRINT_PROP_BOOL([LTTng-UST SDT uprobe tests], $value)
 
 #Python binding enabled/disabled
 test "x$enable_python_binding" = xyes && value=1 || value=0

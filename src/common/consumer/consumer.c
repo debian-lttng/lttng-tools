@@ -603,6 +603,7 @@ struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
 	stream->endpoint_status = CONSUMER_ENDPOINT_ACTIVE;
 	stream->index_file = NULL;
 	stream->last_sequence_number = -1ULL;
+	stream->rotate_position = -1ULL;
 	pthread_mutex_init(&stream->lock, NULL);
 	pthread_mutex_init(&stream->metadata_timer_lock, NULL);
 
@@ -1014,13 +1015,6 @@ int lttng_consumer_channel_set_trace_chunk(
 		struct lttng_consumer_channel *channel,
 		struct lttng_trace_chunk *new_trace_chunk)
 {
-	int ret = 0;
-	const bool is_local_trace = channel->relayd_id == -1ULL;
-	bool update_stream_trace_chunk;
-	struct cds_lfht_iter iter;
-	struct lttng_consumer_stream *stream;
-	unsigned long channel_hash;
-
 	pthread_mutex_lock(&channel->lock);
 	if (channel->is_deleted) {
 		/*
@@ -1032,24 +1026,6 @@ int lttng_consumer_channel_set_trace_chunk(
 		 */
 		goto end;
 	}
-	/*
-	 * A stream can transition to a state where it and its channel
-	 * no longer belong to a trace chunk. For instance, this happens when
-	 * a session is rotated while it is inactive. After the rotation
-	 * of an inactive session completes, the channel and its streams no
-	 * longer belong to a trace chunk.
-	 *
-	 * However, if a session is stopped, rotated, and started again,
-	 * the session daemon will create a new chunk and send it to its peers.
-	 * In that case, the streams' transition to a new chunk can be performed
-	 * immediately.
-	 *
-	 * This trace chunk transition could also be performed lazily when
-	 * a buffer is consumed. However, creating the files here allows the
-	 * consumer daemon to report any creation error to the session daemon
-	 * and cause the start of the tracing session to fail.
-	 */
-	update_stream_trace_chunk = !channel->trace_chunk && new_trace_chunk;
 
 	/*
 	 * The acquisition of the reference cannot fail (barring
@@ -1065,59 +1041,9 @@ int lttng_consumer_channel_set_trace_chunk(
 
 	lttng_trace_chunk_put(channel->trace_chunk);
 	channel->trace_chunk = new_trace_chunk;
-	if (!is_local_trace || !new_trace_chunk) {
-		/* Not an error. */
-		goto end;
-	}
-
-	if (!update_stream_trace_chunk) {
-		goto end;
-	}
-
-	channel_hash = consumer_data.stream_per_chan_id_ht->hash_fct(
-			&channel->key, lttng_ht_seed);
-	rcu_read_lock();
-	cds_lfht_for_each_entry_duplicate(consumer_data.stream_per_chan_id_ht->ht,
-			channel_hash,
-			consumer_data.stream_per_chan_id_ht->match_fct,
-			&channel->key, &iter, stream, node_channel_id.node) {
-		bool acquired_reference, should_regenerate_metadata = false;
-
-		acquired_reference = lttng_trace_chunk_get(channel->trace_chunk);
-		assert(acquired_reference);
-
-		pthread_mutex_lock(&stream->lock);
-
-		/*
-		 * On a transition from "no-chunk" to a new chunk, a metadata
-		 * stream's content must be entirely dumped. This must occcur
-		 * _after_ the creation of the metadata stream's output files
-		 * as the consumption thread (not necessarily the one executing
-		 * this) may start to consume during the call to
-		 * consumer_metadata_stream_dump().
-		 */
-		should_regenerate_metadata =
-			stream->metadata_flag &&
-			!stream->trace_chunk && channel->trace_chunk;
-		stream->trace_chunk = channel->trace_chunk;
-		ret = consumer_stream_create_output_files(stream, true);
-		if (ret) {
-			pthread_mutex_unlock(&stream->lock);
-			goto end_rcu_unlock;
-		}
-		if (should_regenerate_metadata) {
-			ret = consumer_metadata_stream_dump(stream);
-		}
-		pthread_mutex_unlock(&stream->lock);
-		if (ret) {
-			goto end_rcu_unlock;
-		}
-	}
-end_rcu_unlock:
-	rcu_read_unlock();
 end:
 	pthread_mutex_unlock(&channel->lock);
-	return ret;
+	return 0;
 }
 
 /*
@@ -4018,15 +3944,23 @@ int consumer_flush_buffer(struct lttng_consumer_stream *stream, int producer_act
 
 	switch (consumer_data.type) {
 	case LTTNG_CONSUMER_KERNEL:
-		ret = kernctl_buffer_flush(stream->wait_fd);
-		if (ret < 0) {
-			ERR("Failed to flush kernel stream");
-			goto end;
+		if (producer_active) {
+			ret = kernctl_buffer_flush(stream->wait_fd);
+			if (ret < 0) {
+				ERR("Failed to flush kernel stream");
+				goto end;
+			}
+		} else {
+			ret = kernctl_buffer_flush_empty(stream->wait_fd);
+			if (ret < 0) {
+				ERR("Failed to flush kernel stream");
+				goto end;
+			}
 		}
 		break;
 	case LTTNG_CONSUMER32_UST:
 	case LTTNG_CONSUMER64_UST:
-		lttng_ustctl_flush_buffer(stream, producer_active);
+		lttng_ustconsumer_flush_buffer(stream, producer_active);
 		break;
 	default:
 		ERR("Unknown consumer_data type");
@@ -4081,7 +4015,7 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 			ht->hash_fct(&channel->key, lttng_ht_seed),
 			ht->match_fct, &channel->key, &iter.iter,
 			stream, node_channel_id.node) {
-		unsigned long consumed_pos;
+		unsigned long produced_pos = 0, consumed_pos = 0;
 
 		health_code_update();
 
@@ -4094,65 +4028,87 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 			rotating_to_new_chunk = false;
 		}
 
-		ret = lttng_consumer_sample_snapshot_positions(stream);
-		if (ret < 0) {
+		/*
+		 * Do not flush an empty packet when rotating from a NULL trace
+		 * chunk. The stream has no means to output data, and the prior
+		 * rotation which rotated to NULL performed that side-effect already.
+		 */
+		if (stream->trace_chunk) {
+			/*
+			 * For metadata stream, do an active flush, which does not
+			 * produce empty packets. For data streams, empty-flush;
+			 * ensures we have at least one packet in each stream per trace
+			 * chunk, even if no data was produced.
+			 */
+			ret = consumer_flush_buffer(stream, stream->metadata_flag ? 1 : 0);
+			if (ret < 0) {
+				ERR("Failed to flush stream %" PRIu64 " during channel rotation",
+						stream->key);
+				goto end_unlock_stream;
+			}
+		}
+
+		ret = lttng_consumer_take_snapshot(stream);
+		if (ret < 0 && ret != -ENODATA && ret != -EAGAIN) {
 			ERR("Failed to sample snapshot position during channel rotation");
 			goto end_unlock_stream;
 		}
+		if (!ret) {
+			ret = lttng_consumer_get_produced_snapshot(stream,
+					&produced_pos);
+			if (ret < 0) {
+				ERR("Failed to sample produced position during channel rotation");
+				goto end_unlock_stream;
+			}
 
-		ret = lttng_consumer_get_produced_snapshot(stream,
-				&stream->rotate_position);
-		if (ret < 0) {
-			ERR("Failed to sample produced position during channel rotation");
-			goto end_unlock_stream;
+			ret = lttng_consumer_get_consumed_snapshot(stream,
+					&consumed_pos);
+			if (ret < 0) {
+				ERR("Failed to sample consumed position during channel rotation");
+				goto end_unlock_stream;
+			}
 		}
-
-		lttng_consumer_get_consumed_snapshot(stream,
-				&consumed_pos);
-		if (consumed_pos == stream->rotate_position) {
+		/*
+		 * Align produced position on the start-of-packet boundary of the first
+		 * packet going into the next trace chunk.
+		 */
+		produced_pos = ALIGN_FLOOR(produced_pos, stream->max_sb_size);
+		if (consumed_pos == produced_pos) {
 			stream->rotate_ready = true;
 		}
-
 		/*
-		 * Active flush; has no effect if the production position
-		 * is at a packet boundary.
+		 * The rotation position is based on the packet_seq_num of the
+		 * packet following the last packet that was consumed for this
+		 * stream, incremented by the offset between produced and
+		 * consumed positions. This rotation position is a lower bound
+		 * (inclusive) at which the next trace chunk starts. Since it
+		 * is a lower bound, it is OK if the packet_seq_num does not
+		 * correspond exactly to the same packet identified by the
+		 * consumed_pos, which can happen in overwrite mode.
 		 */
-		ret = consumer_flush_buffer(stream, 1);
-		if (ret < 0) {
-			ERR("Failed to flush stream %" PRIu64 " during channel rotation",
+		if (stream->sequence_number_unavailable) {
+			/*
+			 * Rotation should never be performed on a session which
+			 * interacts with a pre-2.8 lttng-modules, which does
+			 * not implement packet sequence number.
+			 */
+			ERR("Failure to rotate stream %" PRIu64 ": sequence number unavailable",
 					stream->key);
+			ret = -1;
 			goto end_unlock_stream;
 		}
+		stream->rotate_position = stream->last_sequence_number + 1 +
+				((produced_pos - consumed_pos) / stream->max_sb_size);
 
 		if (!is_local_trace) {
 			/*
 			 * The relay daemon control protocol expects a rotation
 			 * position as "the sequence number of the first packet
-			 * _after_ the current trace chunk.
-			 *
-			 * At the moment when the positions of the buffers are
-			 * sampled, the production position does not necessarily
-			 * sit at a packet boundary. The 'active' flush
-			 * operation above will push the production position to
-			 * the next packet boundary _if_ it is not already
-			 * sitting at such a boundary.
-			 *
-			 * Assuming a current production position that is not
-			 * on the bound of a packet, the 'target' sequence
-			 * number is
-			 *   (consumed_pos / subbuffer_size) + 1
-			 * Note the '+ 1' to ensure the current packet is
-			 * part of the current trace chunk.
-			 *
-			 * However, if the production position is already at
-			 * a packet boundary, the '+ 1' is not necessary as the
-			 * last packet of the current chunk is already
-			 * 'complete'.
+			 * _after_ the current trace chunk".
 			 */
 			const struct relayd_stream_rotation_position position = {
 				.stream_id = stream->relayd_stream_id,
-				.rotate_at_seq_num = (stream->rotate_position / stream->max_sb_size) +
-					!!(stream->rotate_position % stream->max_sb_size),
+				.rotate_at_seq_num = stream->rotate_position,
 			};
 
 			ret = lttng_dynamic_array_add_element(
@@ -4215,44 +4171,39 @@ end:
  */
 int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream)
 {
-	int ret;
-	unsigned long consumed_pos;
-
-	if (!stream->rotate_position && !stream->rotate_ready) {
-		ret = 0;
-		goto end;
-	}
-
 	if (stream->rotate_ready) {
-		ret = 1;
-		goto end;
+		return 1;
 	}
 
 	/*
-	 * If we don't have the rotate_ready flag, check the consumed position
-	 * to determine if we need to rotate.
+	 * If packet seq num is unavailable, it means we are interacting
+	 * with a pre-2.8 lttng-modules which does not implement the
+	 * sequence number. Rotation should never be used by sessiond in this
+	 * scenario.
 	 */
-	ret = lttng_consumer_sample_snapshot_positions(stream);
-	if (ret < 0) {
-		ERR("Taking snapshot positions");
-		goto end;
+	if (stream->sequence_number_unavailable) {
+		ERR("Internal error: rotation used on stream %" PRIu64
+				" with unavailable sequence number",
+				stream->key);
+		return -1;
 	}
 
-	ret = lttng_consumer_get_consumed_snapshot(stream, &consumed_pos);
-	if (ret < 0) {
-		ERR("Consumed snapshot position");
-		goto end;
+	if (stream->rotate_position == -1ULL ||
+			stream->last_sequence_number == -1ULL) {
+		return 0;
 	}
 
-	/* Rotate position not reached yet (with check for overflow). */
-	if ((long) (consumed_pos - stream->rotate_position) < 0) {
-		ret = 0;
-		goto end;
+	/*
+	 * Rotate position not reached yet. The stream rotate position is
+	 * the position of the next packet belonging to the next trace chunk,
+	 * but consumerd considers rotation ready when reaching the last
+	 * packet of the current chunk, hence the "rotate_position - 1".
+	 */
+	if (stream->last_sequence_number >= stream->rotate_position - 1) {
+		return 1;
 	}
-	ret = 1;
 
-end:
-	return ret;
+	return 0;
 }
 
 /*
@@ -4260,7 +4211,7 @@ end:
  */
 void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stream)
 {
-	stream->rotate_position = 0;
+	stream->rotate_position = -1ULL;
 	stream->rotate_ready = false;
 }
 

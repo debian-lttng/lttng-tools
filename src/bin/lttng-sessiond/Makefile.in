@@ -136,12 +136,13 @@ CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
 am__lttng_sessiond_SOURCES_DIST = utils.c utils.h trace-kernel.c \
-	trace-kernel.h kernel.c kernel.h ust-ctl.h ust-app.h \
-	trace-ust.h notify-apps.h ust-registry.h context.c context.h \
+	trace-kernel.h kernel.c kernel.h ust-app.h trace-ust.h \
+	notify-apps.h lttng-ust-ctl.h lttng-ust-abi.h \
+	lttng-ust-error.h ust-ctl-internal.h ust-abi-internal.h \
+	ust-error-internal.h ust-registry.h context.c context.h \
 	channel.c channel.h event.c event.h shm.c shm.h consumer.c \
 	consumer.h session.c session.h modprobe.c modprobe.h \
-	kern-modules.h lttng-ust-ctl.h lttng-ust-abi.h \
-	lttng-ust-error.h fd-limit.c fd-limit.h kernel-consumer.c \
+	kern-modules.h fd-limit.c fd-limit.h kernel-consumer.c \
 	kernel-consumer.h health-sessiond.h cmd.c cmd.h \
 	buffer-registry.c buffer-registry.h testpoint.h ht-cleanup.c \
 	ht-cleanup.h snapshot.c snapshot.h agent.c agent.h save.h \
@@ -366,6 +367,7 @@ DEPDIR = @DEPDIR@
 DLLTOOL = @DLLTOOL@
 DL_LIBS = @DL_LIBS@
 DSYMUTIL = @DSYMUTIL@
+DTRACE = @DTRACE@
 DUMPBIN = @DUMPBIN@
 ECHO_C = @ECHO_C@
 ECHO_N = @ECHO_N@
@@ -538,12 +540,13 @@ top_srcdir = @top_srcdir@
 
 # Add main.c at the end for compile order
 lttng_sessiond_SOURCES = utils.c utils.h trace-kernel.c trace-kernel.h \
-	kernel.c kernel.h ust-ctl.h ust-app.h trace-ust.h \
-	notify-apps.h ust-registry.h context.c context.h channel.c \
-	channel.h event.c event.h shm.c shm.h consumer.c consumer.h \
-	session.c session.h modprobe.c modprobe.h kern-modules.h \
-	lttng-ust-ctl.h lttng-ust-abi.h lttng-ust-error.h fd-limit.c \
-	fd-limit.h kernel-consumer.c kernel-consumer.h consumer.h \
+	kernel.c kernel.h ust-app.h trace-ust.h notify-apps.h \
+	lttng-ust-ctl.h lttng-ust-abi.h lttng-ust-error.h \
+	ust-ctl-internal.h ust-abi-internal.h ust-error-internal.h \
+	ust-registry.h context.c context.h channel.c channel.h event.c \
+	event.h shm.c shm.h consumer.c consumer.h session.c session.h \
+	modprobe.c modprobe.h kern-modules.h fd-limit.c fd-limit.h \
+	kernel-consumer.c kernel-consumer.h consumer.h \
 	health-sessiond.h cmd.c cmd.h buffer-registry.c \
 	buffer-registry.h testpoint.h ht-cleanup.c ht-cleanup.h \
 	snapshot.c snapshot.h agent.c agent.h save.h save.c \

@@ -273,17 +273,20 @@ int consumer_metadata_cache_flushed(struct lttng_consumer_channel *channel,
 		pthread_mutex_lock(&channel->lock);
 	}
 	pthread_mutex_lock(&channel->timer_lock);
-	pthread_mutex_lock(&channel->metadata_cache->lock);
-
 	metadata_stream = channel->metadata_stream;
-
 	if (!metadata_stream) {
 		/*
 		 * Having no metadata stream means the channel is being destroyed so there
 		 * is no cache to flush anymore.
 		 */
 		ret = 0;
-	} else if (metadata_stream->ust_metadata_pushed >= offset) {
+		goto end_unlock_channel;
+	}
+
+	pthread_mutex_lock(&metadata_stream->lock);
+	pthread_mutex_lock(&channel->metadata_cache->lock);
+
+	if (metadata_stream->ust_metadata_pushed >= offset) {
 		ret = 0;
 	} else if (channel->metadata_stream->endpoint_status !=
 			CONSUMER_ENDPOINT_ACTIVE) {
@@ -295,6 +298,8 @@ int consumer_metadata_cache_flushed(struct lttng_consumer_channel *channel,
 	}
 
 	pthread_mutex_unlock(&channel->metadata_cache->lock);
+	pthread_mutex_unlock(&metadata_stream->lock);
+end_unlock_channel:
 	pthread_mutex_unlock(&channel->timer_lock);
 	if (!timer) {
 		pthread_mutex_unlock(&channel->lock);

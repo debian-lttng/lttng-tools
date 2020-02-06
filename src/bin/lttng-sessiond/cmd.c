@@ -1185,6 +1185,7 @@ int cmd_setup_relayd(struct ltt_session *session)
 
 	DBG("Setting relayd for session %s", session->name);
 
+	rcu_read_lock();
 	if (session->current_trace_chunk) {
 		enum lttng_trace_chunk_status status = lttng_trace_chunk_get_id(
 				session->current_trace_chunk, &current_chunk_id.value);
@@ -1197,8 +1198,6 @@ int cmd_setup_relayd(struct ltt_session *session)
 			goto error;
 		}
 	}
-
-	rcu_read_lock();
 
 	if (usess && usess->consumer && usess->consumer->type == CONSUMER_DST_NET
 			&& usess->consumer->enabled) {
@@ -2572,6 +2571,8 @@ int cmd_start_trace(struct ltt_session *session)
 	unsigned long nb_chan = 0;
 	struct ltt_kernel_session *ksession;
 	struct ltt_ust_session *usess;
+	const bool session_rotated_after_last_stop =
+			session->rotated_after_last_stop;
 
 	assert(session);
 
@@ -2582,6 +2583,22 @@ int cmd_start_trace(struct ltt_session *session)
 	/* Is the session already started? */
 	if (session->active) {
 		ret = LTTNG_ERR_TRACE_ALREADY_STARTED;
+		goto error;
+	}
+
+	if (session->rotation_state == LTTNG_ROTATION_STATE_ONGOING &&
+			!session->current_trace_chunk) {
+		/*
+		 * A rotation was launched while the session was stopped and
+		 * it has not been completed yet. It is not possible to start
+		 * the session since starting the session here would require a
+		 * rotation from "NULL" to a new trace chunk. That rotation
+		 * would overlap with the ongoing rotation, which is not
+		 * supported.
+		 */
+		WARN("Refusing to start session \"%s\" as a rotation launched after the last \"stop\" is still ongoing",
+				session->name);
+		ret = LTTNG_ERR_ROTATION_PENDING;
 		goto error;
 	}
 
@@ -2600,21 +2617,45 @@ int cmd_start_trace(struct ltt_session *session)
 		goto error;
 	}
 
+	session->active = 1;
+	session->rotated_after_last_stop = false;
 	if (session->output_traces && !session->current_trace_chunk) {
-		struct lttng_trace_chunk *trace_chunk;
+		if (!session->has_been_started) {
+			struct lttng_trace_chunk *trace_chunk;
 
-		trace_chunk = session_create_new_trace_chunk(
-				session, NULL, NULL, NULL);
-		if (!trace_chunk) {
-			ret = LTTNG_ERR_CREATE_DIR_FAIL;
-			goto error;
-		}
-		assert(!session->current_trace_chunk);
-		ret = session_set_trace_chunk(session, trace_chunk, NULL);
-		lttng_trace_chunk_put(trace_chunk);
-		if (ret) {
-			ret = LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
-			goto error;
+			DBG("Creating initial trace chunk of session \"%s\"",
+					session->name);
+			trace_chunk = session_create_new_trace_chunk(
+					session, NULL, NULL, NULL);
+			if (!trace_chunk) {
+				ret = LTTNG_ERR_CREATE_DIR_FAIL;
+				goto error;
+			}
+			assert(!session->current_trace_chunk);
+			ret = session_set_trace_chunk(session, trace_chunk,
+					NULL);
+			lttng_trace_chunk_put(trace_chunk);
+			if (ret) {
+				ret = LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
+				goto error;
+			}
+		} else {
+			DBG("Rotating session \"%s\" from its current \"NULL\" trace chunk to a new chunk",
+					session->name);
+			/*
+			 * Rotate existing streams into the new chunk.
+			 * This is a "quiet" rotation has no client has
+			 * explicitly requested this operation.
+			 *
+			 * There is also no need to wait for the rotation
+			 * to complete as it will happen immediately. No data
+			 * was produced as the session was stopped, so the
+			 * rotation should happen on reception of the command.
+			 */
+			ret = cmd_rotate_session(session, NULL, true);
+			if (ret != LTTNG_OK) {
+				goto error;
+			}
 		}
 	}
 
@@ -2637,10 +2678,6 @@ int cmd_start_trace(struct ltt_session *session)
 		}
 	}
 
-	/* Flag this after a successful start. */
-	session->has_been_started = 1;
-	session->active = 1;
-
 	/*
 	 * Clear the flag that indicates that a rotation was done while the
 	 * session was stopped.
@@ -2661,6 +2698,15 @@ int cmd_start_trace(struct ltt_session *session)
 	ret = LTTNG_OK;
 
 error:
+	if (ret == LTTNG_OK) {
+		/* Flag this after a successful start. */
+		session->has_been_started |= 1;
+	} else {
+		session->active = 0;
+		/* Restore initial state on error. */
+		session->rotated_after_last_stop =
+				session_rotated_after_last_stop;
+	}
 	return ret;
 }
 
@@ -2740,6 +2786,45 @@ error:
 }
 
 /*
+ * Set the base_path of the session only if subdir of a control uris is set.
+ * Return LTTNG_OK on success, otherwise LTTNG_ERR_*.
+ */
+static int set_session_base_path_from_uris(struct ltt_session *session,
+		size_t nb_uri,
+		struct lttng_uri *uris)
+{
+	int ret;
+	size_t i;
+
+	for (i = 0; i < nb_uri; i++) {
+		if (uris[i].stype != LTTNG_STREAM_CONTROL ||
+				uris[i].subdir[0] == '\0') {
+			/* Not interested in these URIs */
+			continue;
+		}
+
+		if (session->base_path != NULL) {
+			free(session->base_path);
+			session->base_path = NULL;
+		}
+
+		/* Set session base_path */
+		session->base_path = strdup(uris[i].subdir);
+		if (!session->base_path) {
+			PERROR("Failed to copy base path \"%s\" to session \"%s\"",
+					uris[i].subdir, session->name);
+			ret = LTTNG_ERR_NOMEM;
+			goto error;
+		}
+		DBG2("Setting base path \"%s\" for session \"%s\"",
+				session->base_path, session->name);
+	}
+	ret = LTTNG_OK;
+error:
+	return ret;
+}
+
+/*
  * Command LTTNG_SET_CONSUMER_URI processed by the client thread.
  */
 int cmd_set_consumer_uri(struct ltt_session *session, size_t nb_uri,
@@ -2759,11 +2844,20 @@ int cmd_set_consumer_uri(struct ltt_session *session, size_t nb_uri,
 		goto error;
 	}
 
+	/*
+	 * Set the session base path if any. This is done inside
+	 * cmd_set_consumer_uri to preserve backward compatibility of the
+	 * previous session creation api vs the session descriptor api.
+	 */
+	ret = set_session_base_path_from_uris(session, nb_uri, uris);
+	if (ret != LTTNG_OK) {
+		goto error;
+	}
+
 	/* Set the "global" consumer URIs */
 	for (i = 0; i < nb_uri; i++) {
-		ret = add_uri_to_consumer(session,
-				session->consumer,
-				&uris[i], LTTNG_DOMAIN_NONE);
+		ret = add_uri_to_consumer(session, session->consumer, &uris[i],
+				LTTNG_DOMAIN_NONE);
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -2894,7 +2988,6 @@ enum lttng_error_code cmd_create_session_from_descriptor(
 	const char *session_name;
 	struct ltt_session *new_session = NULL;
 	enum lttng_session_descriptor_status descriptor_status;
-	const char *base_path;
 
 	session_lock_list();
 	if (home_path) {
@@ -2917,13 +3010,9 @@ enum lttng_error_code cmd_create_session_from_descriptor(
 		ret_code = LTTNG_ERR_INVALID;
 		goto end;
 	}
-	ret = lttng_session_descriptor_get_base_path(descriptor, &base_path);
-	if (ret) {
-		ret_code = LTTNG_ERR_INVALID;
-		goto end;
-	}
+
 	ret_code = session_create(session_name, creds->uid, creds->gid,
-			base_path, &new_session);
+			&new_session);
 	if (ret_code != LTTNG_OK) {
 		goto end;
 	}
@@ -4451,7 +4540,7 @@ int64_t get_session_nb_packets_per_stream(const struct ltt_session *session,
 		}
 		cur_nb_packets++;
 	}
-	if (!cur_nb_packets) {
+	if (!cur_nb_packets && size_left != max_size) {
 		/* Not enough room to grab one packet of each stream, error. */
 		return -1;
 	}
@@ -4564,7 +4653,7 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 			snapshot_output->max_size);
 	if (nb_packets_per_stream < 0) {
 		ret_code = LTTNG_ERR_MAX_SIZE_INVALID;
-		goto error;
+		goto error_close_trace_chunk;
 	}
 
 	if (session->kernel_session) {
@@ -4572,7 +4661,7 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 				snapshot_kernel_consumer_output, session,
 				wait, nb_packets_per_stream);
 		if (ret_code != LTTNG_OK) {
-			goto error;
+			goto error_close_trace_chunk;
 		}
 	}
 
@@ -4581,10 +4670,10 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 				snapshot_ust_consumer_output, session,
 				wait, nb_packets_per_stream);
 		if (ret_code != LTTNG_OK) {
-			goto error;
+			goto error_close_trace_chunk;
 		}
 	}
-
+error_close_trace_chunk:
 	if (session_close_trace_chunk(
 			    session, session->current_trace_chunk, NULL, NULL)) {
 		/*
@@ -4818,6 +4907,12 @@ int cmd_rotate_session(struct ltt_session *session,
 		goto end;
 	}
 
+	/* Unsupported feature in lttng-modules before 2.8 (lack of sequence number). */
+	if (session->kernel_session && !kernel_supports_ring_buffer_packet_sequence_number()) {
+		cmd_ret = LTTNG_ERR_ROTATION_NOT_AVAILABLE_KERNEL;
+		goto end;
+	}
+
 	if (session->rotation_state == LTTNG_ROTATION_STATE_ONGOING) {
 		DBG("Refusing to launch a rotation; a rotation is already in progress for session %s",
 				session->name);
@@ -4835,9 +4930,6 @@ int cmd_rotate_session(struct ltt_session *session,
 		cmd_ret = LTTNG_ERR_ROTATION_MULTIPLE_AFTER_STOP;
 		goto end;
 	}
-
-	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
-
 	if (session->active) {
 		new_trace_chunk = session_create_new_trace_chunk(session, NULL,
 				NULL, NULL);
@@ -4861,11 +4953,6 @@ int cmd_rotate_session(struct ltt_session *session,
 		goto error;
 	}
 
-	assert(chunk_being_archived);
-	chunk_status = lttng_trace_chunk_get_id(chunk_being_archived,
-			&ongoing_rotation_chunk_id);
-	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
-
 	if (session->kernel_session) {
 		cmd_ret = kernel_rotate_session(session);
 		if (cmd_ret != LTTNG_OK) {
@@ -4880,6 +4967,26 @@ int cmd_rotate_session(struct ltt_session *session,
 			rotation_fail_code = cmd_ret;
 		}
 	}
+
+	if (!session->active) {
+		session->rotated_after_last_stop = true;
+	}
+
+	if (!chunk_being_archived) {
+		DBG("Rotating session \"%s\" from a \"NULL\" trace chunk to a new trace chunk, skipping completion check",
+				session->name);
+		if (failed_to_rotate) {
+			cmd_ret = rotation_fail_code;
+			goto error;
+		}
+		cmd_ret = LTTNG_OK;
+		goto end;
+	}
+
+	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
+	chunk_status = lttng_trace_chunk_get_id(chunk_being_archived,
+			&ongoing_rotation_chunk_id);
+	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 
 	ret = session_close_trace_chunk(session, chunk_being_archived,
 			quiet_rotation ?
@@ -4903,10 +5010,6 @@ int cmd_rotate_session(struct ltt_session *session,
 	if (ret) {
 		cmd_ret = LTTNG_ERR_UNK;
 		goto error;
-	}
-
-	if (!session->active) {
-		session->rotated_after_last_stop = true;
 	}
 
 	if (rotate_return) {
@@ -4983,7 +5086,7 @@ int cmd_rotate_get_info(struct ltt_session *session,
 
 	switch (rotation_state) {
 	case LTTNG_ROTATION_STATE_NO_ROTATION:
-		DBG("Reporting that no rotation has occured within the lifetime of session \"%s\"",
+		DBG("Reporting that no rotation has occurred within the lifetime of session \"%s\"",
 				session->name);
 		goto end;
 	case LTTNG_ROTATION_STATE_EXPIRED:

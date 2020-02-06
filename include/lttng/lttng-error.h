@@ -149,7 +149,7 @@ enum lttng_error_code {
 	LTTNG_ERR_TRIGGER_EXISTS         = 126, /* Trigger already registered. */
 	LTTNG_ERR_TRIGGER_NOT_FOUND      = 127, /* Trigger not found. */
 	LTTNG_ERR_COMMAND_CANCELLED      = 128, /* Command cancelled. */
-	LTTNG_ERR_ROTATION_PENDING       = 129, /* Rotate already pending for this session. */
+	LTTNG_ERR_ROTATION_PENDING       = 129, /* Rotation already pending for this session. */
 	LTTNG_ERR_ROTATION_NOT_AVAILABLE = 130, /* Rotate feature not available for this type of session (e.g: live) */
 	LTTNG_ERR_ROTATION_SCHEDULE_SET  = 131, /* Schedule type already set for this session. */
 	LTTNG_ERR_ROTATION_SCHEDULE_NOT_SET = 132, /* No schedule of this type set for this session. */
@@ -175,6 +175,7 @@ enum lttng_error_code {
 	LTTNG_ERR_INVALID_PROTOCOL                     = 152, /* a protocol error occurred */
 	LTTNG_ERR_FILE_CREATION_ERROR                  = 153, /* failed to create a file */
 	LTTNG_ERR_TIMER_STOP_ERROR                     = 154, /* failed to stop timer. */
+	LTTNG_ERR_ROTATION_NOT_AVAILABLE_KERNEL = 155, /* Rotation feature not supported by the kernel tracer. */
 
 	/* MUST be last element */
 	LTTNG_ERR_NR,                           /* Last element */

@@ -143,7 +143,7 @@ static int parse_probe_opts(struct lttng_event *ev, char *opt)
 	}
 
 	/* Check for symbol */
-	if (isalpha(name[0])) {
+	if (isalpha(name[0]) || name[0] == '_') {
 		match = sscanf(opt, "%" LTTNG_SYMBOL_NAME_LEN_SCANF_IS_A_BROKEN_API "s",
 			name);
 		if (match == 1) {
@@ -160,8 +160,13 @@ static int parse_probe_opts(struct lttng_event *ev, char *opt)
 	/* Check for address */
 	match = sscanf(opt, "%" S_HEX_LEN_SCANF_IS_A_BROKEN_API "s", s_hex);
 	if (match > 0) {
-		if (*s_hex == '\0') {
-			ERR("Invalid probe address %s", s_hex);
+		/*
+		 * Return an error if the first character of the tentative
+		 * address is NULL or not a digit. It can be "0" if the address
+		 * is in hexadecimal and can be 1 to 9 if it's in decimal.
+		 */
+		if (*s_hex == '\0' || !isdigit(*s_hex)) {
+			ERR("Invalid probe description %s", s_hex);
 			ret = CMD_ERROR;
 			goto end;
 		}

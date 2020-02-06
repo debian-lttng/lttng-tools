@@ -962,7 +962,7 @@ end:
  * Session list lock must be held by the caller.
  */
 enum lttng_error_code session_create(const char *name, uid_t uid, gid_t gid,
-		const char *base_path, struct ltt_session **out_session)
+		struct ltt_session **out_session)
 {
 	int ret;
 	enum lttng_error_code ret_code;
@@ -1086,16 +1086,6 @@ enum lttng_error_code session_create(const char *name, uid_t uid, gid_t gid,
 		}
 	}
 
-	if (base_path) {
-		new_session->base_path = strdup(base_path);
-		if (!new_session->base_path) {
-			ERR("Failed to allocate base path of session \"%s\"",
-					name);
-			ret_code = LTTNG_ERR_SESSION_FAIL;
-			goto error;
-		}
-	}
-
 	new_session->uid = uid;
 	new_session->gid = gid;
 
@@ -1163,7 +1153,7 @@ int session_access_ok(struct ltt_session *session, uid_t uid, gid_t gid)
  *
  * Be careful of the result passed to this function. For instance,
  * on failure to launch a rotation, a client will expect the rotation
- * state to be set to "NO_ROTATION". If an error occured while the
+ * state to be set to "NO_ROTATION". If an error occurred while the
  * rotation was "ONGOING", result should be set to "ERROR", which will
  * allow a client to report it.
  *
