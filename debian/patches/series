@@ -1,3 +1,2 @@
 0001-Fix-compile-fails-for-x32-arch.patch
 fix-lttng-health-check-manpage.patch
-0001-Fix-sessiond-check-for-lttng-modules-ABI-2.1-rather-.patch
