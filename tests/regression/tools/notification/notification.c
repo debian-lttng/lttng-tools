@@ -74,16 +74,31 @@ void wait_on_file(const char *path, bool file_exist)
 		ret = stat(path, &buf);
 		if (ret == -1 && errno == ENOENT) {
 			if (file_exist) {
-				(void) poll(NULL, 0, 10);	/* 10 ms delay */
-				continue;			/* retry */
+				/*
+				 * The file does not exist. wait a bit and
+				 * continue looping until it does.
+				 */
+				(void) poll(NULL, 0, 10);
+				continue;
 			}
-			break; /* File does not exist */
+
+			/*
+			 * File does not exist and the exit condition we want.
+			 * Break from the loop and return.
+			 */
+			break;
 		}
 		if (ret) {
 			perror("stat");
 			exit(EXIT_FAILURE);
 		}
-		break;	/* found */
+		/*
+		 * stat() returned 0, so the file exists. break now only if
+		 * that's the exit condition we want.
+		 */
+		if (file_exist) {
+			break;
+		}
 	}
 }
 
@@ -360,7 +375,7 @@ loop_end:
 			 * registered trigger fail.
 			 */
 			loop_ret = lttng_unregister_trigger(trigger);
-			ok(loop_ret == -LTTNG_ERR_TRIGGER_NOT_FOUND, "Unregister of a non-registerd  trigger fails as expected: %s", test_tuple_string);
+			ok(loop_ret == -LTTNG_ERR_TRIGGER_NOT_FOUND, "Unregister of a non-registered trigger fails as expected: %s", test_tuple_string);
 		} else {
 			ok(loop_ret == -LTTNG_ERR_INVALID_TRIGGER, "Trigger is invalid as expected and cannot be registered: %s", test_tuple_string);
 		}
