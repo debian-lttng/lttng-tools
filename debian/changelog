@@ -1,3 +1,10 @@
+ltt-control (2.11.2-1) unstable; urgency=medium
+
+  * [3ba9f39] New upstream version 2.11.2
+  * [89eadcc] Drop patch merged upstream
+
+ -- Michael Jeanson <mjeanson@debian.org>  Thu, 13 Feb 2020 11:20:20 -0500
+
 ltt-control (2.11.1-2) unstable; urgency=medium
 
   * [3aeb42e] Fix session rotation with kernel domain (Closes: #951206)
