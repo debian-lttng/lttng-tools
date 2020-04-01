@@ -9,15 +9,14 @@ Build-Depends: debhelper (>= 10~),
   bison,
   dh-python,
   libkmod-dev,
-  liblttng-ust-dev (>= 2.11.0~),
-  liblttng-ust-dev (<< 2.12.0~),
+  liblttng-ust-dev (>= 2.12.0~),
+  liblttng-ust-dev (<< 2.13.0~),
   libpopt-dev,
   liburcu-dev (>= 0.9.0~),
-  libxml2-dev,
+  libxml2-dev (>= 2.7.6~),
   pkg-config,
   python3-all-dev,
   swig (>= 2.0),
-  uuid-dev,
   xmlto
 Standards-Version: 4.4.1
 Rules-Requires-Root: no
