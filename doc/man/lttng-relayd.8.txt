@@ -1,6 +1,6 @@
 lttng-relayd(8)
 ===============
-:revdate: 5 June 2018
+:revdate: 2 April 2020
 
 
 NAME
@@ -11,9 +11,11 @@ lttng-relayd - LTTng 2 relay daemon
 SYNOPSIS
 --------
 [verse]
-*lttng-relayd* [option:--background | option:--daemonize]
-             [option:--control-port='URL'] [option:--data-port='URL'] [option:--live-port='URL']
-             [option:--output='PATH'] [option:-v | option:-vv | option:-vvv]
+*lttng-relayd* [option:--background | option:--daemonize] [option:--config='PATH']
+             [option:--control-port='URL'] [option:--data-port='URL'] [option:--fd-pool-size='COUNT']
+             [option:--live-port='URL'] [option:--output='PATH']
+             [option:-v | option:-vv | option:-vvv] [option:--working-directory='PATH']
+             [option:--group-output-by-session] [option:--disallow-clear]
 
 
 DESCRIPTION
@@ -49,25 +51,83 @@ file system.
 [[output-directory]]
 Output directory
 ~~~~~~~~~~~~~~~~
-By default, the relay daemon writes the traces to:
+The relay daemon uses different output path patterns depending on:
 
-[verse]
-$LTTNG_HOME/lttng-traces/'HOSTNAME'/'SESSION'/'DOMAIN'
+* Its configuration.
+* The connected peer's tracing session configuration.
+* The connected peer's LTTng session daemon (see man:lttng-sessiond(8))
+  version.
 
-with:
+Consider the following variables:
+
+'BASE'::
+    Base output directory: `$LTTNG_HOME/lttng-traces` or the
+    argument of the option:--output option.
++
+NOTE: `$LTTNG_HOME` defaults to `$HOME` when not explicitly set.
 
 'HOSTNAME'::
-    Remote hostname.
+    Peer's hostname.
 
 'SESSION'::
-    Full session name.
+    Tracing session name.
 
-'DOMAIN'::
-    Tracing domain.
+'DATETIME'::
+    Unique tracing session date/time.
 
-You can override the default output directory prefix
-(`$LTTNG_HOME/lttng-traces`) with the option:--output option. The other
-parts depend on the remote configuration.
+'TRACEPATH'::
+    Custom trace path ('TRACEPATH' part of the man:lttng-create(1)
+    command's nloption:--set-url option's argument, if any).
+
+The relay daemon output path patterns are:
+
+Hostname grouping (without option:--group-output-by-session)::
+    Without a custom trace path:::
++
+--
+[verse]
+'BASE'/'HOSTNAME'/'SESSION'-'DATETIME'
+--
+
+With a custom trace path:::
++
+--
+[verse]
+'BASE'/'HOSTNAME'/'TRACEPATH'
+--
+
+Tracing session grouping (with option:--group-output-by-session)::
+    Without a custom trace path:::
+        The peer's LTTng session daemon version is at least 2.4::::
++
+--
+[verse]
+'BASE'/'SESSION'/'HOSTNAME'-'DATETIME'
+--
+
+Otherwise::::
+    Defaults to the hostname grouping pattern:
++
+--
+[verse]
+'BASE'/'HOSTNAME'/'SESSION'-'DATETIME'
+--
+
+With a custom trace path:::
+    The peer's LTTng session daemon version is at least 2.4::::
++
+--
+[verse]
+'BASE'/'SESSION'/'HOSTNAME'-'DATETIME'/'TRACEPATH'
+--
+
+Otherwise::::
+    Defaults to the hostname grouping pattern:
++
+--
+[verse]
+'BASE'/'HOSTNAME'/'TRACEPATH'
+--
 
 
 [[url-format]]
@@ -101,19 +161,36 @@ option:-b, option:--background::
     Use the option:--daemonize option instead to close the file
     descriptors.
 
+option:-f 'PATH', option:--config='PATH'::
+    Load relay daemon configuration from path 'PATH'.
+
 option:-d, option:--daemonize::
     Start as Unix daemon, and close file descriptors (console). Use the
     option:--background option instead to keep the file descriptors
     open.
 
+option:-x, option:--disallow-clear::
+    Disallow clearing operations (see man:lttng-clear(1)).
++
+See also the `LTTNG_RELAYD_DISALLOW_CLEAR` environment variable.
+
+option:--fd-pool-size='SIZE'::
+    Set the size of the file descriptor pool to 'SIZE'.
++
+'SIZE' is the maximum number of file descriptors that may be kept opened
+simultaneously by the relay daemon.
++
+Default: the soft `RLIMIT_NOFILE` resource limit of the process (see
+man:getrlimit(2)).
+
 option:-g 'GROUP', option:--group='GROUP'::
     Use 'GROUP' as Unix tracing group (default: `tracing`).
 
-option:-o 'PATH', option:--output='PATH'::
-    Set base directory of written trace data to 'PATH'.
+option:-w 'PATH', option:--working-directory='PATH'::
+    Set the working directory of the processes the relay daemon creates
+    to 'PATH'.
 +
-See the <<output-directory,Output directory>> section above for more
-information.
+See also the `LTTNG_RELAYD_WORKING_DIRECTORY` environment variable.
 
 option:-v, option:--verbose::
     Increase verbosity.
@@ -123,10 +200,27 @@ appending additional `v` letters to the option
 (that is, `-vv` and `-vvv`).
 
 
+Output
+~~~~~~
+See the <<output-directory,Output directory>> section above for more
+information.
+
+option:-p, option:--group-output-by-host::
+    Group the written trace directories by hostname (default).
+
+option:-s, option:--group-output-by-session::
+    Group the written trace directories by tracing session name instead
+    of by hostname.
+
+option:-o 'PATH', option:--output='PATH'::
+    Set the base output directory of the written trace directories to
+    'PATH'.
+
+
 Ports
 ~~~~~
 See the <<url-format,URL format>> section above for more information
-about the syntax of the following options' 'URL' argument.
+about the syntax of the following 'URL' argument.
 
 option:-C 'URL', option:--control-port='URL'::
     Listen to control data on URL 'URL' (default:
@@ -159,6 +253,11 @@ ENVIRONMENT VARIABLES
 `LTTNG_NETWORK_SOCKET_TIMEOUT`::
     Socket connection, receive and send timeout (milliseconds). A value
     of 0 or -1 uses the timeout of the operating system (default).
+
+`LTTNG_RELAYD_DISALLOW_CLEAR`::
+    Set to 1 to disallow clearing operations (see man:lttng-clear(1)).
++
+The option:--disallow-clear option overrides this variable.
 
 `LTTNG_RELAYD_HEALTH`::
     Path to relay daemon health's socket.
@@ -217,6 +316,11 @@ Supported on Linux only.
 +
 Search for `tcp_keepalive_intvl` in man:tcp(7) for more information.
 
+`LTTNG_RELAYD_WORKING_DIRECTORY`::
+    Working directory of the processes the relay daemon creates.
++
+The option:--working-directory option overrides this variable.
+
 
 FILES
 -----
@@ -224,8 +328,8 @@ FILES
     User LTTng runtime and configuration directory.
 
 `$LTTNG_HOME/lttng-traces`::
-    Default output directory of LTTng traces. This can be overridden
-    with the option:--output option.
+    Default base output directory of LTTng traces. This can be
+    overridden with the option:--output option.
 
 NOTE: `$LTTNG_HOME` defaults to `$HOME` when not explicitly set.
 
@@ -264,4 +368,4 @@ man:lttng(1),
 man:lttng-sessiond(8),
 man:lttng-crash(1),
 man:lttng-ust(3),
-man:babeltrace(1)
+man:babeltrace2(1)

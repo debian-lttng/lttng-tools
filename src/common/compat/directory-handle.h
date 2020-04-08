@@ -1,25 +1,17 @@
 /*
- * Copyright (C) 2019 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _COMPAT_DIRECTORY_HANDLE_H
 #define _COMPAT_DIRECTORY_HANDLE_H
 
-#include <common/macros.h>
 #include <common/credentials.h>
+#include <common/macros.h>
+#include <sys/stat.h>
+#include <urcu/ref.h>
 
 enum lttng_directory_handle_rmdir_recursive_flags {
 	LTTNG_DIRECTORY_HANDLE_FAIL_NON_EMPTY_FLAG = (1U << 0),
@@ -34,8 +26,18 @@ enum lttng_directory_handle_rmdir_recursive_flags {
  * or a directory file descriptors, depending on the platform's capabilities.
  */
 #ifdef COMPAT_DIRFD
+
+struct lttng_directory_handle;
+
+typedef void (*lttng_directory_handle_destroy_cb)(
+		struct lttng_directory_handle *handle, void *data);
+
 struct lttng_directory_handle {
+	struct urcu_ref ref;
+	ino_t directory_inode;
 	int dirfd;
+	lttng_directory_handle_destroy_cb destroy_cb;
+	void *destroy_cb_data;
 };
 
 static inline
@@ -47,23 +49,24 @@ int lttng_directory_handle_get_dirfd(
 
 #else
 struct lttng_directory_handle {
+	struct urcu_ref ref;
 	char *base_path;
 };
 #endif
 
 /*
- * Initialize a directory handle to the provided path. Passing a NULL path
+ * Create a directory handle to the provided path. Passing a NULL path
  * returns a handle to the current working directory.
  *
- * An initialized directory handle must be finalized using
- * lttng_directory_handle_fini().
+ * The reference to the directory handle must be released using
+ * lttng_directory_handle_put().
  */
 LTTNG_HIDDEN
-int lttng_directory_handle_init(struct lttng_directory_handle *handle,
+struct lttng_directory_handle *lttng_directory_handle_create(
 		const char *path);
 
 /*
- * Initialize a new directory handle to a path relative to an existing handle.
+ * Create a new directory handle to a path relative to an existing handle.
  *
  * The provided path must already exist. Note that the creation of a
  * subdirectory and the creation of a handle are kept as separate operations
@@ -72,53 +75,49 @@ int lttng_directory_handle_init(struct lttng_directory_handle *handle,
  *
  * Passing a NULL path effectively copies the original handle.
  *
- * An initialized directory handle must be finalized using
- * lttng_directory_handle_fini().
+ * The reference to the directory handle must be released using
+ * lttng_directory_handle_put().
  */
 LTTNG_HIDDEN
-int lttng_directory_handle_init_from_handle(
-		struct lttng_directory_handle *new_handle,
+struct lttng_directory_handle *lttng_directory_handle_create_from_handle(
 		const char *path,
-		const struct lttng_directory_handle *handle);
+		const struct lttng_directory_handle *ref_handle);
 
 /*
- * Initialize a new directory handle from an existing directory fd.
+ * Create a new directory handle from an existing directory fd.
  *
  * The new directory handle assumes the ownership of the directory fd.
  * Note that this method should only be used in very specific cases, such as
  * re-creating a directory handle from a dirfd passed over a unix socket.
  *
- * An initialized directory handle must be finalized using
- * lttng_directory_handle_fini().
+ * The reference to the directory handle must be released using
+ * lttng_directory_handle_put().
  */
 LTTNG_HIDDEN
-int lttng_directory_handle_init_from_dirfd(
-		struct lttng_directory_handle *handle, int dirfd);
+struct lttng_directory_handle *lttng_directory_handle_create_from_dirfd(
+		int dirfd);
 
 /*
  * Copy a directory handle.
- */
-LTTNG_HIDDEN
-int lttng_directory_handle_copy(const struct lttng_directory_handle *handle,
-		struct lttng_directory_handle *new_copy);
-
-/*
- * Move a directory handle. The original directory handle may no longer be
- * used after this call. This call cannot fail; directly assign the
- * return value to the new directory handle.
  *
- * It is safe (but unnecessary) to call lttng_directory_handle_fini on the
- * original handle.
+ * The reference to the directory handle must be released using
+ * lttng_directory_handle_put().
  */
 LTTNG_HIDDEN
-struct lttng_directory_handle
-lttng_directory_handle_move(struct lttng_directory_handle *original);
+struct lttng_directory_handle *lttng_directory_handle_copy(
+		const struct lttng_directory_handle *handle);
 
 /*
- * Release the resources of a directory handle.
+ * Acquire a reference to a directory handle.
  */
 LTTNG_HIDDEN
-void lttng_directory_handle_fini(struct lttng_directory_handle *handle);
+bool lttng_directory_handle_get(struct lttng_directory_handle *handle);
+
+/*
+ * Release a reference to a directory handle.
+ */
+LTTNG_HIDDEN
+void lttng_directory_handle_put(struct lttng_directory_handle *handle);
 
 /*
  * Create a subdirectory relative to a directory handle.
@@ -256,5 +255,31 @@ int lttng_directory_handle_remove_subdirectory_recursive_as_user(
 		const char *name,
 		const struct lttng_credentials *creds,
 		int flags);
+
+/*
+ * stat() a file relative to a directory handle.
+ */
+LTTNG_HIDDEN
+int lttng_directory_handle_stat(
+		const struct lttng_directory_handle *handle,
+		const char *name,
+		struct stat *stat_buf);
+
+/*
+ * Returns true if this directory handle is backed by a file
+ * descriptor, false otherwise.
+ */
+LTTNG_HIDDEN
+bool lttng_directory_handle_uses_fd(
+		const struct lttng_directory_handle *handle);
+
+/*
+ * Compare two directory handles.
+ *
+ * Returns true if the two directory handles are equal, false otherwise.
+ */
+LTTNG_HIDDEN
+bool lttng_directory_handle_equals(const struct lttng_directory_handle *lhs,
+		const struct lttng_directory_handle *rhs);
 
 #endif /* _COMPAT_PATH_HANDLE_H */

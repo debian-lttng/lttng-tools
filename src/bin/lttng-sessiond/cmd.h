@@ -1,26 +1,18 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef CMD_H
 #define CMD_H
 
 #include "context.h"
-#include "session.h"
 #include "lttng-sessiond.h"
+#include "lttng/tracker.h"
+#include "session.h"
+#include <common/tracker.h>
 
 struct notification_thread_handle;
 
@@ -57,10 +49,33 @@ int cmd_disable_channel(struct ltt_session *session,
 int cmd_enable_channel(struct ltt_session *session,
 		const struct lttng_domain *domain, const struct lttng_channel *attr,
 		int wpipe);
-int cmd_track_pid(struct ltt_session *session, enum lttng_domain_type domain,
-		int pid);
-int cmd_untrack_pid(struct ltt_session *session, enum lttng_domain_type domain,
-		int pid);
+
+/* Process attribute tracker commands */
+enum lttng_error_code cmd_process_attr_tracker_get_tracking_policy(
+		struct ltt_session *session,
+		enum lttng_domain_type domain,
+		enum lttng_process_attr process_attr,
+		enum lttng_tracking_policy *policy);
+enum lttng_error_code cmd_process_attr_tracker_set_tracking_policy(
+		struct ltt_session *session,
+		enum lttng_domain_type domain,
+		enum lttng_process_attr process_attr,
+		enum lttng_tracking_policy policy);
+enum lttng_error_code cmd_process_attr_tracker_inclusion_set_add_value(
+		struct ltt_session *session,
+		enum lttng_domain_type domain,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value);
+enum lttng_error_code cmd_process_attr_tracker_inclusion_set_remove_value(
+		struct ltt_session *session,
+		enum lttng_domain_type domain,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value);
+enum lttng_error_code cmd_process_attr_tracker_get_inclusion_set(
+		struct ltt_session *session,
+		enum lttng_domain_type domain,
+		enum lttng_process_attr process_attr,
+		struct lttng_process_attr_values **values);
 
 /* Event commands */
 int cmd_disable_event(struct ltt_session *session,
@@ -110,8 +125,6 @@ ssize_t cmd_list_tracepoints(enum lttng_domain_type domain,
 ssize_t cmd_snapshot_list_outputs(struct ltt_session *session,
 		struct lttng_snapshot_output **outputs);
 ssize_t cmd_list_syscalls(struct lttng_event **events);
-ssize_t cmd_list_tracker_pids(struct ltt_session *session,
-		enum lttng_domain_type domain, int32_t **pids);
 
 int cmd_data_pending(struct ltt_session *session);
 
@@ -135,7 +148,8 @@ int cmd_unregister_trigger(struct command_ctx *cmd_ctx, int sock,
 
 int cmd_rotate_session(struct ltt_session *session,
 		struct lttng_rotate_session_return *rotate_return,
-		bool quiet_rotation);
+		bool quiet_rotation,
+		enum lttng_trace_chunk_command_type command);
 int cmd_rotate_get_info(struct ltt_session *session,
 		struct lttng_rotation_get_info_return *info_return,
 		uint64_t rotate_id);
@@ -145,5 +159,7 @@ int cmd_rotation_set_schedule(struct ltt_session *session,
 		struct notification_thread_handle *notification_thread_handle);
 
 const struct cmd_completion_handler *cmd_pop_completion_handler(void);
+int start_kernel_session(struct ltt_kernel_session *ksess);
+int stop_kernel_session(struct ltt_kernel_session *ksess);
 
 #endif /* CMD_H */

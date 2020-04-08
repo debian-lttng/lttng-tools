@@ -2,18 +2,8 @@
  * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  * Copyright (C) 2014 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <getopt.h>
@@ -37,9 +27,8 @@
 #include <version.h>
 #include <lttng/lttng.h>
 #include <common/common.h>
+#include <common/spawn-viewer.h>
 #include <common/utils.h>
-
-#define DEFAULT_VIEWER "babeltrace"
 
 #define COPY_BUFLEN		4096
 #define RB_CRASH_DUMP_ABI_LEN	32
@@ -190,9 +179,9 @@ struct lttng_crash_layout {
 };
 
 /* Variables */
-static char *progname,
-	*opt_viewer_path = NULL,
-	*opt_output_path = NULL;
+static const char *progname;
+static char *opt_viewer_path = NULL;
+static char *opt_output_path = NULL;
 
 static char *input_path;
 
@@ -227,9 +216,10 @@ static void usage(void)
 static void version(FILE *ofp)
 {
 	fprintf(ofp, "%s (LTTng Crash Trace Viewer) " VERSION " - " VERSION_NAME
-"%s\n",
+			"%s%s\n",
 			progname,
-			GIT_VERSION[0] == '\0' ? "" : " - " GIT_VERSION);
+			GIT_VERSION[0] == '\0' ? "" : " - " GIT_VERSION,
+			EXTRA_VERSION_NAME[0] == '\0' ? "" : " - " EXTRA_VERSION_NAME);
 }
 
 /*
@@ -302,10 +292,6 @@ static int parse_args(int argc, char **argv)
 			ERR("Unknown command-line option");
 			goto error;
 		}
-	}
-
-	if (!opt_viewer_path) {
-		opt_viewer_path = DEFAULT_VIEWER;
 	}
 
 	/* No leftovers, or more than one input path, print usage and quit */
@@ -1190,7 +1176,7 @@ end_no_closedir:
 }
 
 static
-int view_trace(const char *viewer_path, const char *trace_path)
+int view_trace(const char *trace_path, char *viewer_path)
 {
 	pid_t pid;
 
@@ -1211,13 +1197,12 @@ int view_trace(const char *viewer_path, const char *trace_path)
 		/* Child */
 		int ret;
 
-		ret = execlp(viewer_path, viewer_path,
-			trace_path, (char *) NULL);
+		ret = spawn_viewer(trace_path, viewer_path, false);
 		if (ret) {
-			PERROR("execlp");
 			exit(EXIT_FAILURE);
 		}
-		exit(EXIT_SUCCESS);	/* Never reached */
+		/* Never reached */
+		exit(EXIT_SUCCESS);
 	}
 	return 0;
 }
@@ -1269,7 +1254,7 @@ int main(int argc, char *argv[])
 	}
 	if (!opt_output_path) {
 		/* View trace */
-		ret = view_trace(opt_viewer_path, output_path);
+		ret = view_trace(output_path, opt_viewer_path);
 		if (ret) {
 			has_warning = true;
 		}

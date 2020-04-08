@@ -1,18 +1,8 @@
 /*
- * Copyright (c)  2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -276,7 +266,7 @@ char *config_read_session_name_quiet(const char *path)
 int config_add_session_name(const char *path, const char *name)
 {
 	int ret;
-	char *attr = "session=";
+	const char *attr = "session=";
 	/* Max name len accepted plus attribute's len and the NULL byte. */
 	char session_name[NAME_MAX + strlen(attr) + 1];
 

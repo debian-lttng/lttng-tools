@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2019 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <common/compat/directory-handle.h>
@@ -35,9 +25,6 @@
  * in terms of an internal API. This file contains two implementations
  * of the internal API below.
  */
-static
-int lttng_directory_handle_stat(const struct lttng_directory_handle *handle,
-		const char *path, struct stat *st);
 static
 int lttng_directory_handle_mkdir(
 		const struct lttng_directory_handle *handle,
@@ -88,62 +75,117 @@ int _run_as_rmdir_recursive(
 		uid_t uid, gid_t gid, int flags);
 static
 void lttng_directory_handle_invalidate(struct lttng_directory_handle *handle);
+static
+void lttng_directory_handle_release(struct urcu_ref *ref);
 
 #ifdef COMPAT_DIRFD
 
+/*
+ * Special inode number reserved to represent the "current working directory".
+ * ino_t is spec'ed as being an unsigned integral type.
+ */
+#define RESERVED_AT_FDCWD_INO                      \
+	({                                         \
+		uint64_t reserved_val;             \
+		switch (sizeof(ino_t)) {           \
+		case 4:                            \
+			reserved_val = UINT32_MAX; \
+			break;                     \
+		case 8:                            \
+			reserved_val = UINT64_MAX; \
+			break;                     \
+		default:                           \
+			abort();                   \
+		}                                  \
+		(ino_t) reserved_val;              \
+	})
+
 LTTNG_HIDDEN
-int lttng_directory_handle_init(struct lttng_directory_handle *new_handle,
-		const char *path)
+struct lttng_directory_handle *lttng_directory_handle_create(const char *path)
 {
 	const struct lttng_directory_handle cwd_handle = {
 		.dirfd = AT_FDCWD,
 	};
 
 	/* Open a handle to the CWD if NULL is passed. */
-	return lttng_directory_handle_init_from_handle(new_handle,
-			path,
-			&cwd_handle);
+	return lttng_directory_handle_create_from_handle(path, &cwd_handle);
 }
 
 LTTNG_HIDDEN
-int lttng_directory_handle_init_from_handle(
-		struct lttng_directory_handle *new_handle, const char *path,
-		const struct lttng_directory_handle *handle)
+struct lttng_directory_handle *lttng_directory_handle_create_from_handle(
+		const char *path,
+		const struct lttng_directory_handle *ref_handle)
 {
-	int ret;
+	int dirfd;
+	struct lttng_directory_handle *handle = NULL;
 
 	if (!path) {
-		ret = lttng_directory_handle_copy(handle, new_handle);
+		handle = lttng_directory_handle_copy(ref_handle);
 		goto end;
 	}
 	if (!*path) {
 		ERR("Failed to initialize directory handle: provided path is an empty string");
-		ret = -1;
 		goto end;
 	}
-	ret = openat(handle->dirfd, path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	if (ret == -1) {
+
+	dirfd = openat(ref_handle->dirfd, path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (dirfd == -1) {
 		PERROR("Failed to initialize directory handle to \"%s\"", path);
 		goto end;
 	}
-	new_handle->dirfd = ret;
-	ret = 0;
+
+	handle = lttng_directory_handle_create_from_dirfd(dirfd);
+	if (!handle) {
+		goto error_close;
+	}
 end:
-	return ret;
+	return handle;
+error_close:
+	if (close(dirfd)) {
+		PERROR("Failed to close directory file descriptor");
+	}
+	return NULL;
 }
 
 LTTNG_HIDDEN
-int lttng_directory_handle_init_from_dirfd(
-		struct lttng_directory_handle *handle, int dirfd)
-{
-	handle->dirfd = dirfd;
-	return 0;
-}
-
-LTTNG_HIDDEN
-void lttng_directory_handle_fini(struct lttng_directory_handle *handle)
+struct lttng_directory_handle *lttng_directory_handle_create_from_dirfd(
+		int dirfd)
 {
 	int ret;
+	struct lttng_directory_handle *handle = zmalloc(sizeof(*handle));
+	struct stat stat_buf;
+
+	if (!handle) {
+		goto end;
+	}
+
+	if (dirfd != AT_FDCWD) {
+		ret = fstat(dirfd, &stat_buf);
+		if (ret) {
+			PERROR("Failed to fstat directory file descriptor %i", dirfd);
+			lttng_directory_handle_release(&handle->ref);
+			handle = NULL;
+			goto end;
+		}
+	} else {
+		handle->directory_inode = RESERVED_AT_FDCWD_INO;
+	}
+	handle->dirfd = dirfd;
+	urcu_ref_init(&handle->ref);
+end:
+	return handle;
+}
+
+static
+void lttng_directory_handle_release(struct urcu_ref *ref)
+{
+	int ret;
+	struct lttng_directory_handle *handle =
+			container_of(ref, struct lttng_directory_handle, ref);
+
+	if (handle->destroy_cb) {
+		handle->destroy_cb(handle, handle->destroy_cb_data);
+	}
 
 	if (handle->dirfd == AT_FDCWD || handle->dirfd == -1) {
 		goto end;
@@ -151,28 +193,42 @@ void lttng_directory_handle_fini(struct lttng_directory_handle *handle)
 	ret = close(handle->dirfd);
 	if (ret == -1) {
 		PERROR("Failed to close directory file descriptor of directory handle");
-		abort();
 	}
 end:
 	lttng_directory_handle_invalidate(handle);
+	free(handle);
 }
 
 LTTNG_HIDDEN
-int lttng_directory_handle_copy(const struct lttng_directory_handle *handle,
-		struct lttng_directory_handle *new_copy)
+struct lttng_directory_handle *lttng_directory_handle_copy(
+		const struct lttng_directory_handle *handle)
 {
-	int ret = 0;
+	struct lttng_directory_handle *new_handle = NULL;
 
 	if (handle->dirfd == AT_FDCWD) {
-		new_copy->dirfd = handle->dirfd;
+		new_handle = lttng_directory_handle_create_from_dirfd(AT_FDCWD);
 	} else {
-		new_copy->dirfd = dup(handle->dirfd);
-		if (new_copy->dirfd == -1) {
-			PERROR("Failed to duplicate directory fd of directory handle");
-			ret = -1;
+		const int new_dirfd = dup(handle->dirfd);
+
+		if (new_dirfd == -1) {
+			PERROR("Failed to duplicate directory file descriptor of directory handle");
+			goto end;
+		}
+		new_handle = lttng_directory_handle_create_from_dirfd(
+				new_dirfd);
+		if (!new_handle && close(new_dirfd)) {
+			PERROR("Failed to close directory file descriptor of directory handle");
 		}
 	}
-	return ret;
+end:
+	return new_handle;
+}
+
+LTTNG_HIDDEN
+bool lttng_directory_handle_equals(const struct lttng_directory_handle *lhs,
+		const struct lttng_directory_handle *rhs)
+{
+	return lhs->directory_inode == rhs->directory_inode;
 }
 
 static
@@ -181,11 +237,18 @@ void lttng_directory_handle_invalidate(struct lttng_directory_handle *handle)
 	handle->dirfd = -1;
 }
 
-static
+LTTNG_HIDDEN
 int lttng_directory_handle_stat(const struct lttng_directory_handle *handle,
 		const char *path, struct stat *st)
 {
 	return fstatat(handle->dirfd, path, st, 0);
+}
+
+LTTNG_HIDDEN
+bool lttng_directory_handle_uses_fd(
+		const struct lttng_directory_handle *handle)
+{
+	return handle->dirfd != AT_FDCWD;
 }
 
 static
@@ -292,7 +355,12 @@ static
 int lttng_directory_handle_rmdir(
 		const struct lttng_directory_handle *handle, const char *name)
 {
-	return unlinkat(handle->dirfd, name, AT_REMOVEDIR);
+	int ret = unlinkat(handle->dirfd, name, AT_REMOVEDIR);
+	if (ret) {
+		PERROR("Failed to remove directory `%s`", name);
+	}
+
+	return ret;
 }
 
 static
@@ -343,8 +411,22 @@ end:
 	return ret;
 }
 
+static
+struct lttng_directory_handle *_lttng_directory_handle_create(char *path)
+{
+	struct lttng_directory_handle *handle = zmalloc(sizeof(*handle));
+
+	if (!handle) {
+		goto end;
+	}
+	urcu_ref_init(&handle->ref);
+	handle->base_path = path;
+end:
+	return handle;
+}
+
 LTTNG_HIDDEN
-int lttng_directory_handle_init(struct lttng_directory_handle *handle,
+struct lttng_directory_handle *lttng_directory_handle_create(
 		const char *path)
 {
 	int ret;
@@ -352,6 +434,7 @@ int lttng_directory_handle_init(struct lttng_directory_handle *handle,
 	size_t cwd_len, path_len;
 	char cwd_buf[LTTNG_PATH_MAX] = {};
 	char handle_buf[LTTNG_PATH_MAX] = {};
+	struct lttng_directory_handle *new_handle = NULL;
 	bool add_cwd_slash = false, add_trailing_slash = false;
 	const struct lttng_directory_handle cwd_handle = {
 		.base_path = handle_buf,
@@ -385,25 +468,26 @@ int lttng_directory_handle_init(struct lttng_directory_handle *handle,
 		goto end;
 	}
 
-	ret = lttng_directory_handle_init_from_handle(handle, path,
-			&cwd_handle);
+	new_handle = lttng_directory_handle_create_from_handle(path, &cwd_handle);
 end:
-	return ret;
+	return new_handle;
 }
 
 LTTNG_HIDDEN
-int lttng_directory_handle_init_from_handle(
-		struct lttng_directory_handle *new_handle, const char *path,
-		const struct lttng_directory_handle *handle)
+struct lttng_directory_handle *lttng_directory_handle_create_from_handle(
+		const char *path,
+		const struct lttng_directory_handle *ref_handle)
 {
 	int ret;
 	size_t path_len, handle_path_len;
 	bool add_trailing_slash;
 	struct stat stat_buf;
+	struct lttng_directory_handle *new_handle = NULL;
+	char *new_path = NULL;
 
-	assert(handle && handle->base_path);
+	assert(ref_handle && ref_handle->base_path);
 
-	ret = lttng_directory_handle_stat(handle, path, &stat_buf);
+	ret = lttng_directory_handle_stat(ref_handle, path, &stat_buf);
 	if (ret == -1) {
 		PERROR("Failed to create directory handle");
 		goto end;
@@ -411,7 +495,7 @@ int lttng_directory_handle_init_from_handle(
 		char full_path[LTTNG_PATH_MAX];
 
 		/* Best effort for logging purposes. */
-		ret = get_full_path(handle, path, full_path,
+		ret = get_full_path(ref_handle, path, full_path,
 				sizeof(full_path));
 		if (ret) {
 			full_path[0] = '\0';
@@ -419,11 +503,10 @@ int lttng_directory_handle_init_from_handle(
 
 		ERR("Failed to initialize directory handle to \"%s\": not a directory",
 				full_path);
-		ret = -1;
 		goto end;
 	}
 	if (!path) {
-		ret = lttng_directory_handle_copy(handle, new_handle);
+		new_handle = lttng_directory_handle_copy(ref_handle);
 		goto end;
 	}
 
@@ -434,62 +517,88 @@ int lttng_directory_handle_init_from_handle(
 		goto end;
 	}
 	if (*path == '/') {
-		new_handle->base_path = strdup(path);
-		ret = new_handle->base_path ? 0 : -1;
+		new_path = strdup(path);
+		if (!new_path) {
+			goto end;
+		}
+		/* Takes ownership of new_path. */
+		new_handle = _lttng_directory_handle_create(new_path);
+		new_path = NULL;
 		goto end;
 	}
 
 	add_trailing_slash = path[path_len - 1] != '/';
 
-	handle_path_len = strlen(handle->base_path) + path_len +
+	handle_path_len = strlen(ref_handle->base_path) + path_len +
 			!!add_trailing_slash;
 	if (handle_path_len >= LTTNG_PATH_MAX) {
 		ERR("Failed to initialize directory handle as the resulting path's length (%zu bytes) exceeds the maximal allowed length (%d bytes)",
 				handle_path_len, LTTNG_PATH_MAX);
-		ret = -1;
 		goto end;
 	}
-	new_handle->base_path = zmalloc(handle_path_len);
-	if (!new_handle->base_path) {
+	new_path = zmalloc(handle_path_len);
+	if (!new_path) {
 		PERROR("Failed to initialize directory handle");
-		ret = -1;
 		goto end;
 	}
 
 	ret = sprintf(new_handle->base_path, "%s%s%s",
-			handle->base_path,
+			ref_handle->base_path,
 			path,
 			add_trailing_slash ? "/" : "");
 	if (ret == -1 || ret >= handle_path_len) {
 		ERR("Failed to initialize directory handle: path formatting failed");
-		ret = -1;
 		goto end;
 	}
+	new_handle = _lttng_directory_handle_create(new_path);
+	new_path = NULL;
 end:
-	return ret;
+	free(new_path);
+	return new_handle;
 }
 
 LTTNG_HIDDEN
-int lttng_directory_handle_init_from_dirfd(
-		struct lttng_directory_handle *handle, int dirfd)
+struct lttng_directory_handle *lttng_directory_handle_create_from_dirfd(
+		int dirfd)
 {
 	assert(dirfd == AT_FDCWD);
-	return lttng_directory_handle_init(handle, NULL);
+	return lttng_directory_handle_create(NULL);
 }
 
-LTTNG_HIDDEN
-void lttng_directory_handle_fini(struct lttng_directory_handle *handle)
+static
+void lttng_directory_handle_release(struct urcu_ref *ref)
 {
+	struct lttng_directory_handle *handle =
+			container_of(ref, struct lttng_directory_handle, ref);
+
 	free(handle->base_path);
 	lttng_directory_handle_invalidate(handle);
+	free(handle);
 }
 
 LTTNG_HIDDEN
-int lttng_directory_handle_copy(const struct lttng_directory_handle *handle,
-		struct lttng_directory_handle *new_copy)
+struct lttng_directory_handle *lttng_directory_handle_copy(
+		const struct lttng_directory_handle *handle)
 {
-	new_copy->base_path = strdup(handle->base_path);
-	return new_copy->base_path ? 0 : -1;
+	struct lttng_directory_handle *new_handle = NULL;
+	char *new_path = NULL;
+
+	if (handle->base_path) {
+		new_path = strdup(handle->base_path);
+		if (!new_path) {
+			goto end;
+		}
+	}
+	new_handle = _lttng_directory_handle_create(new_path);
+end:
+	return new_handle;
+}
+
+LTTNG_HIDDEN
+bool lttng_directory_handle_equals(const struct lttng_directory_handle *lhs,
+		const struct lttng_directory_handle *rhs)
+{
+	return strcmp(lhs->base_path, rhs->base_path) == 0;
 }
 
 static
@@ -498,7 +607,7 @@ void lttng_directory_handle_invalidate(struct lttng_directory_handle *handle)
 	handle->base_path = NULL;
 }
 
-static
+LTTNG_HIDDEN
 int lttng_directory_handle_stat(const struct lttng_directory_handle *handle,
 		const char *subdirectory, struct stat *st)
 {
@@ -514,6 +623,13 @@ int lttng_directory_handle_stat(const struct lttng_directory_handle *handle,
 	ret = stat(fullpath, st);
 end:
 	return ret;
+}
+
+LTTNG_HIDDEN
+bool lttng_directory_handle_uses_fd(
+		const struct lttng_directory_handle *handle)
+{
+	return false;
 }
 
 static
@@ -819,16 +935,6 @@ end:
 	return ret;
 }
 
-LTTNG_HIDDEN
-struct lttng_directory_handle
-lttng_directory_handle_move(struct lttng_directory_handle *original)
-{
-	const struct lttng_directory_handle tmp = *original;
-
-	lttng_directory_handle_invalidate(original);
-	return tmp;
-}
-
 static
 int create_directory_recursive(const struct lttng_directory_handle *handle,
 		const char *path, mode_t mode)
@@ -882,6 +988,22 @@ int create_directory_recursive(const struct lttng_directory_handle *handle,
 	}
 error:
 	return ret;
+}
+
+LTTNG_HIDDEN
+bool lttng_directory_handle_get(struct lttng_directory_handle *handle)
+{
+	return urcu_ref_get_unless_zero(&handle->ref);
+}
+
+LTTNG_HIDDEN
+void lttng_directory_handle_put(struct lttng_directory_handle *handle)
+{
+	if (!handle) {
+		return;
+	}
+	assert(handle->ref.refcount);
+	urcu_ref_put(&handle->ref, lttng_directory_handle_release);
 }
 
 LTTNG_HIDDEN

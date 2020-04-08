@@ -4,20 +4,10 @@
  * Linux Trace Toolkit Control Library
  *
  * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
- * Copyright (C) 2016 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2016 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License, version 2.1 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this library; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #define _LGPL_SOURCE
@@ -32,20 +22,21 @@
 #include <common/common.h>
 #include <common/compat/string.h>
 #include <common/defaults.h>
+#include <common/dynamic-buffer.h>
 #include <common/sessiond-comm/sessiond-comm.h>
+#include <common/tracker.h>
 #include <common/uri.h>
 #include <common/utils.h>
-#include <common/dynamic-buffer.h>
-#include <lttng/lttng.h>
-#include <lttng/health-internal.h>
-#include <lttng/trigger/trigger-internal.h>
-#include <lttng/endpoint.h>
 #include <lttng/channel-internal.h>
-#include <lttng/event-internal.h>
-#include <lttng/userspace-probe-internal.h>
-#include <lttng/session-internal.h>
-#include <lttng/session-descriptor-internal.h>
 #include <lttng/destruction-handle.h>
+#include <lttng/endpoint.h>
+#include <lttng/event-internal.h>
+#include <lttng/health-internal.h>
+#include <lttng/lttng.h>
+#include <lttng/session-descriptor-internal.h>
+#include <lttng/session-internal.h>
+#include <lttng/trigger/trigger-internal.h>
+#include <lttng/userspace-probe-internal.h>
 
 #include "filter/filter-ast.h"
 #include "filter/filter-parser.h"
@@ -905,7 +896,7 @@ static char *set_agent_filter(const char *filter, struct lttng_event *ev)
 
 	/* Add loglevel filtering if any for the JUL domain. */
 	if (ev->loglevel_type != LTTNG_EVENT_LOGLEVEL_ALL) {
-		char *op;
+		const char *op;
 
 		if (ev->loglevel_type == LTTNG_EVENT_LOGLEVEL_RANGE) {
 			op = ">=";
@@ -1607,58 +1598,6 @@ int lttng_disable_channel(struct lttng_handle *handle, const char *name)
 }
 
 /*
- * Add PID to session tracker.
- * Return 0 on success else a negative LTTng error code.
- */
-int lttng_track_pid(struct lttng_handle *handle, int pid)
-{
-	struct lttcomm_session_msg lsm;
-
-	/* NULL arguments are forbidden. No default values. */
-	if (handle == NULL) {
-		return -LTTNG_ERR_INVALID;
-	}
-
-	memset(&lsm, 0, sizeof(lsm));
-
-	lsm.cmd_type = LTTNG_TRACK_PID;
-	lsm.u.pid_tracker.pid = pid;
-
-	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
-
-	lttng_ctl_copy_string(lsm.session.name, handle->session_name,
-			sizeof(lsm.session.name));
-
-	return lttng_ctl_ask_sessiond(&lsm, NULL);
-}
-
-/*
- * Remove PID from session tracker.
- * Return 0 on success else a negative LTTng error code.
- */
-int lttng_untrack_pid(struct lttng_handle *handle, int pid)
-{
-	struct lttcomm_session_msg lsm;
-
-	/* NULL arguments are forbidden. No default values. */
-	if (handle == NULL) {
-		return -LTTNG_ERR_INVALID;
-	}
-
-	memset(&lsm, 0, sizeof(lsm));
-
-	lsm.cmd_type = LTTNG_UNTRACK_PID;
-	lsm.u.pid_tracker.pid = pid;
-
-	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
-
-	lttng_ctl_copy_string(lsm.session.name, handle->session_name,
-			sizeof(lsm.session.name));
-
-	return lttng_ctl_ask_sessiond(&lsm, NULL);
-}
-
-/*
  * Lists all available tracepoints of domain.
  * Sets the contents of the events array.
  * Returns the number of lttng_event entries in events;
@@ -2283,7 +2222,7 @@ int lttng_list_events(struct lttng_handle *handle,
 	/* Set number of events and free command header */
 	nb_events = cmd_header->nb_events;
 	if (nb_events > INT_MAX) {
-		ret = -EOVERFLOW;
+		ret = -LTTNG_ERR_OVERFLOW;
 		goto end;
 	}
 	free(cmd_header);
@@ -2812,6 +2751,7 @@ int lttng_set_consumer_url(struct lttng_handle *handle,
 /*
  * [OBSOLETE]
  */
+int lttng_enable_consumer(struct lttng_handle *handle);
 int lttng_enable_consumer(struct lttng_handle *handle)
 {
 	return -ENOSYS;
@@ -2820,6 +2760,7 @@ int lttng_enable_consumer(struct lttng_handle *handle)
 /*
  * [OBSOLETE]
  */
+int lttng_disable_consumer(struct lttng_handle *handle);
 int lttng_disable_consumer(struct lttng_handle *handle)
 {
 	return -ENOSYS;
@@ -2828,6 +2769,8 @@ int lttng_disable_consumer(struct lttng_handle *handle)
 /*
  * [OBSOLETE]
  */
+int _lttng_create_session_ext(const char *name, const char *url,
+		const char *datetime);
 int _lttng_create_session_ext(const char *name, const char *url,
 		const char *datetime)
 {
@@ -2872,55 +2815,6 @@ int lttng_data_pending(const char *session_name)
 end:
 	free(pending);
 	return ret;
-}
-
-/*
- * List PIDs in the tracker.
- *
- * enabled is set to whether the PID tracker is enabled.
- * pids is set to an allocated array of PIDs currently tracked. On
- * success, pids must be freed by the caller.
- * nr_pids is set to the number of entries contained by the pids array.
- *
- * Returns 0 on success, else a negative LTTng error code.
- */
-int lttng_list_tracker_pids(struct lttng_handle *handle,
-		int *_enabled, int32_t **_pids, size_t *_nr_pids)
-{
-	int ret;
-	int enabled = 1;
-	struct lttcomm_session_msg lsm;
-	size_t nr_pids;
-	int32_t *pids = NULL;
-
-	if (handle == NULL) {
-		return -LTTNG_ERR_INVALID;
-	}
-
-	memset(&lsm, 0, sizeof(lsm));
-	lsm.cmd_type = LTTNG_LIST_TRACKER_PIDS;
-	lttng_ctl_copy_string(lsm.session.name, handle->session_name,
-			sizeof(lsm.session.name));
-	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
-
-	ret = lttng_ctl_ask_sessiond(&lsm, (void **) &pids);
-	if (ret < 0) {
-		return ret;
-	}
-	nr_pids = ret / sizeof(int32_t);
-	if (nr_pids > 0 && !pids) {
-		return -LTTNG_ERR_UNK;
-	}
-	if (nr_pids == 1 && pids[0] == -1) {
-		free(pids);
-		pids = NULL;
-		enabled = 0;
-		nr_pids = 0;
-	}
-	*_enabled = enabled;
-	*_pids = pids;
-	*_nr_pids = nr_pids;
-	return 0;
 }
 
 /*

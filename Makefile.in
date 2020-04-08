@@ -14,6 +14,8 @@
 
 @SET_MAKE@
 
+# SPDX-License-Identifier: GPL-2.0-only
+
 VPATH = @srcdir@
 am__is_gnu_make = { \
   if test -z '$(MAKELEVEL)'; then \
@@ -92,9 +94,12 @@ target_triplet = @target@
 @BUILD_EXTRAS_TRUE@am__append_1 = extras
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
+	$(top_srcdir)/m4/ax_append_flag.m4 \
+	$(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_check_class.m4 \
 	$(top_srcdir)/m4/ax_check_classpath.m4 \
+	$(top_srcdir)/m4/ax_check_compile_flag.m4 \
 	$(top_srcdir)/m4/ax_check_link_flag.m4 \
 	$(top_srcdir)/m4/ax_compare_version.m4 \
 	$(top_srcdir)/m4/ax_config_feature.m4 \
@@ -111,6 +116,7 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_prog_javac.m4 \
 	$(top_srcdir)/m4/ax_prog_javac_works.m4 \
 	$(top_srcdir)/m4/ax_pthread.m4 \
+	$(top_srcdir)/m4/ax_require_defined.m4 \
 	$(top_srcdir)/m4/ax_try_compile_java.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
@@ -270,6 +276,7 @@ AMTAR = @AMTAR@
 AM_CFLAGS = @AM_CFLAGS@
 AM_CPPFLAGS = @AM_CPPFLAGS@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
+AM_LDFLAGS = @AM_LDFLAGS@
 AR = @AR@
 ARCHTYPE = @ARCHTYPE@
 ASCIIDOC = @ASCIIDOC@
@@ -277,12 +284,14 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BABELTRACE2_BIN = @BABELTRACE2_BIN@
 BABELTRACE_BIN = @BABELTRACE_BIN@
 BISON_VERSION = @BISON_VERSION@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
 CMD_DESCR_DISABLE_CHANNEL = @CMD_DESCR_DISABLE_CHANNEL@
@@ -401,7 +410,6 @@ LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 LTTNG_SYSTEM_RUNDIR = @LTTNG_SYSTEM_RUNDIR@
-LTTV_GUI_BIN = @LTTV_GUI_BIN@
 LT_NO_UNDEFINED = @LT_NO_UNDEFINED@
 LT_SYS_LIBRARY_PATH = @LT_SYS_LIBRARY_PATH@
 MAINT = @MAINT@
@@ -456,8 +464,10 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
-UUID_CFLAGS = @UUID_CFLAGS@
-UUID_LIBS = @UUID_LIBS@
+UST_CFLAGS = @UST_CFLAGS@
+UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
+UST_CTL_LIBS = @UST_CTL_LIBS@
+UST_LIBS = @UST_LIBS@
 VERSION = @VERSION@
 XMLTO = @XMLTO@
 YACC = @YACC@
@@ -544,7 +554,14 @@ dist_doc_DATA = LICENSE \
 		README.md
 
 dist_noinst_DATA = CodingStyle
-EXTRA_DIST = extras/lttng-bash_completion gpl-2.0.txt lgpl-2.1.txt
+EXTRA_DIST = extras/lttng-bash_completion \
+	     LICENSES/BSD-2-Clause \
+	     LICENSES/BSD-3-Clause \
+	     LICENSES/GPL-2.0 \
+	     LICENSES/LGPL-2.1 \
+	     LICENSES/MIT \
+	     version
+
 all: all-recursive
 
 .SUFFIXES:

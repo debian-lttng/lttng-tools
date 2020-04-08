@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2019 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License, version 2.1 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
- * for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef LTTNG_DYNAMIC_ARRAY_H
@@ -89,6 +79,9 @@ int lttng_dynamic_array_remove_element(struct lttng_dynamic_array *array,
 LTTNG_HIDDEN
 void lttng_dynamic_array_reset(struct lttng_dynamic_array *array);
 
+/* Remove all elements from the dynamic array. */
+LTTNG_HIDDEN
+void lttng_dynamic_array_clear(struct lttng_dynamic_array *array);
 
 /*
  * Specialization of lttng_dynamic_array for pointers. This utility
@@ -152,6 +145,11 @@ int lttng_dynamic_pointer_array_remove_pointer(
 /* Release any memory used by the dynamic array. */
 LTTNG_HIDDEN
 void lttng_dynamic_pointer_array_reset(
+		struct lttng_dynamic_pointer_array *array);
+
+/* Remove all elements from the dynamic pointer array. */
+LTTNG_HIDDEN
+void lttng_dynamic_pointer_array_clear(
 		struct lttng_dynamic_pointer_array *array);
 
 #endif /* LTTNG_DYNAMIC_ARRAY_H */

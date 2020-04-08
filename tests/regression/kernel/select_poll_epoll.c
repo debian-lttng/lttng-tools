@@ -1,3 +1,10 @@
+/*
+ * Copyright (C) 2016 Julien Desfossez <jdesfossez@efficios.com>
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ *
+ */
+
 #include <stdio.h>
 #include <poll.h>
 #include <signal.h>
@@ -31,7 +38,7 @@
 #define MSEC_PER_NSEC (MSEC_PER_USEC * 1000)
 
 static int timeout; /* seconds, -1 to disable */
-volatile static int stop_thread;
+static volatile int stop_thread;
 static int wait_fd;
 
 struct ppoll_thread_data {
@@ -39,6 +46,7 @@ struct ppoll_thread_data {
 	int value;
 };
 
+static
 void test_select_big(void)
 {
 	fd_set rfds, wfds, exfds;
@@ -88,6 +96,7 @@ end:
 	return;
 }
 
+static
 void test_pselect(void)
 {
 	fd_set rfds;
@@ -121,6 +130,7 @@ void test_pselect(void)
 
 }
 
+static
 void test_select(void)
 {
 	fd_set rfds;
@@ -154,6 +164,7 @@ void test_select(void)
 
 }
 
+static
 void test_poll(void)
 {
 	struct pollfd ufds[NB_FD];
@@ -178,6 +189,7 @@ void test_poll(void)
 	}
 }
 
+static
 void test_ppoll(void)
 {
 	struct pollfd ufds[NB_FD];
@@ -210,6 +222,7 @@ void test_ppoll(void)
 	}
 }
 
+static
 void test_ppoll_big(void)
 {
 	struct pollfd ufds[MAX_FDS];
@@ -249,6 +262,7 @@ void test_ppoll_big(void)
 	return;
 }
 
+static
 void test_epoll(void)
 {
 	int ret, epollfd;
@@ -291,6 +305,7 @@ end:
 	return;
 }
 
+static
 void test_pepoll(void)
 {
 	int ret, epollfd;
@@ -333,6 +348,7 @@ end:
 	return;
 }
 
+static
 void run_working_cases(void)
 {
 	int ret;
@@ -379,6 +395,7 @@ end:
  * segfault (eventually with a "*** stack smashing detected ***" message).
  * The event should contain an array of 100 FDs filled with garbage.
  */
+static
 void ppoll_fds_buffer_overflow(void)
 {
 	struct pollfd ufds[NB_FD];
@@ -410,6 +427,7 @@ void ppoll_fds_buffer_overflow(void)
  * cleanly fail with a "Invalid argument".
  * The event should contain an empty array of FDs and overflow = 1.
  */
+static
 void ppoll_fds_ulong_max(void)
 {
 	struct pollfd ufds[NB_FD];
@@ -440,6 +458,7 @@ void ppoll_fds_ulong_max(void)
  * Pass an invalid file descriptor to pselect6(). The syscall should return
  * -EBADF. The recorded event should contain a "ret = -EBADF (-9)".
  */
+static
 void pselect_invalid_fd(void)
 {
 	fd_set rfds;
@@ -486,6 +505,7 @@ error:
  * Invalid pointer as writefds, should output a ppoll event
  * with 0 FDs.
  */
+static
 void pselect_invalid_pointer(void)
 {
 	fd_set rfds;
@@ -517,6 +537,7 @@ void pselect_invalid_pointer(void)
  * Pass an invalid pointer to epoll_pwait, should fail with
  * "Bad address", the event returns 0 FDs.
  */
+static
 void epoll_pwait_invalid_pointer(void)
 {
 	int ret, epollfd;
@@ -561,6 +582,7 @@ end:
  * Set maxevents to INT_MAX, should output "Invalid argument"
  * The event should return an empty array.
  */
+static
 void epoll_pwait_int_max(void)
 {
 	int ret, epollfd;
@@ -600,6 +622,7 @@ end:
 	return;
 }
 
+static
 void *ppoll_writer(void *arg)
 {
 	struct ppoll_thread_data *data = (struct ppoll_thread_data *) arg;
@@ -613,6 +636,7 @@ void *ppoll_writer(void *arg)
 	return NULL;
 }
 
+static
 void do_ppoll(int *fds, struct pollfd *ufds)
 {
 	int i, ret;
@@ -642,6 +666,7 @@ void do_ppoll(int *fds, struct pollfd *ufds)
 	}
 }
 
+static
 void stress_ppoll(int *fds, int value)
 {
 	pthread_t writer;
@@ -683,6 +708,7 @@ end:
  *
  * ppoll should work as expected and the trace should be readable at the end.
  */
+static
 void ppoll_concurrent_write(void)
 {
 	int i, ret, fds[MAX_FDS];
@@ -708,6 +734,7 @@ void ppoll_concurrent_write(void)
 	return;
 }
 
+static
 void *epoll_pwait_writer(void *addr)
 {
 	srand(time(NULL));
@@ -725,6 +752,7 @@ void *epoll_pwait_writer(void *addr)
  * buffer allocated for the returned data. This should randomly segfault.
  * The trace should be readable and no kernel OOPS should occur.
  */
+static
 void epoll_pwait_concurrent_munmap(void)
 {
 	int ret, epollfd, i, fds[MAX_FDS];
@@ -807,15 +835,7 @@ end:
 	return;
 }
 
-void usage(poptContext optCon, int exitcode, char *error, char *addl)
-{
-	poptPrintUsage(optCon, stderr, 0);
-	if (error) {
-		fprintf(stderr, "%s: %s\n", error, addl);
-	}
-	exit(exitcode);
-}
-
+static
 void print_list(void)
 {
 	fprintf(stderr, "Test list (-t X):\n");

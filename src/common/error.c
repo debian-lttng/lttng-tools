@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -179,8 +169,8 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_MI_NOT_IMPLEMENTED) ] = "Mi feature not implemented",
 	[ ERROR_INDEX(LTTNG_ERR_INVALID_EVENT_NAME) ] = "Invalid event name",
 	[ ERROR_INDEX(LTTNG_ERR_INVALID_CHANNEL_NAME) ] = "Invalid channel name",
-	[ ERROR_INDEX(LTTNG_ERR_PID_TRACKED) ] = "PID already tracked",
-	[ ERROR_INDEX(LTTNG_ERR_PID_NOT_TRACKED) ] = "PID not tracked",
+	[ ERROR_INDEX(LTTNG_ERR_PROCESS_ATTR_EXISTS) ] = "Process attribute is already tracked",
+	[ ERROR_INDEX(LTTNG_ERR_PROCESS_ATTR_MISSING) ] = "Process attribute was not tracked",
 	[ ERROR_INDEX(LTTNG_ERR_INVALID_CHANNEL_DOMAIN) ] = "Invalid channel domain",
 	[ ERROR_INDEX(LTTNG_ERR_OVERFLOW) ] = "Overflow occurred",
 	[ ERROR_INDEX(LTTNG_ERR_SESSION_NOT_STARTED) ] = "Session not started",
@@ -221,6 +211,14 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_FILE_CREATION_ERROR) ] = "Failed to create file",
 	[ ERROR_INDEX(LTTNG_ERR_TIMER_STOP_ERROR) ] = "Failed to stop a timer",
 	[ ERROR_INDEX(LTTNG_ERR_ROTATION_NOT_AVAILABLE_KERNEL) ] = "Rotation feature not supported by the kernel tracer.",
+	[ ERROR_INDEX(LTTNG_ERR_CLEAR_RELAY_DISALLOWED) ] = "Relayd daemon peer does not allow sessions to be cleared",
+	[ ERROR_INDEX(LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY) ] = "Clearing a session is not supported by the relay daemon",
+	[ ERROR_INDEX(LTTNG_ERR_CLEAR_FAIL_CONSUMER) ] = "Consumer failed to clear the session",
+	[ ERROR_INDEX(LTTNG_ERR_ROTATION_AFTER_STOP_CLEAR) ] = "Session was already cleared since it became inactive",
+	[ ERROR_INDEX(LTTNG_ERR_USER_NOT_FOUND) ] = "User not found",
+	[ ERROR_INDEX(LTTNG_ERR_GROUP_NOT_FOUND) ] = "Group not found",
+	[ ERROR_INDEX(LTTNG_ERR_UNSUPPORTED_DOMAIN) ] = "Unsupported domain used",
+	[ ERROR_INDEX(LTTNG_ERR_PROCESS_ATTR_TRACKER_INVALID_TRACKING_POLICY) ] = "Operation does not apply to the process attribute tracker's tracking policy",
 
 	/* Last element */
 	[ ERROR_INDEX(LTTNG_ERR_NR) ] = "Unknown error code"

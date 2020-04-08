@@ -1,20 +1,10 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
- *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
- *               2015 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2015 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _DEFAULTS_H
@@ -59,8 +49,8 @@
 #define DEFAULT_UST_TRACE_DIR                   "ust"
 
 /* Subpath for per PID or UID sessions. */
-#define DEFAULT_UST_TRACE_PID_PATH               "/pid"
-#define DEFAULT_UST_TRACE_UID_PATH               "/uid/%d/%u-bit"
+#define DEFAULT_UST_TRACE_PID_PATH               "pid"
+#define DEFAULT_UST_TRACE_UID_PATH               "uid/%d/%u-bit"
 
 /*
  * Default session name for the lttng command line. This default value will
@@ -92,6 +82,21 @@
 /* Relayd path */
 #define DEFAULT_RELAYD_RUNDIR			"%s"
 #define DEFAULT_RELAYD_PATH			DEFAULT_RELAYD_RUNDIR "/relayd"
+
+#define DEFAULT_RELAYD_MIN_FD_POOL_SIZE		100
+/*
+ * The file descriptor pool size needs a reserve buffer to accommodates the
+ * indirect use of short-lived file descriptors. For instance, glibc will
+ * create a socket (and thus, use an fd) during calls to gethostname() or
+ * when querying the user's group. Other calls also probably make use of
+ * short-lived FDs.
+ *
+ * The theoritical maximal reserve corresponds to the number of threads as,
+ * in the worst case, they could all be making such calls.
+ *
+ * This value must be less than DEFAULT_RELAYD_MIN_FD_POOL_SIZE.
+ */
+#define DEFAULT_RELAYD_FD_POOL_SIZE_RESERVE	10
 
 /* Default lttng run directory */
 #define DEFAULT_LTTNG_HOME_ENV_VAR              "LTTNG_HOME"
@@ -345,13 +350,18 @@
 #define DEFAULT_LTTNG_RELAYD_TCP_KEEP_ALIVE_MAX_PROBE_COUNT_ENV "LTTNG_RELAYD_TCP_KEEP_ALIVE_MAX_PROBE_COUNT"
 #define DEFAULT_LTTNG_RELAYD_TCP_KEEP_ALIVE_PROBE_INTERVAL_ENV "LTTNG_RELAYD_TCP_KEEP_ALIVE_PROBE_INTERVAL"
 #define DEFAULT_LTTNG_RELAYD_TCP_KEEP_ALIVE_ABORT_THRESHOLD_ENV "LTTNG_RELAYD_TCP_KEEP_ALIVE_ABORT_THRESHOLD"
+#define DEFAULT_LTTNG_RELAYD_DISALLOW_CLEAR_ENV "LTTNG_RELAYD_DISALLOW_CLEAR"
+
+#define DEFAULT_LTTNG_RELAYD_WORKING_DIRECTORY_ENV "LTTNG_RELAYD_WORKING_DIRECTORY"
 
 /*
  * Name of the intermediate directory used to rename the trace chunk of a
  * session's first rotation.
  */
-#define DEFAULT_TEMPORARY_CHUNK_RENAME_DIRECTORY	".tmp_rename_chunk"
+#define DEFAULT_CHUNK_TMP_OLD_DIRECTORY			".tmp_old_chunk"
+#define DEFAULT_CHUNK_TMP_NEW_DIRECTORY			".tmp_new_chunk"
 #define DEFAULT_ARCHIVED_TRACE_CHUNKS_DIRECTORY		"archives"
+#define DEFAULT_UNLINKED_FILES_DIRECTORY		".unlinked"
 
 /*
  * Default timer value in usec for the rotate pending polling check on the

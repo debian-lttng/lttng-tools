@@ -1,20 +1,12 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2020 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <stdint.h>
 #define _LGPL_SOURCE
 #include <inttypes.h>
 #include <popt.h>
@@ -25,7 +17,9 @@
 
 #include <common/mi-lttng.h>
 #include <common/time.h>
+#include <common/tracker.h>
 #include <lttng/constant.h>
+#include <lttng/tracker.h>
 
 #include "../command.h"
 
@@ -809,7 +803,7 @@ static int mi_list_ust_event_fields(struct lttng_event_field *fields, int count,
 		}
 	}
 
-	/* Close pid, domain, domains */
+	/* Close pids, domain, domains */
 	ret = mi_lttng_close_multi_element(writer, 3);
 end:
 	return ret;
@@ -1452,7 +1446,6 @@ static int list_channels(const char *channel_name)
 				count = 0;
 			} else {
 				ret = CMD_SUCCESS;
-				WARN("No kernel channel");
 				goto error_channels;
 			}
 			break;
@@ -1512,71 +1505,285 @@ error_channels:
 	return ret;
 }
 
-/*
- * List tracker PID(s) of session and domain.
- */
-static int list_tracker_pids(void)
+static const char *get_capitalized_process_attr_str(enum lttng_process_attr process_attr)
 {
-	int ret = 0;
-	int enabled;
-	int *pids = NULL;
-	size_t nr_pids;
-
-	ret = lttng_list_tracker_pids(handle,
-		&enabled, &pids, &nr_pids);
-	if (ret) {
-		return ret;
+	switch (process_attr) {
+	case LTTNG_PROCESS_ATTR_PROCESS_ID:
+		return "Process ID";
+	case LTTNG_PROCESS_ATTR_VIRTUAL_PROCESS_ID:
+		return "Virtual process ID";
+	case LTTNG_PROCESS_ATTR_USER_ID:
+		return "User ID";
+	case LTTNG_PROCESS_ATTR_VIRTUAL_USER_ID:
+		return "Virtual user ID";
+	case LTTNG_PROCESS_ATTR_GROUP_ID:
+		return "Group ID";
+	case LTTNG_PROCESS_ATTR_VIRTUAL_GROUP_ID:
+		return "Virtual group ID";
+	default:
+		return "Unknown";
 	}
-	if (enabled) {
-		int i;
-		_MSG("PID tracker: [");
-
-		/* Mi tracker_pid element*/
-		if (writer) {
-			/* Open tracker_pid and targets elements */
-			ret = mi_lttng_pid_tracker_open(writer);
-			if (ret) {
-				goto end;
-			}
-		}
-
-		for (i = 0; i < nr_pids; i++) {
-			if (i) {
-				_MSG(",");
-			}
-			_MSG(" %d", pids[i]);
-
-			/* Mi */
-			if (writer) {
-				ret = mi_lttng_pid_target(writer, pids[i], 0);
-				if (ret) {
-					goto end;
-				}
-			}
-		}
-		_MSG(" ]\n\n");
-
-		/* Mi close tracker_pid and targets */
-		if (writer) {
-			ret = mi_lttng_close_multi_element(writer,2);
-			if (ret) {
-				goto end;
-			}
-		}
-	}
-end:
-	free(pids);
-	return ret;
-
+	return NULL;
 }
 
-/*
- * List all tracker of a domain
- */
-static int list_trackers(void)
+static int handle_process_attr_status(enum lttng_process_attr process_attr,
+		enum lttng_process_attr_tracker_handle_status status)
+{
+	int ret = CMD_SUCCESS;
+
+	switch (status) {
+	case LTTNG_PROCESS_ATTR_TRACKER_HANDLE_STATUS_INVALID_TRACKING_POLICY:
+	case LTTNG_PROCESS_ATTR_TRACKER_HANDLE_STATUS_OK:
+		/* Carry on. */
+		break;
+	case LTTNG_PROCESS_ATTR_TRACKER_HANDLE_STATUS_COMMUNICATION_ERROR:
+		ERR("Communication occurred while fetching %s tracker",
+				lttng_process_attr_to_string(process_attr));
+		ret = CMD_ERROR;
+		break;
+	case LTTNG_PROCESS_ATTR_TRACKER_HANDLE_STATUS_SESSION_DOES_NOT_EXIST:
+		ERR("Failed to get the inclusion set of the %s tracker: session `%s` no longer exists",
+				lttng_process_attr_to_string(process_attr),
+				handle->session_name);
+		ret = CMD_ERROR;
+		break;
+	default:
+		ERR("Unknown error occurred while fetching the inclusion set of the %s tracker",
+				lttng_process_attr_to_string(process_attr));
+		ret = CMD_ERROR;
+		break;
+	}
+
+	return ret;
+}
+
+static int mi_output_empty_tracker(enum lttng_process_attr process_attr)
 {
 	int ret;
 
+	ret = mi_lttng_process_attribute_tracker_open(writer, process_attr);
+	if (ret) {
+		goto end;
+	}
+
+	ret = mi_lttng_close_multi_element(writer, 2);
+end:
+	return ret;
+}
+
+static inline bool is_value_type_name(
+		enum lttng_process_attr_value_type value_type)
+{
+	return value_type == LTTNG_PROCESS_ATTR_VALUE_TYPE_USER_NAME ||
+	       value_type == LTTNG_PROCESS_ATTR_VALUE_TYPE_GROUP_NAME;
+}
+
+/*
+ * List a process attribute tracker for a session and domain tuple.
+ */
+static int list_process_attr_tracker(enum lttng_process_attr process_attr)
+{
+	int ret = 0;
+	unsigned int count, i;
+	enum lttng_tracking_policy policy;
+	enum lttng_error_code ret_code;
+	enum lttng_process_attr_tracker_handle_status handle_status;
+	enum lttng_process_attr_values_status values_status;
+	const struct lttng_process_attr_values *values;
+	struct lttng_process_attr_tracker_handle *tracker_handle = NULL;
+
+	ret_code = lttng_session_get_tracker_handle(handle->session_name,
+			handle->domain.type, process_attr, &tracker_handle);
+	if (ret_code != LTTNG_OK) {
+		ERR("Failed to get process attribute tracker handle: %s",
+				lttng_strerror(ret_code));
+		ret = CMD_ERROR;
+		goto end;
+	}
+
+	handle_status = lttng_process_attr_tracker_handle_get_inclusion_set(
+			tracker_handle, &values);
+	ret = handle_process_attr_status(process_attr, handle_status);
+	if (ret != CMD_SUCCESS) {
+		goto end;
+	}
+
+	handle_status = lttng_process_attr_tracker_handle_get_tracking_policy(
+			tracker_handle, &policy);
+	ret = handle_process_attr_status(process_attr, handle_status);
+	if (ret != CMD_SUCCESS) {
+		goto end;
+	}
+
+	{
+		char *process_attr_name;
+		const int print_ret = asprintf(&process_attr_name, "%ss:",
+				get_capitalized_process_attr_str(process_attr));
+
+		if (print_ret == -1) {
+			ret = CMD_FATAL;
+			goto end;
+		}
+		_MSG("  %-22s", process_attr_name);
+		free(process_attr_name);
+	}
+	switch (policy) {
+	case LTTNG_TRACKING_POLICY_INCLUDE_SET:
+		break;
+	case LTTNG_TRACKING_POLICY_EXCLUDE_ALL:
+		if (writer) {
+			mi_output_empty_tracker(process_attr);
+		}
+		MSG("none");
+		ret = CMD_SUCCESS;
+		goto end;
+	case LTTNG_TRACKING_POLICY_INCLUDE_ALL:
+		MSG("all");
+		ret = CMD_SUCCESS;
+		goto end;
+	default:
+		ERR("Unknown tracking policy encoutered while listing the %s process attribute tracker of session `%s`",
+				lttng_process_attr_to_string(process_attr),
+				handle->session_name);
+		ret = CMD_FATAL;
+		goto end;
+	}
+
+	values_status = lttng_process_attr_values_get_count(values, &count);
+	if (values_status != LTTNG_PROCESS_ATTR_VALUES_STATUS_OK) {
+		ERR("Failed to get the count of values in the inclusion set of the %s process attribute tracker of session `%s`",
+				lttng_process_attr_to_string(process_attr),
+				handle->session_name);
+		ret = CMD_FATAL;
+		goto end;
+	}
+
+	if (count == 0) {
+		/* Functionally equivalent to the 'exclude all' policy. */
+		if (writer) {
+			mi_output_empty_tracker(process_attr);
+		}
+		MSG("none");
+		ret = CMD_SUCCESS;
+		goto end;
+	}
+
+	/* Mi tracker_id element */
+	if (writer) {
+		/* Open tracker_id and targets elements */
+		ret = mi_lttng_process_attribute_tracker_open(
+				writer, process_attr);
+		if (ret) {
+			goto end;
+		}
+	}
+
+	for (i = 0; i < count; i++) {
+		const enum lttng_process_attr_value_type value_type =
+				lttng_process_attr_values_get_type_at_index(
+						values, i);
+		int64_t integral_value = INT64_MAX;
+		const char *name = "error";
+
+		if (i >= 1) {
+			_MSG(", ");
+		}
+		switch (value_type) {
+		case LTTNG_PROCESS_ATTR_VALUE_TYPE_PID:
+		{
+			pid_t pid;
+
+			values_status = lttng_process_attr_values_get_pid_at_index(
+					values, i, &pid);
+			integral_value = (int64_t) pid;
+			break;
+		}
+		case LTTNG_PROCESS_ATTR_VALUE_TYPE_UID:
+		{
+			uid_t uid;
+
+			values_status = lttng_process_attr_values_get_uid_at_index(
+					values, i, &uid);
+			integral_value = (int64_t) uid;
+			break;
+		}
+		case LTTNG_PROCESS_ATTR_VALUE_TYPE_GID:
+		{
+			gid_t gid;
+
+			values_status = lttng_process_attr_values_get_gid_at_index(
+					values, i, &gid);
+			integral_value = (int64_t) gid;
+			break;
+		}
+		case LTTNG_PROCESS_ATTR_VALUE_TYPE_USER_NAME:
+			values_status = lttng_process_attr_values_get_user_name_at_index(
+					values, i, &name);
+			break;
+		case LTTNG_PROCESS_ATTR_VALUE_TYPE_GROUP_NAME:
+			values_status = lttng_process_attr_values_get_group_name_at_index(
+					values, i, &name);
+			break;
+		default:
+			ret = CMD_ERROR;
+			goto end;
+		}
+
+		if (values_status != LTTNG_PROCESS_ATTR_VALUES_STATUS_OK) {
+			/*
+			 * Not possible given the current liblttng-ctl
+			 * implementation.
+			 */
+			ERR("Unknown error occurred while fetching process attribute value in inclusion list");
+			ret = CMD_FATAL;
+			goto end;
+		}
+
+		if (is_value_type_name(value_type)) {
+			_MSG("`%s`", name);
+		} else {
+			_MSG("%" PRIi64, integral_value);
+		}
+
+		/* Mi */
+		if (writer) {
+			ret = is_value_type_name(value_type) ?
+					      mi_lttng_string_process_attribute_value(
+							      writer,
+							      process_attr,
+							      name, false) :
+					      mi_lttng_integral_process_attribute_value(
+							      writer,
+							      process_attr,
+							      integral_value,
+							      false);
+			if (ret) {
+				goto end;
+			}
+		}
+	}
+	MSG("");
+
+	/* Mi close tracker_id and targets */
+	if (writer) {
+		ret = mi_lttng_close_multi_element(writer, 2);
+		if (ret) {
+			goto end;
+		}
+	}
+end:
+	lttng_process_attr_tracker_handle_destroy(tracker_handle);
+	return ret;
+}
+
+/*
+ * List all trackers of a domain
+ */
+static int list_trackers(const struct lttng_domain *domain)
+{
+	int ret = 0;
+
+	MSG("Tracked process attributes");
 	/* Trackers listing */
 	if (lttng_opt_mi) {
 		ret = mi_lttng_trackers_open(writer);
@@ -1585,12 +1792,66 @@ static int list_trackers(void)
 		}
 	}
 
-	/* pid tracker */
-	ret = list_tracker_pids();
-	if (ret) {
-		goto end;
+	switch (domain->type) {
+	case LTTNG_DOMAIN_KERNEL:
+		/* pid tracker */
+		ret = list_process_attr_tracker(LTTNG_PROCESS_ATTR_PROCESS_ID);
+		if (ret) {
+			goto end;
+		}
+		/* vpid tracker */
+		ret = list_process_attr_tracker(
+				LTTNG_PROCESS_ATTR_VIRTUAL_PROCESS_ID);
+		if (ret) {
+			goto end;
+		}
+		/* uid tracker */
+		ret = list_process_attr_tracker(LTTNG_PROCESS_ATTR_USER_ID);
+		if (ret) {
+			goto end;
+		}
+		/* vuid tracker */
+		ret = list_process_attr_tracker(
+				LTTNG_PROCESS_ATTR_VIRTUAL_USER_ID);
+		if (ret) {
+			goto end;
+		}
+		/* gid tracker */
+		ret = list_process_attr_tracker(LTTNG_PROCESS_ATTR_GROUP_ID);
+		if (ret) {
+			goto end;
+		}
+		/* vgid tracker */
+		ret = list_process_attr_tracker(
+				LTTNG_PROCESS_ATTR_VIRTUAL_GROUP_ID);
+		if (ret) {
+			goto end;
+		}
+		break;
+	case LTTNG_DOMAIN_UST:
+		/* vpid tracker */
+		ret = list_process_attr_tracker(
+				LTTNG_PROCESS_ATTR_VIRTUAL_PROCESS_ID);
+		if (ret) {
+			goto end;
+		}
+		/* vuid tracker */
+		ret = list_process_attr_tracker(
+				LTTNG_PROCESS_ATTR_VIRTUAL_USER_ID);
+		if (ret) {
+			goto end;
+		}
+		/* vgid tracker */
+		ret = list_process_attr_tracker(
+				LTTNG_PROCESS_ATTR_VIRTUAL_GROUP_ID);
+		if (ret) {
+			goto end;
+		}
+		break;
+	default:
+		break;
 	}
-
+	MSG();
 	if (lttng_opt_mi) {
 		/* Close trackers element */
 		ret = mi_lttng_writer_close_element(writer);
@@ -2185,7 +2446,7 @@ int cmd_list(int argc, const char **argv)
 
 
 			/* Trackers */
-			ret = list_trackers();
+			ret = list_trackers(&domain);
 			if (ret) {
 				goto end;
 			}
@@ -2227,22 +2488,22 @@ int cmd_list(int argc, const char **argv)
 			for (i = 0; i < nb_domain; i++) {
 				switch (domains[i].type) {
 				case LTTNG_DOMAIN_KERNEL:
-					MSG("=== Domain: Kernel ===\n");
+					MSG("=== Domain: Linux kernel ===\n");
 					break;
 				case LTTNG_DOMAIN_UST:
-					MSG("=== Domain: UST global ===\n");
-					MSG("Buffer type: %s\n",
+					MSG("=== Domain: User space ===\n");
+					MSG("Buffering scheme: %s\n",
 							domains[i].buf_type ==
-							LTTNG_BUFFER_PER_PID ? "per PID" : "per UID");
+							LTTNG_BUFFER_PER_PID ? "per-process" : "per-user");
 					break;
 				case LTTNG_DOMAIN_JUL:
-					MSG("=== Domain: JUL (Java Util Logging) ===\n");
+					MSG("=== Domain: java.util.logging (JUL) ===\n");
 					break;
 				case LTTNG_DOMAIN_LOG4J:
-					MSG("=== Domain: LOG4j (Logging for Java) ===\n");
+					MSG("=== Domain: log4j ===\n");
 					break;
 				case LTTNG_DOMAIN_PYTHON:
-					MSG("=== Domain: Python (logging) ===\n");
+					MSG("=== Domain: Python logging ===\n");
 					break;
 				default:
 					MSG("=== Domain: Unimplemented ===\n");
@@ -2282,7 +2543,7 @@ int cmd_list(int argc, const char **argv)
 				switch (domains[i].type) {
 				case LTTNG_DOMAIN_KERNEL:
 				case LTTNG_DOMAIN_UST:
-					ret = list_trackers();
+					ret = list_trackers(&domains[i]);
 					if (ret) {
 						goto end;
 					}

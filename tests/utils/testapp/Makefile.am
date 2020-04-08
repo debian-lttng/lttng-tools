@@ -1,8 +1,13 @@
-SUBDIRS = gen-ust-events \
+# SPDX-License-Identifier: GPL-2.0-only
+SUBDIRS = \
+	  gen-ns-events \
+	  gen-ust-events \
+	  gen-ust-events-ns \
 	  gen-ust-nevents \
 	  gen-ust-nevents-str \
 	  gen-ust-tracef \
 	  gen-syscall-events \
+	  gen-kernel-test-events \
 	  userspace-probe-elf-binary
 
 if CXX_WORKS

@@ -1,18 +1,8 @@
 /*
- * Copyright (C)  2011 - David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -164,6 +154,30 @@ struct ltt_kernel_session *trace_kernel_create_session(void)
 	lks->metadata = NULL;
 	CDS_INIT_LIST_HEAD(&lks->channel_list.head);
 
+	lks->tracker_pid = process_attr_tracker_create();
+	if (!lks->tracker_pid) {
+		goto error;
+	}
+	lks->tracker_vpid = process_attr_tracker_create();
+	if (!lks->tracker_vpid) {
+		goto error;
+	}
+	lks->tracker_uid = process_attr_tracker_create();
+	if (!lks->tracker_uid) {
+		goto error;
+	}
+	lks->tracker_vuid = process_attr_tracker_create();
+	if (!lks->tracker_vuid) {
+		goto error;
+	}
+	lks->tracker_gid = process_attr_tracker_create();
+	if (!lks->tracker_gid) {
+		goto error;
+	}
+	lks->tracker_vgid = process_attr_tracker_create();
+	if (!lks->tracker_vgid) {
+		goto error;
+	}
 	lks->consumer = consumer_create_output(CONSUMER_DST_LOCAL);
 	if (lks->consumer == NULL) {
 		goto error;
@@ -172,6 +186,12 @@ struct ltt_kernel_session *trace_kernel_create_session(void)
 	return lks;
 
 error:
+	process_attr_tracker_destroy(lks->tracker_pid);
+	process_attr_tracker_destroy(lks->tracker_vpid);
+	process_attr_tracker_destroy(lks->tracker_uid);
+	process_attr_tracker_destroy(lks->tracker_vuid);
+	process_attr_tracker_destroy(lks->tracker_gid);
+	process_attr_tracker_destroy(lks->tracker_vgid);
 	free(lks);
 
 alloc_error:
@@ -717,6 +737,13 @@ void trace_kernel_free_session(struct ltt_kernel_session *session)
 {
 	/* Wipe consumer output object */
 	consumer_output_put(session->consumer);
+
+	process_attr_tracker_destroy(session->tracker_pid);
+	process_attr_tracker_destroy(session->tracker_vpid);
+	process_attr_tracker_destroy(session->tracker_uid);
+	process_attr_tracker_destroy(session->tracker_vuid);
+	process_attr_tracker_destroy(session->tracker_gid);
+	process_attr_tracker_destroy(session->tracker_vgid);
 
 	free(session);
 }

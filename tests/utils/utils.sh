@@ -1,17 +1,7 @@
-# Copyright (C) - 2012 David Goulet <dgoulet@efficios.com>
+# Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
 #
-# This library is free software; you can redistribute it and/or modify it under
-# the terms of the GNU Lesser General Public License as published by the Free
-# Software Foundation; version 2.1 of the License.
+# SPDX-License-Identifier: LGPL-2.1-only
 #
-# This library is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more
-# details.
-#
-# You should have received a copy of the GNU Lesser General Public License
-# along with this library; if not, write to the Free Software Foundation, Inc.,
-# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 
 SESSIOND_BIN="lttng-sessiond"
 SESSIOND_MATCH=".*lttng-sess.*"
@@ -331,9 +321,9 @@ function lttng_enable_kernel_channel()
 	local expected_to_fail=$2
 	local sess_name=$3
 	local channel_name=$4
-	local opt=$5
+	local opts="${@:5}"
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-channel -k $channel_name -s $sess_name $opt 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-channel -k $channel_name -s $sess_name $opts 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ret=$?
 	if [[ $expected_to_fail -eq "1" ]]; then
 		test "$ret" -ne "0"
@@ -397,22 +387,23 @@ function lttng_disable_kernel_channel_fail()
 function start_lttng_relayd_opt()
 {
 	local withtap=$1
-	local opt=$2
+	local process_mode=$2
+	local opt=$3
 
 	DIR=$(readlink -f "$TESTDIR")
 
-	if [ -z "$(pgrep "$RELAYD_MATCH")" ]; then
+	if [ -z $(pgrep $RELAYD_MATCH) ]; then
 		# shellcheck disable=SC2086
-		"$DIR/../src/bin/lttng-relayd/$RELAYD_BIN" -b $opt 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
-		#"$DIR/../src/bin/lttng-relayd/$RELAYD_BIN" $opt -vvv >>/tmp/relayd.log 2>&1 &
+		$DIR/../src/bin/lttng-relayd/$RELAYD_BIN $process_mode $opt 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+		#$DIR/../src/bin/lttng-relayd/$RELAYD_BIN $opt -vvv >>/tmp/relayd.log 2>&1 &
 		if [ $? -eq 1 ]; then
-			if [ "$withtap" -eq "1" ]; then
-				fail "Start lttng-relayd (opt: $opt)"
+			if [ $withtap -eq "1" ]; then
+				fail "Start lttng-relayd (process mode: $process_mode opt: $opt)"
 			fi
 			return 1
 		else
-			if [ "$withtap" -eq "1" ]; then
-				pass "Start lttng-relayd (opt: $opt)"
+			if [ $withtap -eq "1" ]; then
+				pass "Start lttng-relayd (process mode: $process_mode opt: $opt)"
 			fi
 		fi
 	else
@@ -422,12 +413,12 @@ function start_lttng_relayd_opt()
 
 function start_lttng_relayd()
 {
-	start_lttng_relayd_opt 1 "$@"
+	start_lttng_relayd_opt 1 "-b" "$@"
 }
 
 function start_lttng_relayd_notap()
 {
-	start_lttng_relayd_opt 0 "$@"
+	start_lttng_relayd_opt 0 "-b" "$@"
 }
 
 function stop_lttng_relayd_opt()
@@ -945,9 +936,9 @@ function enable_ust_lttng_channel ()
 	local expected_to_fail=$2
 	local sess_name=$3
 	local channel_name=$4
-	local opt=$5
+	local opts="${@:5}"
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-channel -u $channel_name -s $sess_name $opt 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-channel -u $channel_name -s $sess_name $opts 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ret=$?
 	if [[ $expected_to_fail -eq "1" ]]; then
 		test "$ret" -ne "0"
@@ -1368,14 +1359,15 @@ function lttng_snapshot_add_output ()
 	local expected_to_fail=$1
 	local sess_name=$2
 	local trace_path=$3
+	local opts=$4
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot add-output -s $sess_name $trace_path 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot add-output -s $sess_name $trace_path $opts 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ret=$?
 	if [[ $expected_to_fail -eq 1 ]]; then
 		test "$ret" -ne "0"
-		ok $? "Added snapshot output file://$trace_path failed as expected"
+		ok $? "Added snapshot output $trace_path failed as expected"
 	else
-		ok $ret "Added snapshot output file://$trace_path"
+		ok $ret "Added snapshot output $trace_path"
 	fi
 }
 
@@ -1418,7 +1410,6 @@ function lttng_snapshot_del_output_fail ()
 function lttng_snapshot_record ()
 {
 	local sess_name=$1
-	local trace_path=$2
 
 	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot record -s $sess_name $trace_path 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ok $? "Snapshot recorded"
@@ -1467,8 +1458,9 @@ function lttng_load_fail()
 
 function lttng_track()
 {
-	local expected_to_fail=$1
-	local opts=$2
+	local expected_to_fail="$1"
+	shift 1
+	local opts="$@"
 	$TESTDIR/../src/bin/lttng/$LTTNG_BIN track $opts >$OUTPUT_DEST
 	ret=$?
 	if [[ $expected_to_fail -eq "1" ]]; then
@@ -1491,8 +1483,9 @@ function lttng_track_fail()
 
 function lttng_untrack()
 {
-	local expected_to_fail=$1
-	local opts=$2
+	local expected_to_fail="$1"
+	shift 1
+	local opts="$@"
 	$TESTDIR/../src/bin/lttng/$LTTNG_BIN untrack $opts >$OUTPUT_DEST
 	ret=$?
 	if [[ $expected_to_fail -eq "1" ]]; then
@@ -1524,6 +1517,46 @@ function lttng_untrack_kernel_all_ok()
 {
 	"$TESTDIR/../src/bin/lttng/$LTTNG_BIN" untrack --kernel --pid --all 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ok $? "Lttng untrack all pid on the kernel domain"
+}
+
+function lttng_track_ust_ok()
+{
+	lttng_track_ok -u "$@"
+}
+
+function lttng_track_ust_fail()
+{
+	lttng_track_fail -u "$@"
+}
+
+function lttng_track_kernel_ok()
+{
+	lttng_track_ok -k "$@"
+}
+
+function lttng_track_kernel_fail()
+{
+	lttng_track_fail -k "$@"
+}
+
+function lttng_untrack_ust_ok()
+{
+	lttng_untrack_ok -u "$@"
+}
+
+function lttng_untrack_ust_fail()
+{
+	lttng_untrack_fail -u "$@"
+}
+
+function lttng_untrack_kernel_ok()
+{
+	lttng_untrack_ok -k "$@"
+}
+
+function lttng_untrack_kernel_fail()
+{
+	lttng_untrack_fail -k "$@"
 }
 
 function lttng_add_context_list()
@@ -1569,6 +1602,32 @@ function add_context_kernel_ok()
 function add_context_kernel_fail()
 {
 	add_context_lttng 1 -k "$@"
+}
+
+function wait_live_trace_ready ()
+{
+	local url=$1
+	local zero_client_match=0
+
+	diag "Waiting for live trace at url: $url"
+	while [ $zero_client_match -eq 0 ]; do
+		zero_client_match=$($BABELTRACE_BIN -i lttng-live $url | grep "0 client(s) connected" | wc -l)
+		sleep 0.5
+	done
+	pass "Waiting for live trace at url: $url"
+}
+
+function wait_live_viewer_connect ()
+{
+	local url=$1
+	local one_client_match=0
+
+	diag "Waiting for live viewers on url: $url"
+	while [ $one_client_match -eq 0 ]; do
+		one_client_match=$($BABELTRACE_BIN -i lttng-live $url | grep "1 client(s) connected" | wc -l)
+		sleep 0.5
+	done
+	pass "Waiting for live viewers on url: $url"
 }
 
 function validate_metadata_event ()
@@ -1688,6 +1747,36 @@ function validate_trace_count
 	ok $? "Read a total of $cnt events, expected $expected_count"
 }
 
+function validate_trace_count_range_incl_min_excl_max
+{
+	local event_name=$1
+	local trace_path=$2
+	local expected_min=$3
+	local expected_max=$4
+
+	which $BABELTRACE_BIN >/dev/null
+	if [ $? -ne 0 ]; then
+	    skip 0 "Babeltrace binary not found. Skipping trace validation"
+	fi
+
+	cnt=0
+	OLDIFS=$IFS
+	IFS=","
+	for i in $event_name; do
+		traced=$($BABELTRACE_BIN $trace_path 2>/dev/null | grep $i | wc -l)
+		if [ "$traced" -ge $expected_min ]; then
+			pass "Validate trace for event $i, $traced events"
+		else
+			fail "Validate trace for event $i"
+			diag "Found $traced occurences of $i"
+		fi
+		cnt=$(($cnt + $traced))
+	done
+	IFS=$OLDIFS
+	test $cnt -lt $expected_max
+	ok $? "Read a total of $cnt events, expected between [$expected_min, $expected_max["
+}
+
 function trace_first_line
 {
 	local trace_path=$1
@@ -1765,6 +1854,33 @@ function validate_trace_empty()
 	fi
 	ret=$?
 	return $ret
+}
+
+function validate_directory_empty ()
+{
+	local trace_path="$1"
+
+	# Do not double quote `$trace_path` below as we want wildcards to be
+	# expanded.
+	files="$(ls -A $trace_path)"
+	ret=$?
+	if [ $ret -ne 0 ]; then
+		fail "Failed to list content of directory \"$trace_path\""
+		return $ret
+	fi
+
+	nb_files="$(echo -n "$files" | wc -l)"
+	ok $nb_files "Directory \"$trace_path\" is empty"
+}
+
+function validate_trace_session_ust_empty()
+{
+	validate_directory_empty "$1"/ust
+}
+
+function validate_trace_session_kernel_empty()
+{
+	validate_trace_empty "$1"/kernel
 }
 
 function regenerate_metadata ()
@@ -1901,4 +2017,35 @@ function lttng_enable_rotation_size_ok ()
 function lttng_enable_rotation_size_fail ()
 {
 	lttng_enable_rotation_size 1 $@
+}
+
+function lttng_clear_session ()
+{
+	local expected_to_fail=$1
+	local sess_name=$2
+
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN clear $sess_name 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	ret=$?
+	if [[ $expected_to_fail -eq "1" ]]; then
+		test "$ret" -ne "0"
+		ok $? "Expected fail on clear session $sess_name"
+	else
+		ok $ret "Clear session $sess_name"
+	fi
+}
+
+function lttng_clear_session_ok ()
+{
+	lttng_clear_session 0 $@
+}
+
+function lttng_clear_session_fail ()
+{
+	lttng_clear_session 1 $@
+}
+
+function lttng_clear_all ()
+{
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN clear --all 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	ok $? "Clear all lttng sessions"
 }

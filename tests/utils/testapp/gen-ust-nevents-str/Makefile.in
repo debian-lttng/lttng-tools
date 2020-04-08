@@ -14,6 +14,8 @@
 
 @SET_MAKE@
 
+# SPDX-License-Identifier: GPL-2.0-only
+
 VPATH = @srcdir@
 am__is_gnu_make = { \
   if test -z '$(MAKELEVEL)'; then \
@@ -93,9 +95,12 @@ target_triplet = @target@
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	gen-ust-nevents-str$(EXEEXT)
 subdir = tests/utils/testapp/gen-ust-nevents-str
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
+	$(top_srcdir)/m4/ax_append_flag.m4 \
+	$(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_check_class.m4 \
 	$(top_srcdir)/m4/ax_check_classpath.m4 \
+	$(top_srcdir)/m4/ax_check_compile_flag.m4 \
 	$(top_srcdir)/m4/ax_check_link_flag.m4 \
 	$(top_srcdir)/m4/ax_compare_version.m4 \
 	$(top_srcdir)/m4/ax_config_feature.m4 \
@@ -112,6 +117,7 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_prog_javac.m4 \
 	$(top_srcdir)/m4/ax_prog_javac_works.m4 \
 	$(top_srcdir)/m4/ax_pthread.m4 \
+	$(top_srcdir)/m4/ax_require_defined.m4 \
 	$(top_srcdir)/m4/ax_try_compile_java.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
@@ -134,7 +140,9 @@ am__gen_ust_nevents_str_SOURCES_DIST = gen-ust-nevents-str.c tp.c tp.h
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	tp.$(OBJEXT)
 gen_ust_nevents_str_OBJECTS = $(am_gen_ust_nevents_str_OBJECTS)
 am__DEPENDENCIES_1 =
-@HAVE_LIBLTTNG_UST_CTL_TRUE@gen_ust_nevents_str_DEPENDENCIES = $(top_builddir)/tests/utils/libtestutils.la \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@gen_ust_nevents_str_DEPENDENCIES =  \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	$(am__DEPENDENCIES_1) \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	$(top_builddir)/tests/utils/libtestutils.la \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	$(am__DEPENDENCIES_1)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -208,6 +216,7 @@ AM_CFLAGS = @AM_CFLAGS@
 AM_CPPFLAGS = @AM_CPPFLAGS@ -I$(srcdir) -I$(top_srcdir)/tests/utils \
 	-I$(top_srcdir)/tests/utils/testapp
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
+AM_LDFLAGS = @AM_LDFLAGS@
 AR = @AR@
 ARCHTYPE = @ARCHTYPE@
 ASCIIDOC = @ASCIIDOC@
@@ -215,12 +224,14 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BABELTRACE2_BIN = @BABELTRACE2_BIN@
 BABELTRACE_BIN = @BABELTRACE_BIN@
 BISON_VERSION = @BISON_VERSION@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
 CMD_DESCR_DISABLE_CHANNEL = @CMD_DESCR_DISABLE_CHANNEL@
@@ -339,7 +350,6 @@ LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 LTTNG_SYSTEM_RUNDIR = @LTTNG_SYSTEM_RUNDIR@
-LTTV_GUI_BIN = @LTTV_GUI_BIN@
 LT_NO_UNDEFINED = @LT_NO_UNDEFINED@
 LT_SYS_LIBRARY_PATH = @LT_SYS_LIBRARY_PATH@
 MAINT = @MAINT@
@@ -394,8 +404,10 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
-UUID_CFLAGS = @UUID_CFLAGS@
-UUID_LIBS = @UUID_LIBS@
+UST_CFLAGS = @UST_CFLAGS@
+UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
+UST_CTL_LIBS = @UST_CTL_LIBS@
+UST_LIBS = @UST_LIBS@
 VERSION = @VERSION@
 XMLTO = @XMLTO@
 YACC = @YACC@
@@ -475,7 +487,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 @HAVE_LIBLTTNG_UST_CTL_TRUE@gen_ust_nevents_str_SOURCES = gen-ust-nevents-str.c tp.c tp.h
-@HAVE_LIBLTTNG_UST_CTL_TRUE@gen_ust_nevents_str_LDADD = -llttng-ust -lurcu-bp \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@gen_ust_nevents_str_LDADD = $(UST_LIBS) -lurcu-bp \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@		$(top_builddir)/tests/utils/libtestutils.la \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@		$(DL_LIBS)
 

@@ -1,22 +1,8 @@
 /*
- * ust-metadata.c
- *
- * LTTng-UST metadata generation
- *
  * Copyright (C) 2010-2013 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -1008,8 +994,8 @@ int ust_metadata_session_statedump(struct ust_registry_session *session,
 		uint32_t major,
 		uint32_t minor)
 {
-	char uuid_s[UUID_STR_LEN],
-		clock_uuid_s[UUID_STR_LEN];
+	char uuid_s[LTTNG_UUID_STR_LEN],
+		clock_uuid_s[LTTNG_UUID_STR_LEN];
 	int ret = 0;
 
 	assert(session);

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 AM_CPPFLAGS +=-DINSTALL_BIN_PATH=\""$(lttnglibexecdir)"\" \
 	-DINSTALL_LIB_PATH=\""$(libdir)"\"
 
@@ -50,7 +52,9 @@ lttng_sessiond_SOURCES = utils.c utils.h \
                        register.c register.h \
                        manage-apps.c manage-apps.h \
                        manage-kernel.c manage-kernel.h \
-                       manage-consumer.c manage-consumer.h
+                       manage-consumer.c manage-consumer.h \
+                       clear.c clear.h \
+                       tracker.c tracker.h
 
 if HAVE_LIBLTTNG_UST_CTL
 lttng_sessiond_SOURCES += trace-ust.c ust-registry.c ust-app.c \
@@ -78,5 +82,5 @@ lttng_sessiond_LDADD = -lurcu-common -lurcu $(KMOD_LIBS) \
 
 
 if HAVE_LIBLTTNG_UST_CTL
-lttng_sessiond_LDADD += -llttng-ust-ctl
+lttng_sessiond_LDADD += $(UST_CTL_LIBS)
 endif

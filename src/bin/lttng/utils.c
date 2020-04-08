@@ -1,18 +1,8 @@
 /*
- * Copyright (c)  2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -159,7 +149,7 @@ unsigned int fls_u32(uint32_t x)
 #define HAS_FLS_U32
 #endif
 
-#if defined(__x86_64)
+#if defined(__x86_64) && defined(__LP64__)
 static inline
 unsigned int fls_u64(uint64_t x)
 {
@@ -442,15 +432,19 @@ error_socket:
 	return ret;
 }
 
-int print_missing_or_multiple_domains(unsigned int sum)
+int print_missing_or_multiple_domains(unsigned int domain_count,
+		bool include_agent_domains)
 {
 	int ret = 0;
 
-	if (sum == 0) {
-		ERR("Please specify a domain (-k/-u/-j).");
+	if (domain_count == 0) {
+		ERR("Please specify a domain (--kernel/--userspace%s).",
+				include_agent_domains ?
+						"/--jul/--log4j/--python" :
+						"");
 		ret = -1;
-	} else if (sum > 1) {
-		ERR("Multiple domains specified.");
+	} else if (domain_count > 1) {
+		ERR("Only one domain must be specified.");
 		ret = -1;
 	}
 
@@ -462,16 +456,30 @@ int print_missing_or_multiple_domains(unsigned int sum)
  */
 void print_session_stats(const char *session_name)
 {
-	int count, nb_domains, domain_idx, channel_idx, session_idx;
+	char *str;
+	const int ret = get_session_stats_str(session_name, &str);
+
+	if (ret >= 0 && str) {
+		MSG("%s", str);
+		free(str);
+	}
+}
+
+int get_session_stats_str(const char *session_name, char **out_str)
+{
+	int count, nb_domains, domain_idx, channel_idx, session_idx, ret;
 	struct lttng_domain *domains;
 	struct lttng_channel *channels;
 	uint64_t discarded_events_total = 0, lost_packets_total = 0;
 	struct lttng_session *sessions = NULL;
 	const struct lttng_session *selected_session = NULL;
+	char *stats_str = NULL;
+	bool print_discarded_events = false, print_lost_packets = false;
 
 	count = lttng_list_sessions(&sessions);
 	if (count < 1) {
 		ERR("Failed to retrieve session descriptions while printing session statistics.");
+		ret = -1;
 		goto end;
 	}
 
@@ -484,11 +492,13 @@ void print_session_stats(const char *session_name)
 	}
 	if (!selected_session) {
 		ERR("Failed to retrieve session \"%s\" description while printing session statistics.", session_name);
+		ret = -1;
 		goto end;
 	}
 
 	nb_domains = lttng_list_domains(session_name, &domains);
 	if (nb_domains < 0) {
+		ret = -1;
 		goto end;
 	}
 	for (domain_idx = 0; domain_idx < nb_domains; domain_idx++) {
@@ -497,12 +507,12 @@ void print_session_stats(const char *session_name)
 
 		if (!handle) {
 			ERR("Failed to create session handle while printing session statistics.");
+			ret = -1;
 			goto end;
 		}
 
 		count = lttng_list_channels(handle, &channels);
 		for (channel_idx = 0; channel_idx < count; channel_idx++) {
-			int ret;
 			uint64_t discarded_events = 0, lost_packets = 0;
 			struct lttng_channel *channel = &channels[channel_idx];
 
@@ -525,19 +535,44 @@ void print_session_stats(const char *session_name)
 		}
 		lttng_destroy_handle(handle);
 	}
-	if (discarded_events_total > 0 && !selected_session->snapshot_mode) {
-		MSG("[warning] %" PRIu64 " events discarded, please refer to "
+
+	print_discarded_events = discarded_events_total > 0 &&
+				 !selected_session->snapshot_mode;
+	print_lost_packets = lost_packets_total > 0 &&
+			     !selected_session->snapshot_mode;
+
+	if (print_discarded_events && print_lost_packets) {
+		ret = asprintf(&stats_str,
+				"Warning: %" PRIu64
+				" events were discarded and %" PRIu64
+				" packets were lost, please refer to "
+				"the documentation on channel configuration.",
+				discarded_events_total, lost_packets_total);
+	} else if (print_discarded_events) {
+		ret = asprintf(&stats_str,
+				"Warning: %" PRIu64
+				" events were discarded, please refer to "
 				"the documentation on channel configuration.",
 				discarded_events_total);
-	}
-	if (lost_packets_total > 0 && !selected_session->snapshot_mode) {
-		MSG("[warning] %" PRIu64 " packets lost, please refer to "
+	} else if (print_lost_packets) {
+		ret = asprintf(&stats_str,
+				"Warning: %" PRIu64
+				" packets were lost, please refer to "
 				"the documentation on channel configuration.",
 				lost_packets_total);
+	} else {
+		ret = 0;
 	}
 
+	if (ret < 0) {
+		ERR("Failed to format lost packet and discarded events statistics");
+	} else {
+		*out_str = stats_str;
+		ret = 0;
+	}
 end:
 	free(sessions);
+	return ret;
 }
 
 int show_cmd_help(const char *cmd_name, const char *help_msg)

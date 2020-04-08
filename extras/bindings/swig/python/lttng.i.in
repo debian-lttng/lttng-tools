@@ -1,3 +1,10 @@
+/*
+ * Copyright (C) 2012 Danny Serres <danny.serres@efficios.com>
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ *
+ */
+
 %define DOCSTRING
 "LTTNG_VERSION_STR
 
@@ -21,6 +28,14 @@ multiple concurrent processes and threads. Tracing across multiple systems is al
 // The PyInt and PyLong types were unified as of Python 3
 // This makes the typemap code useable with both Python 2 and 3.
 #define PyInt_AsSsize_t PyLong_AsSsize_t
+#endif
+
+// Avoid -Wmissing-declarations warning.
+PyObject *SWIG_init(void);
+
+// Avoid -Wmissing-prototypes warning with SWIG 3.0.10.
+#if SWIG_VERSION < 0x30012
+static size_t SWIG_strnlen(const char* s, size_t maxlen);
 #endif
 %}
 

@@ -14,6 +14,8 @@
 
 @SET_MAKE@
 
+# SPDX-License-Identifier: GPL-2.0-only
+
 VPATH = @srcdir@
 am__is_gnu_make = { \
   if test -z '$(MAKELEVEL)'; then \
@@ -93,9 +95,12 @@ target_triplet = @target@
 bin_PROGRAMS = lttng$(EXEEXT)
 subdir = src/bin/lttng
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
+	$(top_srcdir)/m4/ax_append_flag.m4 \
+	$(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_check_class.m4 \
 	$(top_srcdir)/m4/ax_check_classpath.m4 \
+	$(top_srcdir)/m4/ax_check_compile_flag.m4 \
 	$(top_srcdir)/m4/ax_check_link_flag.m4 \
 	$(top_srcdir)/m4/ax_compare_version.m4 \
 	$(top_srcdir)/m4/ax_config_feature.m4 \
@@ -112,6 +117,7 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_prog_javac.m4 \
 	$(top_srcdir)/m4/ax_prog_javac_works.m4 \
 	$(top_srcdir)/m4/ax_pthread.m4 \
+	$(top_srcdir)/m4/ax_require_defined.m4 \
 	$(top_srcdir)/m4/ax_try_compile_java.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
@@ -149,7 +155,8 @@ am_lttng_OBJECTS = lttng-conf.$(OBJEXT) commands/lttng-start.$(OBJEXT) \
 	commands/lttng-help.$(OBJEXT) commands/lttng-rotate.$(OBJEXT) \
 	commands/lttng-enable_rotation.$(OBJEXT) \
 	commands/lttng-disable_rotation.$(OBJEXT) \
-	lttng-utils.$(OBJEXT) lttng-lttng.$(OBJEXT)
+	commands/lttng-clear.$(OBJEXT) lttng-utils.$(OBJEXT) \
+	lttng-lttng.$(OBJEXT)
 lttng_OBJECTS = $(am_lttng_OBJECTS)
 am__DEPENDENCIES_1 =
 lttng_DEPENDENCIES =  \
@@ -233,6 +240,7 @@ AM_CFLAGS = @AM_CFLAGS@
 AM_CPPFLAGS = @AM_CPPFLAGS@ -DINSTALL_BIN_PATH=\""$(bindir)"\" \
 	$(am__append_1)
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
+AM_LDFLAGS = @AM_LDFLAGS@
 AR = @AR@
 ARCHTYPE = @ARCHTYPE@
 ASCIIDOC = @ASCIIDOC@
@@ -240,12 +248,14 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BABELTRACE2_BIN = @BABELTRACE2_BIN@
 BABELTRACE_BIN = @BABELTRACE_BIN@
 BISON_VERSION = @BISON_VERSION@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
 CMD_DESCR_DISABLE_CHANNEL = @CMD_DESCR_DISABLE_CHANNEL@
@@ -364,7 +374,6 @@ LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 LTTNG_SYSTEM_RUNDIR = @LTTNG_SYSTEM_RUNDIR@
-LTTV_GUI_BIN = @LTTV_GUI_BIN@
 LT_NO_UNDEFINED = @LT_NO_UNDEFINED@
 LT_SYS_LIBRARY_PATH = @LT_SYS_LIBRARY_PATH@
 MAINT = @MAINT@
@@ -419,8 +428,10 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
-UUID_CFLAGS = @UUID_CFLAGS@
-UUID_LIBS = @UUID_LIBS@
+UST_CFLAGS = @UST_CFLAGS@
+UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
+UST_CTL_LIBS = @UST_CTL_LIBS@
+UST_LIBS = @UST_LIBS@
 VERSION = @VERSION@
 XMLTO = @XMLTO@
 YACC = @YACC@
@@ -518,6 +529,7 @@ lttng_SOURCES = command.h conf.c conf.h commands/start.c \
 				commands/rotate.c \
 				commands/enable_rotation.c \
 				commands/disable_rotation.c \
+				commands/clear.c \
 				utils.c utils.h lttng.c
 
 lttng_CFLAGS = $(AM_CFLAGS) $(POPT_CFLAGS)
@@ -663,6 +675,8 @@ commands/lttng-enable_rotation.$(OBJEXT): commands/$(am__dirstamp) \
 	commands/$(DEPDIR)/$(am__dirstamp)
 commands/lttng-disable_rotation.$(OBJEXT): commands/$(am__dirstamp) \
 	commands/$(DEPDIR)/$(am__dirstamp)
+commands/lttng-clear.$(OBJEXT): commands/$(am__dirstamp) \
+	commands/$(DEPDIR)/$(am__dirstamp)
 
 lttng$(EXEEXT): $(lttng_OBJECTS) $(lttng_DEPENDENCIES) $(EXTRA_lttng_DEPENDENCIES) 
 	@rm -f lttng$(EXEEXT)
@@ -679,6 +693,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-lttng.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-utils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-add_context.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-clear.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-create.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-destroy.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-disable_channels.Po@am__quote@
@@ -1076,6 +1091,20 @@ commands/lttng-disable_rotation.obj: commands/disable_rotation.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='commands/disable_rotation.c' object='commands/lttng-disable_rotation.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o commands/lttng-disable_rotation.obj `if test -f 'commands/disable_rotation.c'; then $(CYGPATH_W) 'commands/disable_rotation.c'; else $(CYGPATH_W) '$(srcdir)/commands/disable_rotation.c'; fi`
+
+commands/lttng-clear.o: commands/clear.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT commands/lttng-clear.o -MD -MP -MF commands/$(DEPDIR)/lttng-clear.Tpo -c -o commands/lttng-clear.o `test -f 'commands/clear.c' || echo '$(srcdir)/'`commands/clear.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) commands/$(DEPDIR)/lttng-clear.Tpo commands/$(DEPDIR)/lttng-clear.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='commands/clear.c' object='commands/lttng-clear.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o commands/lttng-clear.o `test -f 'commands/clear.c' || echo '$(srcdir)/'`commands/clear.c
+
+commands/lttng-clear.obj: commands/clear.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT commands/lttng-clear.obj -MD -MP -MF commands/$(DEPDIR)/lttng-clear.Tpo -c -o commands/lttng-clear.obj `if test -f 'commands/clear.c'; then $(CYGPATH_W) 'commands/clear.c'; else $(CYGPATH_W) '$(srcdir)/commands/clear.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) commands/$(DEPDIR)/lttng-clear.Tpo commands/$(DEPDIR)/lttng-clear.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='commands/clear.c' object='commands/lttng-clear.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o commands/lttng-clear.obj `if test -f 'commands/clear.c'; then $(CYGPATH_W) 'commands/clear.c'; else $(CYGPATH_W) '$(srcdir)/commands/clear.c'; fi`
 
 lttng-utils.o: utils.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT lttng-utils.o -MD -MP -MF $(DEPDIR)/lttng-utils.Tpo -c -o lttng-utils.o `test -f 'utils.c' || echo '$(srcdir)/'`utils.c

@@ -1,29 +1,20 @@
 /*
- * Copyright (C) 2019 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License, version 2.1 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
- * for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef LTTNG_TRACE_CHUNK_H
 #define LTTNG_TRACE_CHUNK_H
 
-#include <common/macros.h>
-#include <common/credentials.h>
 #include <common/compat/directory-handle.h>
+#include <common/credentials.h>
+#include <common/fd-tracker/fd-tracker.h>
+#include <common/macros.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 /*
  * A trace chunk is a group of directories and files forming a (or a set of)
@@ -61,6 +52,7 @@
  */
 
 struct lttng_trace_chunk;
+struct fd_tracker;
 
 enum lttng_trace_chunk_status {
         LTTNG_TRACE_CHUNK_STATUS_OK,
@@ -68,11 +60,14 @@ enum lttng_trace_chunk_status {
 	LTTNG_TRACE_CHUNK_STATUS_INVALID_ARGUMENT,
 	LTTNG_TRACE_CHUNK_STATUS_INVALID_OPERATION,
 	LTTNG_TRACE_CHUNK_STATUS_ERROR,
+	LTTNG_TRACE_CHUNK_STATUS_NO_FILE,
 };
 
 enum lttng_trace_chunk_command_type {
 	LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED = 0,
-	LTTNG_TRACE_CHUNK_COMMAND_TYPE_MAX
+	LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION = 1,
+	LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE = 2,
+	LTTNG_TRACE_CHUNK_COMMAND_TYPE_MAX,
 };
 
 LTTNG_HIDDEN
@@ -81,7 +76,12 @@ struct lttng_trace_chunk *lttng_trace_chunk_create_anonymous(void);
 LTTNG_HIDDEN
 struct lttng_trace_chunk *lttng_trace_chunk_create(
 		uint64_t chunk_id,
-		time_t chunk_creation_time);
+		time_t chunk_creation_time,
+		const char *path);
+
+LTTNG_HIDDEN
+void lttng_trace_chunk_set_fd_tracker(struct lttng_trace_chunk *chunk,
+		struct fd_tracker *fd_tracker);
 
 /*
  * Copy a trace chunk. The copy that is returned is always a _user_
@@ -114,8 +114,15 @@ enum lttng_trace_chunk_status lttng_trace_chunk_get_name(
 		bool *name_overridden);
 
 LTTNG_HIDDEN
+bool lttng_trace_chunk_get_name_overridden(struct lttng_trace_chunk *chunk);
+
+LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_override_name(
 		struct lttng_trace_chunk *chunk, const char *name);
+
+LTTNG_HIDDEN
+enum lttng_trace_chunk_status lttng_trace_chunk_rename_path(
+		struct lttng_trace_chunk *chunk, const char *path);
 
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_get_credentials(
@@ -131,20 +138,24 @@ LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_set_credentials_current_user(
 		struct lttng_trace_chunk *chunk);
 
-/* session_output_directory ownership is transferred to the chunk on success. */
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_set_as_owner(
 		struct lttng_trace_chunk *chunk,
 		struct lttng_directory_handle *session_output_directory);
 
-/* chunk_output_directory ownership is transferred to the chunk on success. */
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_set_as_user(
 		struct lttng_trace_chunk *chunk,
 		struct lttng_directory_handle *chunk_directory);
 
 LTTNG_HIDDEN
-enum lttng_trace_chunk_status lttng_trace_chunk_get_chunk_directory_handle(
+enum lttng_trace_chunk_status
+lttng_trace_chunk_get_session_output_directory_handle(
+		struct lttng_trace_chunk *chunk,
+		struct lttng_directory_handle **handle);
+
+LTTNG_HIDDEN
+enum lttng_trace_chunk_status lttng_trace_chunk_borrow_chunk_directory_handle(
 		struct lttng_trace_chunk *chunk,
 		const struct lttng_directory_handle **handle);
 
@@ -155,8 +166,21 @@ enum lttng_trace_chunk_status lttng_trace_chunk_create_subdirectory(
 
 LTTNG_HIDDEN
 enum lttng_trace_chunk_status lttng_trace_chunk_open_file(
-		struct lttng_trace_chunk *chunk, const char *filename,
-		int flags, mode_t mode, int *out_fd);
+		struct lttng_trace_chunk *chunk,
+		const char *filename,
+		int flags,
+		mode_t mode,
+		int *out_fd,
+		bool expect_no_file);
+
+LTTNG_HIDDEN
+enum lttng_trace_chunk_status lttng_trace_chunk_open_fs_handle(
+		struct lttng_trace_chunk *chunk,
+		const char *filename,
+		int flags,
+		mode_t mode,
+		struct fs_handle **out_handle,
+		bool expect_no_file);
 
 LTTNG_HIDDEN
 int lttng_trace_chunk_unlink_file(struct lttng_trace_chunk *chunk,

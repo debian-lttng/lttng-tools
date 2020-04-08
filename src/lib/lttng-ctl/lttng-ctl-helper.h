@@ -1,18 +1,8 @@
 /*
  * Copyright (C) 2013 David Goulet <dgoulet@efficios.com>
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License, version 2.1 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
- * This library is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
- * for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this library; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef LTTNG_CTL_HELPER_H
@@ -50,9 +40,11 @@ int lttng_ctl_ask_sessiond_fds_varlen(struct lttcomm_session_msg *lsm,
 /*
  * Calls lttng_ctl_ask_sessiond_fds_varlen() with no expected command header.
  */
-static inline
-int lttng_ctl_ask_sessiond_varlen_no_cmd_header(struct lttcomm_session_msg *lsm,
-		void *vardata, size_t vardata_len, void **user_payload_buf)
+static inline int lttng_ctl_ask_sessiond_varlen_no_cmd_header(
+		struct lttcomm_session_msg *lsm,
+		const void *vardata,
+		size_t vardata_len,
+		void **user_payload_buf)
 {
 	return lttng_ctl_ask_sessiond_fds_varlen(lsm, NULL, 0, vardata,
 		vardata_len, user_payload_buf, NULL, NULL);

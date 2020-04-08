@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 objcopy_verbose = $(objcopy_verbose_@AM_V@)
 objcopy_verbose_ = $(objcopy_verbose_@AM_DEFAULT_V@)
 objcopy_verbose_0 = @echo OBJCOPY $@;
@@ -6,7 +8,7 @@ AM_CPPFLAGS += -I$(srcdir) -g
 
 noinst_PROGRAMS = prog
 prog_SOURCES = prog.c tp.c tp.h
-prog_LDADD = -llttng-ust $(DL_LIBS)
+prog_LDADD = $(UST_LIBS) $(DL_LIBS)
 
 noinst_SCRIPTS = test_baddr-statedump test_baddr-statedump.py
 EXTRA_DIST = test_baddr-statedump test_baddr-statedump.py

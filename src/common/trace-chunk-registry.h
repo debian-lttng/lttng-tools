@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2019 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License, version 2.1 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
- * for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef LTTNG_TRACE_CHUNK_REGISTRY_H
@@ -107,6 +97,6 @@ lttng_trace_chunk_registry_find_anonymous_chunk(
 
 LTTNG_HIDDEN
 unsigned int lttng_trace_chunk_registry_put_each_chunk(
-		struct lttng_trace_chunk_registry *registry);
+		const struct lttng_trace_chunk_registry *registry);
 
 #endif /* LTTNG_TRACE_CHUNK_REGISTRY_H */

@@ -14,6 +14,8 @@
 
 @SET_MAKE@
 
+# SPDX-License-Identifier: GPL-2.0-only
+
 VPATH = @srcdir@
 am__is_gnu_make = { \
   if test -z '$(MAKELEVEL)'; then \
@@ -96,12 +98,15 @@ bin_PROGRAMS = lttng-sessiond$(EXEEXT)
 @HAVE_LIBLTTNG_UST_CTL_TRUE@			ust-metadata.c ust-clock.h agent-thread.c agent-thread.h \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@			ust-field-utils.h ust-field-utils.c
 
-@HAVE_LIBLTTNG_UST_CTL_TRUE@am__append_3 = -llttng-ust-ctl
+@HAVE_LIBLTTNG_UST_CTL_TRUE@am__append_3 = $(UST_CTL_LIBS)
 subdir = src/bin/lttng-sessiond
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
+	$(top_srcdir)/m4/ax_append_flag.m4 \
+	$(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_check_class.m4 \
 	$(top_srcdir)/m4/ax_check_classpath.m4 \
+	$(top_srcdir)/m4/ax_check_compile_flag.m4 \
 	$(top_srcdir)/m4/ax_check_link_flag.m4 \
 	$(top_srcdir)/m4/ax_compare_version.m4 \
 	$(top_srcdir)/m4/ax_config_feature.m4 \
@@ -118,6 +123,7 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_prog_javac.m4 \
 	$(top_srcdir)/m4/ax_prog_javac_works.m4 \
 	$(top_srcdir)/m4/ax_pthread.m4 \
+	$(top_srcdir)/m4/ax_require_defined.m4 \
 	$(top_srcdir)/m4/ax_try_compile_java.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
@@ -155,10 +161,11 @@ am__lttng_sessiond_SOURCES_DIST = utils.c utils.h trace-kernel.c \
 	thread-utils.c process-utils.c thread.c thread.h health.c \
 	client.c client.h dispatch.c dispatch.h register.c register.h \
 	manage-apps.c manage-apps.h manage-kernel.c manage-kernel.h \
-	manage-consumer.c manage-consumer.h trace-ust.c ust-registry.c \
-	ust-app.c ust-consumer.c ust-consumer.h notify-apps.c \
-	ust-metadata.c ust-clock.h agent-thread.c agent-thread.h \
-	ust-field-utils.h ust-field-utils.c lttng-sessiond.h main.c
+	manage-consumer.c manage-consumer.h clear.c clear.h tracker.c \
+	tracker.h trace-ust.c ust-registry.c ust-app.c ust-consumer.c \
+	ust-consumer.h notify-apps.c ust-metadata.c ust-clock.h \
+	agent-thread.c agent-thread.h ust-field-utils.h \
+	ust-field-utils.c lttng-sessiond.h main.c
 @HAVE_LIBLTTNG_UST_CTL_TRUE@am__objects_1 = trace-ust.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-registry.$(OBJEXT) \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-app.$(OBJEXT) \
@@ -182,9 +189,12 @@ am_lttng_sessiond_OBJECTS = utils.$(OBJEXT) trace-kernel.$(OBJEXT) \
 	process-utils.$(OBJEXT) thread.$(OBJEXT) health.$(OBJEXT) \
 	client.$(OBJEXT) dispatch.$(OBJEXT) register.$(OBJEXT) \
 	manage-apps.$(OBJEXT) manage-kernel.$(OBJEXT) \
-	manage-consumer.$(OBJEXT) $(am__objects_1) main.$(OBJEXT)
+	manage-consumer.$(OBJEXT) clear.$(OBJEXT) tracker.$(OBJEXT) \
+	$(am__objects_1) main.$(OBJEXT)
 lttng_sessiond_OBJECTS = $(am_lttng_sessiond_OBJECTS)
 am__DEPENDENCIES_1 =
+@HAVE_LIBLTTNG_UST_CTL_TRUE@am__DEPENDENCIES_2 =  \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	$(am__DEPENDENCIES_1)
 lttng_sessiond_DEPENDENCIES = $(am__DEPENDENCIES_1) \
 	$(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la \
 	$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
@@ -197,7 +207,7 @@ lttng_sessiond_DEPENDENCIES = $(am__DEPENDENCIES_1) \
 	$(top_builddir)/src/common/health/libhealth.la \
 	$(top_builddir)/src/common/config/libconfig.la \
 	$(top_builddir)/src/common/string-utils/libstring-utils.la \
-	$(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_2)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
@@ -271,6 +281,7 @@ AM_CPPFLAGS = @AM_CPPFLAGS@ \
 	-DINSTALL_BIN_PATH=\""$(lttnglibexecdir)"\" \
 	-DINSTALL_LIB_PATH=\""$(libdir)"\" $(am__append_1)
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
+AM_LDFLAGS = @AM_LDFLAGS@
 AR = @AR@
 ARCHTYPE = @ARCHTYPE@
 ASCIIDOC = @ASCIIDOC@
@@ -278,12 +289,14 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BABELTRACE2_BIN = @BABELTRACE2_BIN@
 BABELTRACE_BIN = @BABELTRACE_BIN@
 BISON_VERSION = @BISON_VERSION@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
 CMD_DESCR_DISABLE_CHANNEL = @CMD_DESCR_DISABLE_CHANNEL@
@@ -402,7 +415,6 @@ LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 LTTNG_SYSTEM_RUNDIR = @LTTNG_SYSTEM_RUNDIR@
-LTTV_GUI_BIN = @LTTV_GUI_BIN@
 LT_NO_UNDEFINED = @LT_NO_UNDEFINED@
 LT_SYS_LIBRARY_PATH = @LT_SYS_LIBRARY_PATH@
 MAINT = @MAINT@
@@ -457,8 +469,10 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
-UUID_CFLAGS = @UUID_CFLAGS@
-UUID_LIBS = @UUID_LIBS@
+UST_CFLAGS = @UST_CFLAGS@
+UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
+UST_CTL_LIBS = @UST_CTL_LIBS@
+UST_LIBS = @UST_LIBS@
 VERSION = @VERSION@
 XMLTO = @XMLTO@
 YACC = @YACC@
@@ -559,8 +573,8 @@ lttng_sessiond_SOURCES = utils.c utils.h trace-kernel.c trace-kernel.h \
 	thread-utils.c process-utils.c thread.c thread.h health.c \
 	client.c client.h dispatch.c dispatch.h register.c register.h \
 	manage-apps.c manage-apps.h manage-kernel.c manage-kernel.h \
-	manage-consumer.c manage-consumer.h $(am__append_2) \
-	lttng-sessiond.h main.c
+	manage-consumer.c manage-consumer.h clear.c clear.h tracker.c \
+	tracker.h $(am__append_2) lttng-sessiond.h main.c
 
 # link on liblttngctl for check if sessiond is already alive.
 lttng_sessiond_LDADD = -lurcu-common -lurcu $(KMOD_LIBS) \
@@ -673,6 +687,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/agent.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/buffer-registry.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/channel.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/clear.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/client.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cmd.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/consumer.Po@am__quote@
@@ -709,6 +724,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/timer.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trace-kernel.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trace-ust.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tracker.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-app.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-consumer.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-field-utils.Po@am__quote@

@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2011 - Julien Desfossez <julien.desfossez@polymtl.ca>
- * Copyright (C) 2011 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2011 Julien Desfossez <julien.desfossez@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _LTTNG_USTCONSUMER_H
@@ -70,6 +60,7 @@ int lttng_ustconsumer_sync_metadata(struct lttng_consumer_local_data *ctx,
 		struct lttng_consumer_stream *metadata);
 void lttng_ustconsumer_flush_buffer(struct lttng_consumer_stream *stream,
 		int producer);
+void lttng_ustconsumer_clear_buffer(struct lttng_consumer_stream *stream);
 int lttng_ustconsumer_get_current_timestamp(
 		struct lttng_consumer_stream *stream, uint64_t *ts);
 int lttng_ustconsumer_get_sequence_number(
@@ -229,6 +220,10 @@ int lttng_ustconsumer_sync_metadata(struct lttng_consumer_local_data *ctx,
 static inline
 void lttng_ustconsumer_flush_buffer(struct lttng_consumer_stream *stream,
 		int producer)
+{
+}
+static inline
+void lttng_ustconsumer_clear_buffer(struct lttng_consumer_stream *stream)
 {
 }
 static inline

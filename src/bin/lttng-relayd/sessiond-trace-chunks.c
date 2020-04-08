@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2019 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include "sessiond-trace-chunks.h"
@@ -120,7 +110,7 @@ void trace_chunk_registry_ht_element_release(struct urcu_ref *ref)
 {
 	struct trace_chunk_registry_ht_element *element =
 			container_of(ref, typeof(*element), ref);
-	char uuid_str[UUID_STR_LEN];
+	char uuid_str[LTTNG_UUID_STR_LEN];
 
 	lttng_uuid_to_str(element->key.sessiond_uuid, uuid_str);
 
@@ -197,7 +187,7 @@ int trace_chunk_registry_ht_element_create(
 	int ret = 0;
 	struct trace_chunk_registry_ht_element *new_element;
 	struct lttng_trace_chunk_registry *trace_chunk_registry;
-	char uuid_str[UUID_STR_LEN];
+	char uuid_str[LTTNG_UUID_STR_LEN];
 
 	lttng_uuid_to_str(key->sessiond_uuid, uuid_str);
 
@@ -313,7 +303,7 @@ int sessiond_trace_chunk_registry_session_created(
 
 	element = trace_chunk_registry_ht_element_find(sessiond_registry, &key);
 	if (element) {
-		char uuid_str[UUID_STR_LEN];
+		char uuid_str[LTTNG_UUID_STR_LEN];
 
 		lttng_uuid_to_str(sessiond_uuid, uuid_str);
 		DBG("Acquired reference to trace chunk registry of sessiond {%s}",
@@ -334,7 +324,7 @@ int sessiond_trace_chunk_registry_session_destroyed(
 	int ret = 0;
 	struct trace_chunk_registry_ht_key key;
 	struct trace_chunk_registry_ht_element *element;
-	char uuid_str[UUID_STR_LEN];
+	char uuid_str[LTTNG_UUID_STR_LEN];
 
 	lttng_uuid_to_str(sessiond_uuid, uuid_str);
 	lttng_uuid_copy(key.sessiond_uuid, sessiond_uuid);
@@ -367,7 +357,7 @@ struct lttng_trace_chunk *sessiond_trace_chunk_registry_publish_chunk(
 	bool is_anonymous_chunk;
 	struct trace_chunk_registry_ht_key key;
 	struct trace_chunk_registry_ht_element *element = NULL;
-	char uuid_str[UUID_STR_LEN];
+	char uuid_str[LTTNG_UUID_STR_LEN];
 	char chunk_id_str[MAX_INT_DEC_LEN(typeof(chunk_id))] = "-1";
 	struct lttng_trace_chunk *published_chunk = NULL;
 
@@ -432,7 +422,7 @@ sessiond_trace_chunk_registry_get_anonymous_chunk(
 	struct lttng_trace_chunk *chunk = NULL;
 	struct trace_chunk_registry_ht_element *element;
 	struct trace_chunk_registry_ht_key key;
-	char uuid_str[UUID_STR_LEN];
+	char uuid_str[LTTNG_UUID_STR_LEN];
 
 	lttng_uuid_to_str(sessiond_uuid, uuid_str);
 
@@ -461,7 +451,7 @@ sessiond_trace_chunk_registry_get_chunk(
 	struct lttng_trace_chunk *chunk = NULL;
 	struct trace_chunk_registry_ht_element *element;
 	struct trace_chunk_registry_ht_key key;
-	char uuid_str[UUID_STR_LEN];
+	char uuid_str[LTTNG_UUID_STR_LEN];
 
 	lttng_uuid_to_str(sessiond_uuid, uuid_str);
 
@@ -493,7 +483,7 @@ int sessiond_trace_chunk_registry_chunk_exists(
 	lttng_uuid_copy(key.sessiond_uuid, sessiond_uuid);
 	element = trace_chunk_registry_ht_element_find(sessiond_registry, &key);
 	if (!element) {
-		char uuid_str[UUID_STR_LEN];
+		char uuid_str[LTTNG_UUID_STR_LEN];
 
 		lttng_uuid_to_str(sessiond_uuid, uuid_str);
 		/*

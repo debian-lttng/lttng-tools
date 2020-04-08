@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 SUBDIRS = tools kernel ust
 
 LOG_DRIVER_FLAGS = --merge --post-script $(top_srcdir)/tests/utils/warn_processes.sh
@@ -32,7 +34,12 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/rotation/test_kernel \
 	tools/rotation/test_save_load_mi \
 	tools/rotation/test_schedule_api \
-	tools/metadata/test_kernel
+	tools/metadata/test_kernel \
+	tools/working-directory/test_relayd_working_directory \
+	tools/notification/test_notification_multi_app \
+	tools/clear/test_ust \
+	tools/clear/test_kernel \
+	tools/tracker/test_event_tracker
 
 if HAVE_LIBLTTNG_UST_CTL
 SUBDIRS += ust
@@ -52,7 +59,10 @@ TESTS += ust/before-after/test_before_after \
 	ust/blocking/test_blocking \
 	ust/multi-lib/test_multi_lib \
 	ust/rotation-destroy-flush/test_rotation_destroy_flush \
-	tools/metadata/test_ust
+	ust/namespaces/test_ns_contexts \
+	ust/namespaces/test_ns_contexts_change \
+	tools/metadata/test_ust \
+	tools/relayd-grouping/test_ust
 endif # HAVE_LIBLTTNG_UST_CTL
 
 if PYTHON_BINDING

@@ -2,20 +2,10 @@
 #define _TRACEFILE_ARRAY_H
 
 /*
- * Copyright (C) 2015 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <limits.h>
@@ -64,7 +54,9 @@ struct tracefile_array *tracefile_array_create(size_t count);
 void tracefile_array_destroy(struct tracefile_array *tfa);
 
 void tracefile_array_file_rotate(struct tracefile_array *tfa, enum tracefile_rotate_type type);
-void tracefile_array_commit_seq(struct tracefile_array *tfa);
+void tracefile_array_commit_seq(struct tracefile_array *tfa,
+		uint64_t new_seq_head);
+void tracefile_array_reset(struct tracefile_array *tfa);
 
 uint64_t tracefile_array_get_read_file_index_head(struct tracefile_array *tfa);
 /* May return -1ULL in the case where we have not received any indexes yet. */

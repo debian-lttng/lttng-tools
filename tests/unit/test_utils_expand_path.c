@@ -1,18 +1,8 @@
 /*
- * Copyright (C) - 2013 Raphaël Beamonte <raphael.beamonte@gmail.com>
+ * Copyright (C) 2013 Raphaël Beamonte <raphael.beamonte@gmail.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by as
- * published by the Free Software Foundation; only version 2 of the License.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <assert.h>
@@ -35,19 +25,19 @@ int lttng_opt_verbose = 3;
 int lttng_opt_mi;
 
 struct valid_test_input {
-	char *input;
-	char *relative_part;
-	char *absolute_part;
+	const char *input;
+	const char *relative_part;
+	const char *absolute_part;
 };
 
 struct tree_symlink {
-	char *orig;
-	char *dest;
+	const char *orig;
+	const char *dest;
 };
 
 struct symlink_test_input {
-	char *input;
-	char *expected_result;
+	const char *input;
+	const char *expected_result;
 };
 
 /* Valid test cases */
@@ -123,7 +113,7 @@ static const int num_invalid_tests =
 #define PRINT_ERR(fmt, args...)						\
 	fprintf(stderr, "test_utils_expand_path: error: " fmt "\n", ## args)
 
-int prepare_valid_results(void)
+static int prepare_valid_results(void)
 {
 	int i;
 	char *relative, *cur_path = NULL, *prev_path = NULL,
@@ -179,7 +169,7 @@ end:
 	return ret;
 }
 
-int free_valid_results(void)
+static int free_valid_results(void)
 {
 	int i;
 
@@ -192,7 +182,7 @@ int free_valid_results(void)
 	return 0;
 }
 
-int prepare_symlink_tree(void)
+static int prepare_symlink_tree(void)
 {
 	int i;
 	char tmppath[PATH_MAX] = {};
@@ -232,7 +222,7 @@ error:
 	return 1;
 }
 
-int free_symlink_tree(void)
+static int free_symlink_tree(void)
 {
 	int i;
 	char tmppath[PATH_MAX];

@@ -5,23 +5,8 @@
  *
  * Copyright (C) 2017 Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * SPDX-License-Identifier: MIT
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
  */
 
 #include <assert.h>
@@ -102,6 +87,7 @@ void wait_on_file(const char *path, bool file_exist)
 	}
 }
 
+static
 int write_pipe(const char *path, uint8_t data)
 {
 	int ret = 0;
@@ -133,25 +119,30 @@ end:
 	return ret;
 }
 
+static
 int stop_consumer(const char **argv)
 {
-	int ret = 0;
-	for (int i = named_pipe_args_start; i < nb_args; i++) {
+	int ret = 0, i;
+
+	for (i = named_pipe_args_start; i < nb_args; i++) {
 		ret = write_pipe(argv[i], 49);
 	}
 	return ret;
 }
 
+static
 int resume_consumer(const char **argv)
 {
-	int ret = 0;
-	for (int i = named_pipe_args_start; i < nb_args; i++) {
+	int ret = 0, i;
+
+	for (i = named_pipe_args_start; i < nb_args; i++) {
 		ret = write_pipe(argv[i], 0);
 	}
 	return ret;
 }
 
-int suspend_application()
+static
+int suspend_application(void)
 {
 	int ret;
 	struct stat buf;
@@ -179,6 +170,7 @@ error:
 
 }
 
+static
 int resume_application()
 {
 	int ret;
@@ -209,11 +201,13 @@ error:
 }
 
 
+static
 void test_triggers_buffer_usage_condition(const char *session_name,
 		const char *channel_name,
 		enum lttng_domain_type domain_type,
 		enum lttng_condition_type condition_type)
 {
+	unsigned int test_vector_size = 5, i;
 	enum lttng_condition_status condition_status;
 	struct lttng_action *action;
 
@@ -228,8 +222,8 @@ void test_triggers_buffer_usage_condition(const char *session_name,
 	ok(lttng_register_trigger(NULL) == -LTTNG_ERR_INVALID, "Registering a NULL trigger fails as expected");
 
 	/* Test: register a trigger */
-	unsigned int test_vector_size = 5;
-	for (unsigned int  i = 0; i < pow(2,test_vector_size); i++) {
+
+	for (i = 0; i < pow(2,test_vector_size); i++) {
 		int loop_ret = 0;
 		char *test_tuple_string = NULL;
 		unsigned int mask_position = 0;
@@ -327,7 +321,7 @@ void test_triggers_buffer_usage_condition(const char *session_name,
 			assert("Logic error for test vector generation");
 		}
 
-		loop_ret = asprintf(&test_tuple_string, "session name %s, channel name  %s, threshold ratio %s, threshold byte %s, domain type %s",
+		loop_ret = asprintf(&test_tuple_string, "session name %s, channel name %s, threshold ratio %s, threshold byte %s, domain type %s",
 				session_name_set ? "set" : "unset",
 				channel_name_set ? "set" : "unset",
 				threshold_ratio_set ? "set" : "unset",
@@ -401,6 +395,7 @@ void wait_data_pending(const char *session_name)
 	} while (ret != 0);
 }
 
+static
 void test_notification_channel(const char *session_name, const char *channel_name, const enum lttng_domain_type domain_type, const char **argv)
 {
 	int ret = 0;

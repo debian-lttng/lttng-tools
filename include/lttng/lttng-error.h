@@ -6,20 +6,10 @@
  * The following values are all the possible errors the lttng command line
  * client can quit with.
  *
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License, version 2.1 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
- * This library is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
- * for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this library; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef LTTNG_ERROR_H
@@ -134,8 +124,8 @@ enum lttng_error_code {
 	LTTNG_ERR_EXCLUSION_NOMEM        = 111, /* Lack of memory while processing event exclusions */
 	LTTNG_ERR_INVALID_EVENT_NAME     = 112, /* Invalid event name */
 	LTTNG_ERR_INVALID_CHANNEL_NAME   = 113, /* Invalid channel name */
-	LTTNG_ERR_PID_TRACKED            = 114, /* PID already tracked */
-	LTTNG_ERR_PID_NOT_TRACKED        = 115, /* PID not tracked */
+	LTTNG_ERR_PROCESS_ATTR_EXISTS  = 114, /* Process attribute is already tracked */
+	LTTNG_ERR_PROCESS_ATTR_MISSING = 115, /* Process attribute was not tracked */
 	LTTNG_ERR_INVALID_CHANNEL_DOMAIN = 116, /* Invalid channel domain */
 	LTTNG_ERR_OVERFLOW		 = 117, /* Overflow occurred. */
 	LTTNG_ERR_SESSION_NOT_STARTED    = 118, /* Session not started */
@@ -176,9 +166,21 @@ enum lttng_error_code {
 	LTTNG_ERR_FILE_CREATION_ERROR                  = 153, /* failed to create a file */
 	LTTNG_ERR_TIMER_STOP_ERROR                     = 154, /* failed to stop timer. */
 	LTTNG_ERR_ROTATION_NOT_AVAILABLE_KERNEL = 155, /* Rotation feature not supported by the kernel tracer. */
+	LTTNG_ERR_CLEAR_RELAY_DISALLOWED   = 156, /* LTTng-relayd peer does not allow lttng clear command. */
+	LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY = 157, /* Clearing a session is not supported by the relay daemon. */
+	LTTNG_ERR_CLEAR_FAIL_CONSUMER    = 158, /* Clear failure on consumer */
+	LTTNG_ERR_ROTATION_AFTER_STOP_CLEAR = 159, /* Session was already cleared since it became inactive. */
+	LTTNG_ERR_USER_NOT_FOUND         = 160, /* User not found. */
+	LTTNG_ERR_GROUP_NOT_FOUND        = 161, /* Group not found. */
+	LTTNG_ERR_UNSUPPORTED_DOMAIN     = 162,  /* Unsupported domain used. */
+	LTTNG_ERR_PROCESS_ATTR_TRACKER_INVALID_TRACKING_POLICY = 163, /* Operation does not apply to the process attribute tracker's tracking policy */
 
-	/* MUST be last element */
-	LTTNG_ERR_NR,                           /* Last element */
+	/* MUST be last element of the manually-assigned section of the enum */
+	LTTNG_ERR_NR,
+
+	/* Backward-compatibility assignments */
+	LTTNG_ERR_PID_TRACKED            = LTTNG_ERR_PROCESS_ATTR_EXISTS, /* Backward compat alias */
+	LTTNG_ERR_PID_NOT_TRACKED        = LTTNG_ERR_PROCESS_ATTR_MISSING, /* Backward compat alias */
 };
 
 /*

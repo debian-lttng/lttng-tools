@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2014 - David Goulet <dgoulet@efficios.com>
- * Copyright (C) 2016 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2014 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2016 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License, version 2.1 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
- * This library is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
- * for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this library; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef LTTNG_EVENT_H
@@ -146,6 +136,25 @@ enum lttng_event_context_type {
 	LTTNG_EVENT_CONTEXT_MIGRATABLE		= 19,
 	LTTNG_EVENT_CONTEXT_CALLSTACK_KERNEL	= 20,
 	LTTNG_EVENT_CONTEXT_CALLSTACK_USER	= 21, /* Supported on x86_32 and x86_64 only. */
+	LTTNG_EVENT_CONTEXT_CGROUP_NS		= 22,
+	LTTNG_EVENT_CONTEXT_IPC_NS		= 23,
+	LTTNG_EVENT_CONTEXT_MNT_NS		= 24,
+	LTTNG_EVENT_CONTEXT_NET_NS		= 25,
+	LTTNG_EVENT_CONTEXT_PID_NS		= 26,
+	LTTNG_EVENT_CONTEXT_USER_NS		= 27,
+	LTTNG_EVENT_CONTEXT_UTS_NS		= 28,
+	LTTNG_EVENT_CONTEXT_UID			= 29,
+	LTTNG_EVENT_CONTEXT_EUID		= 30,
+	LTTNG_EVENT_CONTEXT_SUID		= 31,
+	LTTNG_EVENT_CONTEXT_GID			= 32,
+	LTTNG_EVENT_CONTEXT_EGID		= 33,
+	LTTNG_EVENT_CONTEXT_SGID		= 34,
+	LTTNG_EVENT_CONTEXT_VUID		= 35,
+	LTTNG_EVENT_CONTEXT_VEUID		= 36,
+	LTTNG_EVENT_CONTEXT_VSUID		= 37,
+	LTTNG_EVENT_CONTEXT_VGID		= 38,
+	LTTNG_EVENT_CONTEXT_VEGID		= 39,
+	LTTNG_EVENT_CONTEXT_VSGID		= 40,
 };
 
 enum lttng_event_field_type {

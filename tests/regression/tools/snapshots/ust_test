@@ -1,19 +1,9 @@
 #!/bin/bash
 #
-# Copyright (C) - 2013 Julien Desfossez <jdesfossez@efficios.com>
+# Copyright (C) 2013 Julien Desfossez <jdesfossez@efficios.com>
 #
-# This library is free software; you can redistribute it and/or modify it under
-# the terms of the GNU Lesser General Public License as published by the Free
-# Software Foundation; version 2.1 of the License.
-#
-# This library is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more
-# details.
-#
-# You should have received a copy of the GNU Lesser General Public License
-# along with this library; if not, write to the Free Software Foundation, Inc.,
-# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+# SPDX-License-Identifier: LGPL-2.1-only
+
 TEST_DESC="Snapshots - UST tracing"
 
 CURDIR=$(dirname $0)/
@@ -49,7 +39,7 @@ function start_test_app()
 	local tmp_file=$(mktemp -u)
 
 	# Start application with a temporary file.
-	$TESTAPP_BIN $NR_ITER $NR_USEC_WAIT $tmp_file &
+	$TESTAPP_BIN -i $NR_ITER -w $NR_USEC_WAIT --sync-after-first-event $tmp_file &
 	ret=$?
 	APPS_PID="${APPS_PID} ${!}"
 	ok $ret "Start application to trace"
@@ -193,7 +183,7 @@ function test_ust_local_snapshot ()
 	enable_lttng_mmap_overwrite_ust_channel $SESSION_NAME $CHANNEL_NAME
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $CHANNEL_NAME
 	start_lttng_tracing_ok $SESSION_NAME
-	lttng_snapshot_add_output_ok $SESSION_NAME $TRACE_PATH
+	lttng_snapshot_add_output_ok $SESSION_NAME file://$TRACE_PATH
 
 	# Returns once the application has at least fired ONE tracepoint.
 	start_test_app
@@ -224,7 +214,7 @@ function test_ust_local_snapshot_small_discard_buffers ()
 	enable_mmap_small_discard_ust_channel $SESSION_NAME $CHANNEL_NAME
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $CHANNEL_NAME
 	start_lttng_tracing_ok $SESSION_NAME
-	lttng_snapshot_add_output_ok $SESSION_NAME $TRACE_PATH
+	lttng_snapshot_add_output_ok $SESSION_NAME file://$TRACE_PATH
 
 	# Run test apps, wait for them to complete.
 	start_test_app
@@ -269,7 +259,7 @@ function test_ust_local_snapshot_small_overwrite_buffers ()
 	enable_mmap_small_overwrite_ust_channel $SESSION_NAME $CHANNEL_NAME
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $CHANNEL_NAME
 	start_lttng_tracing_ok $SESSION_NAME
-	lttng_snapshot_add_output_ok $SESSION_NAME $TRACE_PATH
+	lttng_snapshot_add_output_ok $SESSION_NAME file://$TRACE_PATH
 
 	# Run test apps, wait for them to complete.
 	start_test_app
@@ -367,8 +357,8 @@ function test_ust_local_snapshot_large_metadata ()
 	enable_lttng_mmap_overwrite_ust_channel $SESSION_NAME $CHANNEL_NAME
 	enable_ust_lttng_event_ok $SESSION_NAME $LM_EVENT $CHANNEL_NAME
 	start_lttng_tracing_ok $SESSION_NAME
-	lttng_snapshot_add_output_ok $SESSION_NAME $TRACE_PATH
-	$LM_BIN 1 1
+	lttng_snapshot_add_output_ok $SESSION_NAME file://$TRACE_PATH
+	$LM_BIN --iter 1 --wait 1
 	ok $? "Start application to trace"
 	lttng_snapshot_record $SESSION_NAME
 	stop_lttng_tracing_ok $SESSION_NAME
@@ -400,7 +390,7 @@ function test_ust_per_uid_local_snapshot ()
 	enable_channel_per_uid_mmap_overwrite $SESSION_NAME $CHANNEL_NAME
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $CHANNEL_NAME
 	start_lttng_tracing_ok $SESSION_NAME
-	lttng_snapshot_add_output_ok $SESSION_NAME $TRACE_PATH
+	lttng_snapshot_add_output_ok $SESSION_NAME file://$TRACE_PATH
 
 	# Returns once the application has at least fired ONE tracepoint.
 	start_test_app
@@ -429,7 +419,7 @@ function test_ust_per_uid_local_snapshot_post_mortem ()
 	enable_channel_per_uid_mmap_overwrite $SESSION_NAME $CHANNEL_NAME
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $CHANNEL_NAME
 	start_lttng_tracing_ok $SESSION_NAME
-	lttng_snapshot_add_output_ok $SESSION_NAME $TRACE_PATH
+	lttng_snapshot_add_output_ok $SESSION_NAME file://$TRACE_PATH
 
 	# Returns once the application has at least fired ONE tracepoint.
 	start_test_app
@@ -457,7 +447,7 @@ function test_ust_local_snapshots ()
 	enable_lttng_mmap_overwrite_ust_channel $SESSION_NAME $CHANNEL_NAME
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $CHANNEL_NAME
 	start_lttng_tracing_ok $SESSION_NAME
-	lttng_snapshot_add_output_ok $SESSION_NAME $TRACE_PATH
+	lttng_snapshot_add_output_ok $SESSION_NAME file://$TRACE_PATH
 
 	# Returns once the application has at least fired ONE tracepoint.
 	start_test_app

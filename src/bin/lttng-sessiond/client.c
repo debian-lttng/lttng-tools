@@ -1,33 +1,29 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
- *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
- *               2013 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2013 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include <stddef.h>
-#include <pthread.h>
-#include <signal.h>
-#include <sys/stat.h>
+#include "common/buffer-view.h"
+#include "common/dynamic-buffer.h"
+#include "common/sessiond-comm/sessiond-comm.h"
+#include "lttng/lttng-error.h"
+#include "lttng/tracker.h"
 #include <common/compat/getenv.h>
+#include <common/tracker.h>
 #include <common/unix.h>
 #include <common/utils.h>
-#include <lttng/userspace-probe-internal.h>
 #include <lttng/event-internal.h>
-#include <lttng/session-internal.h>
 #include <lttng/session-descriptor-internal.h>
+#include <lttng/session-internal.h>
+#include <lttng/userspace-probe-internal.h>
+#include <pthread.h>
+#include <signal.h>
+#include <stddef.h>
+#include <sys/stat.h>
 
 #include "client.h"
 #include "lttng-sessiond.h"
@@ -38,6 +34,7 @@
 #include "testpoint.h"
 #include "utils.h"
 #include "manage-consumer.h"
+#include "clear.h"
 
 static bool is_root;
 
@@ -190,7 +187,7 @@ static pid_t spawn_consumerd(struct consumer_data *consumer_data)
 		case LTTNG_CONSUMER64_UST:
 		{
 			if (config.consumerd64_lib_dir.value) {
-				char *tmp;
+				const char *tmp;
 				size_t tmplen;
 				char *tmpnew;
 
@@ -227,7 +224,7 @@ static pid_t spawn_consumerd(struct consumer_data *consumer_data)
 		case LTTNG_CONSUMER32_UST:
 		{
 			if (config.consumerd32_lib_dir.value) {
-				char *tmp;
+				const char *tmp;
 				size_t tmplen;
 				char *tmpnew;
 
@@ -747,6 +744,7 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int *sock,
 	case LTTNG_ROTATION_GET_INFO:
 	case LTTNG_ROTATION_SET_SCHEDULE:
 	case LTTNG_SESSION_LIST_ROTATION_SCHEDULES:
+	case LTTNG_CLEAR_SESSION:
 		need_domain = 0;
 		break;
 	default:
@@ -787,11 +785,12 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int *sock,
 	case LTTNG_LIST_CHANNELS:
 	case LTTNG_LIST_EVENTS:
 	case LTTNG_LIST_SYSCALLS:
-	case LTTNG_LIST_TRACKER_PIDS:
+	case LTTNG_SESSION_LIST_ROTATION_SCHEDULES:
+	case LTTNG_PROCESS_ATTR_TRACKER_GET_POLICY:
+	case LTTNG_PROCESS_ATTR_TRACKER_GET_INCLUSION_SET:
 	case LTTNG_DATA_PENDING:
 	case LTTNG_ROTATE_SESSION:
 	case LTTNG_ROTATION_GET_INFO:
-	case LTTNG_SESSION_LIST_ROTATION_SCHEDULES:
 		break;
 	default:
 		/* Setup lttng message with no payload */
@@ -1203,18 +1202,189 @@ error_add_context:
 				kernel_poll_pipe[1]);
 		break;
 	}
-	case LTTNG_TRACK_PID:
+	case LTTNG_PROCESS_ATTR_TRACKER_ADD_INCLUDE_VALUE:
+	case LTTNG_PROCESS_ATTR_TRACKER_REMOVE_INCLUDE_VALUE:
 	{
-		ret = cmd_track_pid(cmd_ctx->session,
-				cmd_ctx->lsm->domain.type,
-				cmd_ctx->lsm->u.pid_tracker.pid);
+		struct lttng_dynamic_buffer payload;
+		struct lttng_buffer_view payload_view;
+		const bool add_value =
+				cmd_ctx->lsm->cmd_type ==
+				LTTNG_PROCESS_ATTR_TRACKER_ADD_INCLUDE_VALUE;
+		const size_t name_len =
+				cmd_ctx->lsm->u.process_attr_tracker_add_remove_include_value
+						.name_len;
+		const enum lttng_domain_type domain_type =
+				(enum lttng_domain_type)
+						cmd_ctx->lsm->domain.type;
+		const enum lttng_process_attr process_attr =
+				(enum lttng_process_attr) cmd_ctx->lsm->u
+						.process_attr_tracker_add_remove_include_value
+						.process_attr;
+		const enum lttng_process_attr_value_type value_type =
+				(enum lttng_process_attr_value_type) cmd_ctx
+						->lsm->u
+						.process_attr_tracker_add_remove_include_value
+						.value_type;
+		struct process_attr_value *value;
+		enum lttng_error_code ret_code;
+
+		/* Receive remaining variable length payload if applicable. */
+		if (name_len > LOGIN_NAME_MAX) {
+			/*
+			 * POSIX mandates user and group names that are at least
+			 * 8 characters long. Note that although shadow-utils
+			 * (useradd, groupaadd, etc.) use 32 chars as their
+			 * limit (from bits/utmp.h, UT_NAMESIZE),
+			 * LOGIN_NAME_MAX is defined to 256.
+			 */
+			ERR("Rejecting process attribute tracker value %s as the provided exceeds the maximal allowed length: argument length = %zu, maximal length = %d",
+					add_value ? "addition" : "removal",
+					name_len, LOGIN_NAME_MAX);
+			ret = LTTNG_ERR_INVALID;
+			goto error;
+		}
+
+		lttng_dynamic_buffer_init(&payload);
+		if (name_len != 0) {
+			/*
+			 * Receive variable payload for user/group name
+			 * arguments.
+			 */
+			ret = lttng_dynamic_buffer_set_size(&payload, name_len);
+			if (ret) {
+				ERR("Failed to allocate buffer to receive payload of %s process attribute tracker value argument",
+						add_value ? "add" : "remove");
+				ret = LTTNG_ERR_NOMEM;
+				goto error_add_remove_tracker_value;
+			}
+
+			ret = lttcomm_recv_unix_sock(
+					*sock, payload.data, name_len);
+			if (ret <= 0) {
+				ERR("Failed to receive payload of %s process attribute tracker value argument",
+						add_value ? "add" : "remove");
+				*sock_error = 1;
+				ret = LTTNG_ERR_INVALID_PROTOCOL;
+				goto error_add_remove_tracker_value;
+			}
+		}
+
+		payload_view = lttng_buffer_view_from_dynamic_buffer(
+				&payload, 0, name_len);
+		/*
+		 * Validate the value type and domains are legal for the process
+		 * attribute tracker that is specified and convert the value to
+		 * add/remove to the internal sessiond representation.
+		 */
+		ret_code = process_attr_value_from_comm(domain_type,
+				process_attr, value_type,
+				&cmd_ctx->lsm->u.process_attr_tracker_add_remove_include_value
+						 .integral_value,
+				&payload_view, &value);
+		if (ret_code != LTTNG_OK) {
+			ret = ret_code;
+			goto error_add_remove_tracker_value;
+		}
+
+		if (add_value) {
+			ret = cmd_process_attr_tracker_inclusion_set_add_value(
+					cmd_ctx->session, domain_type,
+					process_attr, value);
+		} else {
+			ret = cmd_process_attr_tracker_inclusion_set_remove_value(
+					cmd_ctx->session, domain_type,
+					process_attr, value);
+		}
+		process_attr_value_destroy(value);
+	error_add_remove_tracker_value:
+		lttng_dynamic_buffer_reset(&payload);
 		break;
 	}
-	case LTTNG_UNTRACK_PID:
+	case LTTNG_PROCESS_ATTR_TRACKER_GET_POLICY:
 	{
-		ret = cmd_untrack_pid(cmd_ctx->session,
-				cmd_ctx->lsm->domain.type,
-				cmd_ctx->lsm->u.pid_tracker.pid);
+		enum lttng_tracking_policy tracking_policy;
+		const enum lttng_domain_type domain_type =
+				(enum lttng_domain_type)
+						cmd_ctx->lsm->domain.type;
+		const enum lttng_process_attr process_attr =
+				(enum lttng_process_attr) cmd_ctx->lsm->u
+						.process_attr_tracker_get_tracking_policy
+						.process_attr;
+
+		ret = cmd_process_attr_tracker_get_tracking_policy(
+				cmd_ctx->session, domain_type, process_attr,
+				&tracking_policy);
+		if (ret != LTTNG_OK) {
+			goto error;
+		}
+
+		ret = setup_lttng_msg_no_cmd_header(cmd_ctx,
+				&(uint32_t){tracking_policy}, sizeof(uint32_t));
+		if (ret < 0) {
+			ret = LTTNG_ERR_NOMEM;
+			goto error;
+		}
+		ret = LTTNG_OK;
+		break;
+	}
+	case LTTNG_PROCESS_ATTR_TRACKER_SET_POLICY:
+	{
+		const enum lttng_tracking_policy tracking_policy =
+				(enum lttng_tracking_policy) cmd_ctx->lsm->u
+						.process_attr_tracker_set_tracking_policy
+						.tracking_policy;
+		const enum lttng_domain_type domain_type =
+				(enum lttng_domain_type)
+						cmd_ctx->lsm->domain.type;
+		const enum lttng_process_attr process_attr =
+				(enum lttng_process_attr) cmd_ctx->lsm->u
+						.process_attr_tracker_set_tracking_policy
+						.process_attr;
+
+		ret = cmd_process_attr_tracker_set_tracking_policy(
+				cmd_ctx->session, domain_type, process_attr,
+				tracking_policy);
+		if (ret != LTTNG_OK) {
+			goto error;
+		}
+		break;
+	}
+	case LTTNG_PROCESS_ATTR_TRACKER_GET_INCLUSION_SET:
+	{
+		struct lttng_process_attr_values *values;
+		struct lttng_dynamic_buffer reply;
+		const enum lttng_domain_type domain_type =
+				(enum lttng_domain_type)
+						cmd_ctx->lsm->domain.type;
+		const enum lttng_process_attr process_attr =
+				(enum lttng_process_attr) cmd_ctx->lsm->u
+						.process_attr_tracker_get_inclusion_set
+						.process_attr;
+
+		ret = cmd_process_attr_tracker_get_inclusion_set(
+				cmd_ctx->session, domain_type, process_attr,
+				&values);
+		if (ret != LTTNG_OK) {
+			goto error;
+		}
+
+		lttng_dynamic_buffer_init(&reply);
+		ret = lttng_process_attr_values_serialize(values, &reply);
+		if (ret < 0) {
+			goto error_tracker_get_inclusion_set;
+		}
+
+		ret = setup_lttng_msg_no_cmd_header(
+				cmd_ctx, reply.data, reply.size);
+		if (ret < 0) {
+			ret = LTTNG_ERR_NOMEM;
+			goto error_tracker_get_inclusion_set;
+		}
+		ret = LTTNG_OK;
+
+	error_tracker_get_inclusion_set:
+		lttng_process_attr_values_destroy(values);
+		lttng_dynamic_buffer_reset(&reply);
 		break;
 	}
 	case LTTNG_ENABLE_EVENT:
@@ -1432,34 +1602,6 @@ error_add_context:
 		ret = setup_lttng_msg_no_cmd_header(cmd_ctx, events,
 			sizeof(struct lttng_event) * nb_events);
 		free(events);
-
-		if (ret < 0) {
-			goto setup_error;
-		}
-
-		ret = LTTNG_OK;
-		break;
-	}
-	case LTTNG_LIST_TRACKER_PIDS:
-	{
-		int32_t *pids = NULL;
-		ssize_t nr_pids;
-
-		nr_pids = cmd_list_tracker_pids(cmd_ctx->session,
-				cmd_ctx->lsm->domain.type, &pids);
-		if (nr_pids < 0) {
-			/* Return value is a negative lttng_error_code. */
-			ret = -nr_pids;
-			goto error;
-		}
-
-		/*
-		 * Setup lttng message with payload size set to the event list size in
-		 * bytes and then copy list into the llm payload.
-		 */
-		ret = setup_lttng_msg_no_cmd_header(cmd_ctx, pids,
-			sizeof(int32_t) * nr_pids);
-		free(pids);
 
 		if (ret < 0) {
 			goto setup_error;
@@ -1850,7 +1992,8 @@ error_add_context:
 		}
 
 		ret = cmd_rotate_session(cmd_ctx->session, &rotate_return,
-				false);
+			false,
+			LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
 		if (ret < 0) {
 			ret = -ret;
 			goto error;
@@ -1932,6 +2075,11 @@ error_add_context:
 		}
 
 		ret = LTTNG_OK;
+		break;
+	}
+	case LTTNG_CLEAR_SESSION:
+	{
+		ret = cmd_clear_session(cmd_ctx->session, sock);
 		break;
 	}
 	default:

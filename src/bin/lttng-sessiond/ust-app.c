@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
- * Copyright (C) 2016 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2016 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -1029,7 +1019,7 @@ error_free:
  * Alloc new UST app channel.
  */
 static
-struct ust_app_channel *alloc_ust_app_channel(char *name,
+struct ust_app_channel *alloc_ust_app_channel(const char *name,
 		struct ust_app_session *ua_sess,
 		struct lttng_ust_channel_attr *attr)
 {
@@ -1905,12 +1895,12 @@ static void shadow_copy_session(struct ust_app_session *ua_sess,
 		switch (ua_sess->buffer_type) {
 		case LTTNG_BUFFER_PER_PID:
 			ret = snprintf(tmp_shm_path, sizeof(tmp_shm_path),
-					DEFAULT_UST_TRACE_PID_PATH "/%s-%d-%s",
+					"/" DEFAULT_UST_TRACE_PID_PATH "/%s-%d-%s",
 					app->name, app->pid, datetime);
 			break;
 		case LTTNG_BUFFER_PER_UID:
 			ret = snprintf(tmp_shm_path, sizeof(tmp_shm_path),
-					DEFAULT_UST_TRACE_UID_PATH,
+					"/" DEFAULT_UST_TRACE_UID_PATH,
 					app->uid, app->bits_per_long);
 			break;
 		default:
@@ -4166,75 +4156,6 @@ end:
 }
 
 /*
- * For a specific UST session, create the channel for all registered apps.
- */
-int ust_app_create_channel_glb(struct ltt_ust_session *usess,
-		struct ltt_ust_channel *uchan)
-{
-	int ret = 0;
-	struct cds_lfht_iter iter;
-	struct ust_app *app;
-
-	assert(usess);
-	assert(usess->active);
-	assert(uchan);
-
-	DBG2("UST app adding channel %s to UST domain for session id %" PRIu64,
-			uchan->name, usess->id);
-
-	rcu_read_lock();
-	/* For every registered applications */
-	cds_lfht_for_each_entry(ust_app_ht->ht, &iter, app, pid_n.node) {
-		struct ust_app_session *ua_sess;
-		int session_was_created = 0;
-
-		if (!app->compatible ||
-				!trace_ust_pid_tracker_lookup(usess, app->pid)) {
-			goto error_rcu_unlock;
-		}
-
-		/*
-		 * Create session on the tracer side and add it to app session HT. Note
-		 * that if session exist, it will simply return a pointer to the ust
-		 * app session.
-		 */
-		ret = find_or_create_ust_app_session(usess, app, &ua_sess,
-				&session_was_created);
-		if (ret < 0) {
-			switch (ret) {
-			case -ENOTCONN:
-				/*
-				 * The application's socket is not valid. Either a bad
-				 * socket or a timeout on it. We can't inform the caller
-				 * that for a specific app, the session failed so lets
-				 * continue here; it is not an error.
-				 */
-				ret = 0;
-				goto error_rcu_unlock;
-			case -ENOMEM:
-			default:
-				goto error_rcu_unlock;
-			}
-		}
-
-		if (ua_sess->deleted) {
-			continue;
-		}
-		ret = ust_app_channel_create(usess, ua_sess, uchan, app, NULL);
-		if (ret) {
-			if (session_was_created) {
-				destroy_app_session(app, ua_sess);
-			}
-			/* Continue to the next application. */
-		}
-	}
-
-error_rcu_unlock:
-	rcu_read_unlock();
-	return ret;
-}
-
-/*
  * Enable event for a specific session and channel on the tracer.
  */
 int ust_app_enable_event_glb(struct ltt_ust_session *usess,
@@ -4420,6 +4341,11 @@ int ust_app_start_trace(struct ltt_ust_session *usess, struct ust_app *app)
 		goto end;
 	}
 
+	if (ua_sess->enabled) {
+		pthread_mutex_unlock(&ua_sess->lock);
+		goto end;
+	}
+
 	/* Upon restart, we skip the setup, already done */
 	if (ua_sess->started) {
 		goto skip_setup;
@@ -4437,7 +4363,7 @@ int ust_app_start_trace(struct ltt_ust_session *usess, struct ust_app *app)
 	health_code_update();
 
 skip_setup:
-	/* This start the UST tracing */
+	/* This starts the UST tracing */
 	pthread_mutex_lock(&app->sock_lock);
 	ret = ustctl_start_session(app->sock, ua_sess->handle);
 	pthread_mutex_unlock(&app->sock_lock);
@@ -4460,6 +4386,7 @@ skip_setup:
 
 	/* Indicate that the session has been started once */
 	ua_sess->started = 1;
+	ua_sess->enabled = 1;
 
 	pthread_mutex_unlock(&ua_sess->lock);
 
@@ -4549,6 +4476,7 @@ int ust_app_stop_trace(struct ltt_ust_session *usess, struct ust_app *app)
 	}
 
 	health_code_update();
+	ua_sess->enabled = 0;
 
 	/* Quiescent wait after stopping trace */
 	pthread_mutex_lock(&app->sock_lock);
@@ -5068,7 +4996,7 @@ end:
 
 /*
  * The caller must ensure that the application is compatible and is tracked
- * by the PID tracker.
+ * by the process attribute trackers.
  */
 static
 void ust_app_synchronize(struct ltt_ust_session *usess,
@@ -5188,7 +5116,14 @@ void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app)
 	if (!app->compatible) {
 		return;
 	}
-	if (trace_ust_pid_tracker_lookup(usess, app->pid)) {
+	if (trace_ust_id_tracker_lookup(LTTNG_PROCESS_ATTR_VIRTUAL_PROCESS_ID,
+			    usess, app->pid) &&
+			trace_ust_id_tracker_lookup(
+					LTTNG_PROCESS_ATTR_VIRTUAL_USER_ID,
+					usess, app->uid) &&
+			trace_ust_id_tracker_lookup(
+					LTTNG_PROCESS_ATTR_VIRTUAL_GROUP_ID,
+					usess, app->gid)) {
 		/*
 		 * Synchronize the application's internal tracing configuration
 		 * and start tracing.
@@ -5925,6 +5860,7 @@ enum lttng_error_code ust_app_snapshot_record(
 			struct buffer_reg_channel *reg_chan;
 			struct consumer_socket *socket;
 			char pathname[PATH_MAX];
+			size_t consumer_path_offset = 0;
 
 			if (!reg->registry->reg.ust->metadata_key) {
 				/* Skip since no metadata is present */
@@ -5940,12 +5876,8 @@ enum lttng_error_code ust_app_snapshot_record(
 			}
 
 			memset(pathname, 0, sizeof(pathname));
-			/*
-			 * DEFAULT_UST_TRACE_UID_PATH already contains a path
-			 * separator.
-			 */
 			ret = snprintf(pathname, sizeof(pathname),
-					DEFAULT_UST_TRACE_DIR DEFAULT_UST_TRACE_UID_PATH,
+					DEFAULT_UST_TRACE_DIR "/" DEFAULT_UST_TRACE_UID_PATH,
 					reg->uid, reg->bits_per_long);
 			if (ret < 0) {
 				PERROR("snprintf snapshot path");
@@ -5954,7 +5886,8 @@ enum lttng_error_code ust_app_snapshot_record(
 			}
 			/* Free path allowed on previous iteration. */
 			free(trace_path);
-			trace_path = setup_channel_trace_path(usess->consumer, pathname);
+			trace_path = setup_channel_trace_path(usess->consumer, pathname,
+						&consumer_path_offset);
 			if (!trace_path) {
 				status = LTTNG_ERR_INVALID;
 				goto error;
@@ -5965,7 +5898,7 @@ enum lttng_error_code ust_app_snapshot_record(
 				status = consumer_snapshot_channel(socket,
 						reg_chan->consumer_key,
 						output, 0, usess->uid,
-						usess->gid, trace_path, wait,
+						usess->gid, &trace_path[consumer_path_offset], wait,
 						nb_packets_per_stream);
 				if (status != LTTNG_OK) {
 					goto error;
@@ -5973,7 +5906,8 @@ enum lttng_error_code ust_app_snapshot_record(
 			}
 			status = consumer_snapshot_channel(socket,
 					reg->registry->reg.ust->metadata_key, output, 1,
-					usess->uid, usess->gid, trace_path, wait, 0);
+					usess->uid, usess->gid, &trace_path[consumer_path_offset],
+					wait, 0);
 			if (status != LTTNG_OK) {
 				goto error;
 			}
@@ -5989,6 +5923,7 @@ enum lttng_error_code ust_app_snapshot_record(
 			struct ust_app_session *ua_sess;
 			struct ust_registry_session *registry;
 			char pathname[PATH_MAX];
+			size_t consumer_path_offset = 0;
 
 			ua_sess = lookup_session_by_app(usess, app);
 			if (!ua_sess) {
@@ -6006,7 +5941,7 @@ enum lttng_error_code ust_app_snapshot_record(
 
 			/* Add the UST default trace dir to path. */
 			memset(pathname, 0, sizeof(pathname));
-			ret = snprintf(pathname, sizeof(pathname), DEFAULT_UST_TRACE_DIR "%s",
+			ret = snprintf(pathname, sizeof(pathname), DEFAULT_UST_TRACE_DIR "/%s",
 					ua_sess->path);
 			if (ret < 0) {
 				status = LTTNG_ERR_INVALID;
@@ -6015,7 +5950,8 @@ enum lttng_error_code ust_app_snapshot_record(
 			}
 			/* Free path allowed on previous iteration. */
 			free(trace_path);
-			trace_path = setup_channel_trace_path(usess->consumer, pathname);
+			trace_path = setup_channel_trace_path(usess->consumer, pathname,
+					&consumer_path_offset);
 			if (!trace_path) {
 				status = LTTNG_ERR_INVALID;
 				goto error;
@@ -6028,7 +5964,7 @@ enum lttng_error_code ust_app_snapshot_record(
 								.uid,
 						ua_sess->effective_credentials
 								.gid,
-						trace_path, wait,
+						&trace_path[consumer_path_offset], wait,
 						nb_packets_per_stream);
 				switch (status) {
 				case LTTNG_OK:
@@ -6049,7 +5985,7 @@ enum lttng_error_code ust_app_snapshot_record(
 					registry->metadata_key, output, 1,
 					ua_sess->effective_credentials.uid,
 					ua_sess->effective_credentials.gid,
-					trace_path, wait, 0);
+					&trace_path[consumer_path_offset], wait, 0);
 			switch (status) {
 			case LTTNG_OK:
 				break;
@@ -6329,6 +6265,11 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 			struct buffer_reg_channel *reg_chan;
 			struct consumer_socket *socket;
 
+			if (!reg->registry->reg.ust->metadata_key) {
+				/* Skip since no metadata is present */
+				continue;
+			}
+
 			/* Get consumer socket to use to push the metadata.*/
 			socket = consumer_find_socket_by_bitness(reg->bits_per_long,
 					usess->consumer);
@@ -6463,7 +6404,7 @@ enum lttng_error_code ust_app_create_channel_subdirectories(
 
 		cds_list_for_each_entry(reg, &usess->buffer_reg_uid_list, lnode) {
 			fmt_ret = asprintf(&pathname_index,
-				       DEFAULT_UST_TRACE_DIR DEFAULT_UST_TRACE_UID_PATH "/" DEFAULT_INDEX_DIR,
+				       DEFAULT_UST_TRACE_DIR "/" DEFAULT_UST_TRACE_UID_PATH "/" DEFAULT_INDEX_DIR,
 				       reg->uid, reg->bits_per_long);
 			if (fmt_ret < 0) {
 				ERR("Failed to format channel index directory");
@@ -6519,7 +6460,7 @@ enum lttng_error_code ust_app_create_channel_subdirectories(
 			}
 
 			fmt_ret = asprintf(&pathname_index,
-					DEFAULT_UST_TRACE_DIR "%s/" DEFAULT_INDEX_DIR,
+					DEFAULT_UST_TRACE_DIR "/%s/" DEFAULT_INDEX_DIR,
 					ua_sess->path);
 			if (fmt_ret < 0) {
 				ERR("Failed to format channel index directory");
@@ -6549,4 +6490,152 @@ enum lttng_error_code ust_app_create_channel_subdirectories(
 error:
 	rcu_read_unlock();
 	return ret;
+}
+
+/*
+ * Clear all the channels of a session.
+ *
+ * Return LTTNG_OK on success or else an LTTng error code.
+ */
+enum lttng_error_code ust_app_clear_session(struct ltt_session *session)
+{
+	int ret;
+	enum lttng_error_code cmd_ret = LTTNG_OK;
+	struct lttng_ht_iter iter;
+	struct ust_app *app;
+	struct ltt_ust_session *usess = session->ust_session;
+
+	assert(usess);
+
+	rcu_read_lock();
+
+	if (usess->active) {
+		ERR("Expecting inactive session %s (%" PRIu64 ")", session->name, session->id);
+		cmd_ret = LTTNG_ERR_FATAL;
+		goto end;
+	}
+
+	switch (usess->buffer_type) {
+	case LTTNG_BUFFER_PER_UID:
+	{
+		struct buffer_reg_uid *reg;
+
+		cds_list_for_each_entry(reg, &usess->buffer_reg_uid_list, lnode) {
+			struct buffer_reg_channel *reg_chan;
+			struct consumer_socket *socket;
+
+			/* Get consumer socket to use to push the metadata.*/
+			socket = consumer_find_socket_by_bitness(reg->bits_per_long,
+					usess->consumer);
+			if (!socket) {
+				cmd_ret = LTTNG_ERR_INVALID;
+				goto error_socket;
+			}
+
+			/* Clear the data channels. */
+			cds_lfht_for_each_entry(reg->registry->channels->ht, &iter.iter,
+					reg_chan, node.node) {
+				ret = consumer_clear_channel(socket,
+						reg_chan->consumer_key);
+				if (ret < 0) {
+					goto error;
+				}
+			}
+
+			(void) push_metadata(reg->registry->reg.ust, usess->consumer);
+
+			/*
+			 * Clear the metadata channel.
+			 * Metadata channel is not cleared per se but we still need to
+			 * perform a rotation operation on it behind the scene.
+			 */
+			ret = consumer_clear_channel(socket,
+					reg->registry->reg.ust->metadata_key);
+			if (ret < 0) {
+				goto error;
+			}
+		}
+		break;
+	}
+	case LTTNG_BUFFER_PER_PID:
+	{
+		cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
+			struct consumer_socket *socket;
+			struct lttng_ht_iter chan_iter;
+			struct ust_app_channel *ua_chan;
+			struct ust_app_session *ua_sess;
+			struct ust_registry_session *registry;
+
+			ua_sess = lookup_session_by_app(usess, app);
+			if (!ua_sess) {
+				/* Session not associated with this app. */
+				continue;
+			}
+
+			/* Get the right consumer socket for the application. */
+			socket = consumer_find_socket_by_bitness(app->bits_per_long,
+					usess->consumer);
+			if (!socket) {
+				cmd_ret = LTTNG_ERR_INVALID;
+				goto error_socket;
+			}
+
+			registry = get_session_registry(ua_sess);
+			if (!registry) {
+				DBG("Application session is being torn down. Skip application.");
+				continue;
+			}
+
+			/* Clear the data channels. */
+			cds_lfht_for_each_entry(ua_sess->channels->ht, &chan_iter.iter,
+					ua_chan, node.node) {
+				ret = consumer_clear_channel(socket, ua_chan->key);
+				if (ret < 0) {
+					/* Per-PID buffer and application going away. */
+					if (ret == -LTTNG_ERR_CHAN_NOT_FOUND) {
+						continue;
+					}
+					goto error;
+				}
+			}
+
+			(void) push_metadata(registry, usess->consumer);
+
+			/*
+			 * Clear the metadata channel.
+			 * Metadata channel is not cleared per se but we still need to
+			 * perform rotation operation on it behind the scene.
+			 */
+			ret = consumer_clear_channel(socket, registry->metadata_key);
+			if (ret < 0) {
+				/* Per-PID buffer and application going away. */
+				if (ret == -LTTNG_ERR_CHAN_NOT_FOUND) {
+					continue;
+				}
+				goto error;
+			}
+		}
+		break;
+	}
+	default:
+		assert(0);
+		break;
+	}
+
+	cmd_ret = LTTNG_OK;
+	goto end;
+
+error:
+	switch (-ret) {
+	case LTTCOMM_CONSUMERD_RELAYD_CLEAR_DISALLOWED:
+		cmd_ret = LTTNG_ERR_CLEAR_RELAY_DISALLOWED;
+		break;
+	default:
+		cmd_ret = LTTNG_ERR_CLEAR_FAIL_CONSUMER;
+	}
+
+error_socket:
+end:
+	rcu_read_unlock();
+	return cmd_ret;
 }

@@ -1,19 +1,8 @@
 /*
- * Copyright (c)  2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * as published by the Free Software Foundation; only version 2
- * of the License.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <assert.h>
@@ -77,7 +66,7 @@ static char *get_random_string(void)
 /*
  * Return 0 if session name is found, else -1
  */
-static int find_session_name(char *name)
+static int find_session_name(const char *name)
 {
 	struct ltt_session *iter;
 
@@ -121,7 +110,7 @@ static void empty_session_list(void)
 /*
  * Test creation of 1 session
  */
-static int create_one_session(char *name)
+static int create_one_session(const char *name)
 {
 	int ret;
 	enum lttng_error_code ret_code;
@@ -212,20 +201,20 @@ end:
 	return ret;
 }
 
-void test_session_list(void)
+static void test_session_list(void)
 {
 	session_list = session_get_list();
 	ok(session_list != NULL, "Session list: not NULL");
 }
 
-void test_create_one_session(void)
+static void test_create_one_session(void)
 {
 	ok(create_one_session(SESSION1) == 0,
 	   "Create session: %s",
 	   SESSION1);
 }
 
-void test_validate_session(void)
+static void test_validate_session(void)
 {
 	struct ltt_session *tmp;
 
@@ -251,7 +240,7 @@ end:
 	session_unlock_list();
 }
 
-void test_destroy_session(void)
+static void test_destroy_session(void)
 {
 	struct ltt_session *tmp;
 
@@ -271,13 +260,13 @@ void test_destroy_session(void)
 	session_unlock_list();
 }
 
-void test_duplicate_session(void)
+static void test_duplicate_session(void)
 {
 	ok(two_session_same_name() == 0,
 	   "Duplicate session creation");
 }
 
-void test_session_name_generation(void)
+static void test_session_name_generation(void)
 {
 	struct ltt_session *session = NULL;
 	enum lttng_error_code ret_code;
@@ -302,7 +291,7 @@ end:
 	session_unlock_list();
 }
 
-void test_large_session_number(void)
+static void test_large_session_number(void)
 {
 	int ret, i, failed = 0;
 	struct ltt_session *iter, *tmp;

@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2013 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2013 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -47,6 +37,7 @@
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/utils.h>
 #include <common/compat/getenv.h>
+#include <common/fd-tracker/utils.h>
 
 #include "lttng-relayd.h"
 #include "health-relayd.h"
@@ -55,7 +46,7 @@
 static
 char health_unix_sock_path[PATH_MAX];
 
-int health_quit_pipe[2];
+int health_quit_pipe[2] = { -1, -1 };
 
 /*
  * Check if the thread quit pipe was triggered.
@@ -232,6 +223,40 @@ end:
 	return ret;
 }
 
+static
+int accept_unix_socket(void *data, int *out_fd)
+{
+	int ret;
+	int accepting_sock = *((int *) data);
+
+	ret = lttcomm_accept_unix_sock(accepting_sock);
+	if (ret < 0) {
+		goto end;
+	}
+
+	*out_fd = ret;
+	ret = 0;
+end:
+	return ret;
+}
+
+static
+int open_unix_socket(void *data, int *out_fd)
+{
+	int ret;
+	const char *path = data;
+
+	ret = lttcomm_create_unix_sock(path);
+	if (ret < 0) {
+		goto end;
+	}
+
+	*out_fd = ret;
+	ret = 0;
+end:
+	return ret;
+}
+
 /*
  * Thread managing health check socket.
  */
@@ -243,6 +268,7 @@ void *thread_manage_health(void *data)
 	struct health_comm_msg msg;
 	struct health_comm_reply reply;
 	int is_root;
+	char *sock_name;
 
 	DBG("[thread] Manage health check started");
 
@@ -254,8 +280,17 @@ void *thread_manage_health(void *data)
 	lttng_poll_init(&events);
 
 	/* Create unix socket */
-	sock = lttcomm_create_unix_sock(health_unix_sock_path);
-	if (sock < 0) {
+	ret = asprintf(&sock_name, "Unix socket @ %s", health_unix_sock_path);
+	if (ret == -1) {
+		PERROR("Failed to allocate unix socket name");
+		err = -1;
+		goto error;
+	}
+	ret = fd_tracker_open_unsuspendable_fd(the_fd_tracker, &sock,
+			(const char **) &sock_name, 1, open_unix_socket,
+			health_unix_sock_path);
+	free(sock_name);
+	if (ret < 0) {
 		ERR("Unable to create health check Unix socket");
 		err = -1;
 		goto error;
@@ -301,8 +336,10 @@ void *thread_manage_health(void *data)
 		goto error;
 	}
 
-	/* Size is set to 1 for the consumer_channel pipe */
-	ret = lttng_poll_create(&events, 2, LTTNG_CLOEXEC);
+	/* Size is set to 2 for the unix socket and quit pipe. */
+	ret = fd_tracker_util_poll_create(the_fd_tracker,
+			"Health management thread epoll", &events, 2,
+			LTTNG_CLOEXEC);
 	if (ret < 0) {
 		ERR("Poll set creation failed");
 		goto error;
@@ -322,6 +359,8 @@ void *thread_manage_health(void *data)
 	lttng_relay_notify_ready();
 
 	while (1) {
+		char *accepted_socket_name;
+
 		DBG("Health check ready");
 
 		/* Inifinite blocking call, waiting for transmission */
@@ -365,8 +404,18 @@ restart:
 			}
 		}
 
-		new_sock = lttcomm_accept_unix_sock(sock);
-		if (new_sock < 0) {
+		ret = asprintf(&accepted_socket_name, "Socket accepted from unix socket @ %s",
+				health_unix_sock_path);
+		if (ret == -1) {
+			PERROR("Failed to allocate name of accepted socket from unix socket @ %s",
+					health_unix_sock_path);
+			goto error;
+		}
+		ret = fd_tracker_open_unsuspendable_fd(the_fd_tracker, &new_sock,
+				(const char **) &accepted_socket_name, 1,
+				accept_unix_socket, &sock);
+		free(accepted_socket_name);
+		if (ret < 0) {
 			goto error;
 		}
 
@@ -380,7 +429,9 @@ restart:
 		ret = lttcomm_recv_unix_sock(new_sock, (void *)&msg, sizeof(msg));
 		if (ret <= 0) {
 			DBG("Nothing recv() from client... continuing");
-			ret = close(new_sock);
+			ret = fd_tracker_close_unsuspendable_fd(the_fd_tracker,
+					&new_sock, 1, fd_tracker_util_close_fd,
+					NULL);
 			if (ret) {
 				PERROR("close");
 			}
@@ -411,7 +462,9 @@ restart:
 		}
 
 		/* End of transmission */
-		ret = close(new_sock);
+		ret = fd_tracker_close_unsuspendable_fd(the_fd_tracker,
+				&new_sock, 1, fd_tracker_util_close_fd,
+				NULL);
 		if (ret) {
 			PERROR("close");
 		}
@@ -427,7 +480,8 @@ exit:
 	DBG("Health check thread dying");
 	unlink(health_unix_sock_path);
 	if (sock >= 0) {
-		ret = close(sock);
+		ret = fd_tracker_close_unsuspendable_fd(the_fd_tracker, &sock,
+				1, fd_tracker_util_close_fd, NULL);
 		if (ret) {
 			PERROR("close");
 		}
@@ -438,7 +492,7 @@ exit:
 	 * other processes using them.
 	 */
 
-	lttng_poll_clean(&events);
+	(void) fd_tracker_util_poll_clean(the_fd_tracker, &events);
 
 	rcu_unregister_thread();
 	return NULL;

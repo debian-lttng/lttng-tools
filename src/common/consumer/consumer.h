@@ -1,21 +1,11 @@
 /*
- * Copyright (C) 2011 - Julien Desfossez <julien.desfossez@polymtl.ca>
- *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
- *               2012 - David Goulet <dgoulet@efficios.com>
- *               2018 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 Julien Desfossez <julien.desfossez@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2018 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef LIB_CONSUMER_H
@@ -30,7 +20,7 @@
 
 #include <common/hashtable/hashtable.h>
 #include <common/compat/fcntl.h>
-#include <common/compat/uuid.h>
+#include <common/uuid.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/pipe.h>
 #include <common/index/ctf-index.h>
@@ -70,6 +60,7 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_CREATE_TRACE_CHUNK,
 	LTTNG_CONSUMER_CLOSE_TRACE_CHUNK,
 	LTTNG_CONSUMER_TRACE_CHUNK_EXISTS,
+	LTTNG_CONSUMER_CLEAR_CHANNEL,
 };
 
 enum lttng_consumer_type {
@@ -159,7 +150,7 @@ struct lttng_consumer_channel {
 	/* For UST */
 	uid_t ust_app_uid;	/* Application UID. */
 	struct ustctl_consumer_channel *uchan;
-	unsigned char uuid[UUID_STR_LEN];
+	unsigned char uuid[LTTNG_UUID_STR_LEN];
 	/*
 	 * Temporary stream list used to store the streams once created and waiting
 	 * to be sent to the session daemon by receiving the
@@ -875,5 +866,6 @@ void lttng_consumer_cleanup_relayd(struct consumer_relayd_sock_pair *relayd);
 enum lttcomm_return_code lttng_consumer_init_command(
 		struct lttng_consumer_local_data *ctx,
 		const lttng_uuid sessiond_uuid);
+int lttng_consumer_clear_channel(struct lttng_consumer_channel *channel);
 
 #endif /* LIB_CONSUMER_H */

@@ -14,6 +14,8 @@
 
 @SET_MAKE@
 
+# SPDX-License-Identifier: GPL-2.0-only
+
 
 
 VPATH = @srcdir@
@@ -94,9 +96,12 @@ target_triplet = @target@
 @NO_SHARED_FALSE@noinst_PROGRAMS = health_check$(EXEEXT)
 subdir = tests/regression/tools/health
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
+	$(top_srcdir)/m4/ax_append_flag.m4 \
+	$(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_check_class.m4 \
 	$(top_srcdir)/m4/ax_check_classpath.m4 \
+	$(top_srcdir)/m4/ax_check_compile_flag.m4 \
 	$(top_srcdir)/m4/ax_check_link_flag.m4 \
 	$(top_srcdir)/m4/ax_compare_version.m4 \
 	$(top_srcdir)/m4/ax_config_feature.m4 \
@@ -113,6 +118,7 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_prog_javac.m4 \
 	$(top_srcdir)/m4/ax_prog_javac_works.m4 \
 	$(top_srcdir)/m4/ax_pthread.m4 \
+	$(top_srcdir)/m4/ax_require_defined.m4 \
 	$(top_srcdir)/m4/ax_try_compile_java.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
@@ -131,25 +137,15 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 am__DEPENDENCIES_1 =
-@NO_SHARED_FALSE@libhealthexit_la_DEPENDENCIES =  \
-@NO_SHARED_FALSE@	$(am__DEPENDENCIES_1)
-am__libhealthexit_la_SOURCES_DIST = health_exit.c
-@NO_SHARED_FALSE@am_libhealthexit_la_OBJECTS = health_exit.lo
-libhealthexit_la_OBJECTS = $(am_libhealthexit_la_OBJECTS)
-AM_V_lt = $(am__v_lt_@AM_V@)
-am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
-am__v_lt_0 = --silent
-am__v_lt_1 = 
-libhealthexit_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
-	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
-	$(AM_CFLAGS) $(CFLAGS) $(libhealthexit_la_LDFLAGS) $(LDFLAGS) \
-	-o $@
-@NO_SHARED_FALSE@am_libhealthexit_la_rpath =
 @NO_SHARED_FALSE@libhealthstall_la_DEPENDENCIES =  \
 @NO_SHARED_FALSE@	$(am__DEPENDENCIES_1)
 am__libhealthstall_la_SOURCES_DIST = health_stall.c
 @NO_SHARED_FALSE@am_libhealthstall_la_OBJECTS = health_stall.lo
 libhealthstall_la_OBJECTS = $(am_libhealthstall_la_OBJECTS)
+AM_V_lt = $(am__v_lt_@AM_V@)
+am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
+am__v_lt_0 = --silent
+am__v_lt_1 = 
 libhealthstall_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
 	$(AM_CFLAGS) $(CFLAGS) $(libhealthstall_la_LDFLAGS) $(LDFLAGS) \
@@ -207,10 +203,9 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(libhealthexit_la_SOURCES) $(libhealthstall_la_SOURCES) \
-	$(libhealthtpfail_la_SOURCES) $(health_check_SOURCES)
-DIST_SOURCES = $(am__libhealthexit_la_SOURCES_DIST) \
-	$(am__libhealthstall_la_SOURCES_DIST) \
+SOURCES = $(libhealthstall_la_SOURCES) $(libhealthtpfail_la_SOURCES) \
+	$(health_check_SOURCES)
+DIST_SOURCES = $(am__libhealthstall_la_SOURCES_DIST) \
 	$(am__libhealthtpfail_la_SOURCES_DIST) \
 	$(am__health_check_SOURCES_DIST)
 am__can_run_installinfo = \
@@ -244,6 +239,7 @@ AMTAR = @AMTAR@
 AM_CFLAGS = @AM_CFLAGS@
 AM_CPPFLAGS = @AM_CPPFLAGS@ -I. -I$(top_srcdir)/include
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
+AM_LDFLAGS = @AM_LDFLAGS@
 AR = @AR@
 ARCHTYPE = @ARCHTYPE@
 ASCIIDOC = @ASCIIDOC@
@@ -251,12 +247,14 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BABELTRACE2_BIN = @BABELTRACE2_BIN@
 BABELTRACE_BIN = @BABELTRACE_BIN@
 BISON_VERSION = @BISON_VERSION@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
 CMD_DESCR_DISABLE_CHANNEL = @CMD_DESCR_DISABLE_CHANNEL@
@@ -375,7 +373,6 @@ LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
 LTTNG_SYSTEM_RUNDIR = @LTTNG_SYSTEM_RUNDIR@
-LTTV_GUI_BIN = @LTTV_GUI_BIN@
 LT_NO_UNDEFINED = @LT_NO_UNDEFINED@
 LT_SYS_LIBRARY_PATH = @LT_SYS_LIBRARY_PATH@
 MAINT = @MAINT@
@@ -430,8 +427,10 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
-UUID_CFLAGS = @UUID_CFLAGS@
-UUID_LIBS = @UUID_LIBS@
+UST_CFLAGS = @UST_CFLAGS@
+UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
+UST_CTL_LIBS = @UST_CTL_LIBS@
+UST_LIBS = @UST_LIBS@
 VERSION = @VERSION@
 XMLTO = @XMLTO@
 YACC = @YACC@
@@ -510,7 +509,7 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-COPYSCRIPTS = test_thread_exit test_thread_stall test_tp_fail \
+COPYSCRIPTS = test_thread_stall test_tp_fail \
 	test_health.sh test_thread_ok
 
 dist_noinst_SCRIPTS = $(COPYSCRIPTS)
@@ -518,7 +517,7 @@ dist_noinst_SCRIPTS = $(COPYSCRIPTS)
 
 # Do not build this test if shared libraries support was
 # explicitly disabled.
-@NO_SHARED_TRUE@EXTRA_DIST = health_exit.c health_stall.c health_fail.c \
+@NO_SHARED_TRUE@EXTRA_DIST = health_stall.c health_fail.c \
 @NO_SHARED_TRUE@	health_check.c $(COPYSCRIPTS)
 
 
@@ -527,11 +526,6 @@ dist_noinst_SCRIPTS = $(COPYSCRIPTS)
 @NO_SHARED_FALSE@FORCE_SHARED_LIB_OPTIONS = -module -shared -avoid-version \
 @NO_SHARED_FALSE@			   -rpath $(abs_builddir)
 
-
-# Health thread exit ld_preloaded test lib
-@NO_SHARED_FALSE@libhealthexit_la_SOURCES = health_exit.c
-@NO_SHARED_FALSE@libhealthexit_la_LDFLAGS = $(FORCE_SHARED_LIB_OPTIONS)
-@NO_SHARED_FALSE@libhealthexit_la_LIBADD = $(DL_LIBS)
 
 # Health thread stall ld_preloaded test lib
 @NO_SHARED_FALSE@libhealthstall_la_SOURCES = health_stall.c
@@ -542,7 +536,7 @@ dist_noinst_SCRIPTS = $(COPYSCRIPTS)
 @NO_SHARED_FALSE@libhealthtpfail_la_SOURCES = health_fail.c
 @NO_SHARED_FALSE@libhealthtpfail_la_LDFLAGS = $(FORCE_SHARED_LIB_OPTIONS)
 @NO_SHARED_FALSE@libhealthtpfail_la_LIBADD = $(DL_LIBS)
-@NO_SHARED_FALSE@noinst_LTLIBRARIES = libhealthexit.la libhealthstall.la libhealthtpfail.la
+@NO_SHARED_FALSE@noinst_LTLIBRARIES = libhealthstall.la libhealthtpfail.la
 @NO_SHARED_FALSE@health_check_SOURCES = health_check.c $(UTILS)
 @NO_SHARED_FALSE@health_check_LDADD = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la \
 @NO_SHARED_FALSE@		     $(top_builddir)/src/common/libcommon.la \
@@ -593,9 +587,6 @@ clean-noinstLTLIBRARIES:
 	  rm -f $${locs}; \
 	}
 
-libhealthexit.la: $(libhealthexit_la_OBJECTS) $(libhealthexit_la_DEPENDENCIES) $(EXTRA_libhealthexit_la_DEPENDENCIES) 
-	$(AM_V_CCLD)$(libhealthexit_la_LINK) $(am_libhealthexit_la_rpath) $(libhealthexit_la_OBJECTS) $(libhealthexit_la_LIBADD) $(LIBS)
-
 libhealthstall.la: $(libhealthstall_la_OBJECTS) $(libhealthstall_la_DEPENDENCIES) $(EXTRA_libhealthstall_la_DEPENDENCIES) 
 	$(AM_V_CCLD)$(libhealthstall_la_LINK) $(am_libhealthstall_la_rpath) $(libhealthstall_la_OBJECTS) $(libhealthstall_la_LIBADD) $(LIBS)
 
@@ -622,7 +613,6 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/health_check.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/health_exit.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/health_fail.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/health_stall.Plo@am__quote@
 

@@ -1,18 +1,8 @@
 /*
- * Copyright (C) - 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by as
- * published by the Free Software Foundation; only version 2 of the License.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <assert.h>
@@ -136,6 +126,7 @@ end:
 }
 
 /* Remove "file1" from the test folder hierarchy. */
+static
 int remove_file_from_hierarchy(struct lttng_directory_handle *test_dir_handle,
 		const char *test_root_name)
 {
@@ -162,40 +153,41 @@ end:
 static int test_rmdir_fail_non_empty(const char *test_dir)
 {
 	int ret, tests_ran = 0;
-	struct lttng_directory_handle test_dir_handle;
+	struct lttng_directory_handle *test_dir_handle;
 	char *created_dir = NULL;
 	const char test_root_name[] = "fail_non_empty";
 	char *test_dir_path = NULL;
 
 	diag("rmdir (fail if non-empty)");
 
-	ret = lttng_directory_handle_init(&test_dir_handle, test_dir);
-	ok(ret == 0, "Initialized directory handle from the test directory");
+	test_dir_handle = lttng_directory_handle_create(test_dir);
+	ok(test_dir_handle, "Initialized directory handle from the test directory");
 	tests_ran++;
-	if (ret) {
+	if (!test_dir_handle) {
+		ret = -1;
 		goto end;
 	}
 
-	ret = create_non_empty_hierarchy_with_root(&test_dir_handle, test_root_name);
+	ret = create_non_empty_hierarchy_with_root(test_dir_handle, test_root_name);
 	if (ret) {
 		diag("Failed to setup folder/file hierarchy to run test");
 		goto end;
 	}
 
 	ret = lttng_directory_handle_remove_subdirectory_recursive(
-			&test_dir_handle, test_root_name,
+			test_dir_handle, test_root_name,
 			LTTNG_DIRECTORY_HANDLE_FAIL_NON_EMPTY_FLAG);
 	ok(ret == -1, "Error returned when attempting to recursively remove non-empty hierarchy with LTTNG_DIRECTORY_HANDLE_FAIL_NON_EMPTY_FLAG");
 	tests_ran++;
 
-	ret = remove_file_from_hierarchy(&test_dir_handle, test_root_name);
+	ret = remove_file_from_hierarchy(test_dir_handle, test_root_name);
 	if (ret) {
 		diag("Failed to remove file from test folder hierarchy");
 		goto end;
 	}
 
 	ret = lttng_directory_handle_remove_subdirectory_recursive(
-			&test_dir_handle, test_root_name,
+			test_dir_handle, test_root_name,
 			LTTNG_DIRECTORY_HANDLE_FAIL_NON_EMPTY_FLAG);
 	ok(ret == 0, "No error returned when recursively removing empty hierarchy with LTTNG_DIRECTORY_HANDLE_FAIL_NON_EMPTY_FLAG");
 	tests_ran++;
@@ -211,7 +203,7 @@ static int test_rmdir_fail_non_empty(const char *test_dir)
 	tests_ran++;
 	ret = 0;
 end:
-	lttng_directory_handle_fini(&test_dir_handle);
+	lttng_directory_handle_put(test_dir_handle);
 	free(created_dir);
 	free(test_dir_path);
 	return ret == 0 ? tests_ran : ret;
@@ -220,28 +212,29 @@ end:
 static int test_rmdir_skip_non_empty(const char *test_dir)
 {
 	int ret, tests_ran = 0;
-	struct lttng_directory_handle test_dir_handle;
+	struct lttng_directory_handle *test_dir_handle;
 	char *created_dir = NULL;
 	const char test_root_name[] = "skip_non_empty";
 	char *test_dir_path = NULL;
 
 	diag("rmdir (skip if non-empty)");
 
-	ret = lttng_directory_handle_init(&test_dir_handle, test_dir);
-	ok(ret == 0, "Initialized directory handle from the test directory");
+	test_dir_handle = lttng_directory_handle_create(test_dir);
+	ok(test_dir_handle, "Initialized directory handle from the test directory");
 	tests_ran++;
-	if (ret) {
+	if (!test_dir_handle) {
+		ret = -1;
 		goto end;
 	}
 
-	ret = create_non_empty_hierarchy_with_root(&test_dir_handle, test_root_name);
+	ret = create_non_empty_hierarchy_with_root(test_dir_handle, test_root_name);
 	if (ret) {
 		diag("Failed to setup folder/file hierarchy to run test");
 		goto end;
 	}
 
 	ret = lttng_directory_handle_remove_subdirectory_recursive(
-			&test_dir_handle, test_root_name,
+			test_dir_handle, test_root_name,
 			LTTNG_DIRECTORY_HANDLE_SKIP_NON_EMPTY_FLAG);
 	ok(ret == 0, "No error returned when attempting to recursively remove non-empty hierarchy with LTTNG_DIRECTORY_HANDLE_SKIP_NON_EMPTY_FLAG");
 	tests_ran++;
@@ -254,14 +247,14 @@ static int test_rmdir_skip_non_empty(const char *test_dir)
 	ok(dir_exists(test_dir_path), "Test directory still exists after skip");
 	tests_ran++;
 
-	ret = remove_file_from_hierarchy(&test_dir_handle, test_root_name);
+	ret = remove_file_from_hierarchy(test_dir_handle, test_root_name);
 	if (ret) {
 		diag("Failed to remove file from test folder hierarchy");
 		goto end;
 	}
 
 	ret = lttng_directory_handle_remove_subdirectory_recursive(
-			&test_dir_handle, test_root_name,
+			test_dir_handle, test_root_name,
 			LTTNG_DIRECTORY_HANDLE_SKIP_NON_EMPTY_FLAG);
 	ok(ret == 0, "No error returned when recursively removing empty hierarchy with LTTNG_DIRECTORY_HANDLE_SKIP_NON_EMPTY_FLAG");
 	tests_ran++;
@@ -272,7 +265,7 @@ static int test_rmdir_skip_non_empty(const char *test_dir)
 	tests_ran++;
 	ret = 0;
 end:
-	lttng_directory_handle_fini(&test_dir_handle);
+	lttng_directory_handle_put(test_dir_handle);
 	free(created_dir);
 	free(test_dir_path);
 	return ret == 0 ? tests_ran : ret;

@@ -1,29 +1,19 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _COMMON_UTILS_H
 #define _COMMON_UTILS_H
 
+#include <getopt.h>
+#include <lttng/lttng-error.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <stdint.h>
-#include <getopt.h>
-#include <stdbool.h>
-#include <sys/types.h>
 
 #include <common/compat/directory-handle.h>
 
@@ -63,5 +53,10 @@ int utils_truncate_stream_file(int fd, off_t length);
 int utils_show_help(int section, const char *page_name, const char *help_msg);
 int utils_get_memory_available(size_t *value);
 int utils_get_memory_total(size_t *value);
+int utils_change_working_directory(const char *path);
+enum lttng_error_code utils_user_id_from_name(
+		const char *user_name, uid_t *user_id);
+enum lttng_error_code utils_group_id_from_name(
+		const char *group_name, gid_t *group_id);
 
 #endif /* _COMMON_UTILS_H */

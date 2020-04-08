@@ -1,20 +1,10 @@
 /*
- * Copyright (C) 2014 - Jonathan Rajotte <jonathan.r.julien@gmail.com>
- *                    - Olivier Cotte <olivier.cotte@polymtl.ca>
- * Copyright (C) 2016 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2014 Jonathan Rajotte <jonathan.r.julien@gmail.com>
+ * Copyright (C) 2014 Olivier Cotte <olivier.cotte@polymtl.ca>
+ * Copyright (C) 2016 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _MI_LTTNG_H
@@ -83,6 +73,7 @@ extern const char * const mi_lttng_element_command_version;
 extern const char * const mi_lttng_element_command_rotate;
 extern const char * const mi_lttng_element_command_enable_rotation;
 extern const char * const mi_lttng_element_command_disable_rotation;
+extern const char * const mi_lttng_element_command_clear;
 
 /* Strings related to version command */
 extern const char * const mi_lttng_element_version;
@@ -605,7 +596,7 @@ int mi_lttng_event_fields_open(struct mi_writer *writer);
 int mi_lttng_trackers_open(struct mi_writer *writer);
 
 /*
- * Machine interface: open a pid_tracker element.
+ * Machine interface: open a process attribute tracker element.
  *
  * writer An instance of a machine interface writer.
  *
@@ -614,7 +605,8 @@ int mi_lttng_trackers_open(struct mi_writer *writer);
  *
  * Note: A targets element is also opened for each tracker definition
  */
-int mi_lttng_pid_tracker_open(struct mi_writer *writer);
+int mi_lttng_process_attribute_tracker_open(
+		struct mi_writer *writer, enum lttng_process_attr process_attr);
 
 /*
  * Machine interface: open a PIDs element.
@@ -672,25 +664,54 @@ int mi_lttng_process(struct mi_writer *writer, pid_t pid , const char *name,
  */
 int mi_lttng_pid(struct mi_writer *writer, pid_t pid , const char *name,
 		int is_open);
-/*
- * Machine interface: open a targets element.
- *
- * writer An instance of a machine interface writer.
- *
- * Returns zero if the element's value could be written.
- * Negative values indicate an error.
- */
-int mi_lttng_targets_open(struct mi_writer *writer);
 
 /*
- * Machine interface for track/untrack a pid_target
+ * Machine interface: open a process attribute values element.
  *
  * writer An instance of a machine interface writer.
  *
  * Returns zero if the element's value could be written.
  * Negative values indicate an error.
  */
-int mi_lttng_pid_target(struct mi_writer *writer, pid_t pid, int is_open);
+int mi_lttng_process_attr_values_open(struct mi_writer *writer);
+
+/*
+ * Machine interface for track/untrack of all process attribute values.
+ *
+ * writer An instance of a machine interface writer.
+ *
+ * Returns zero if the element's value could be written.
+ * Negative values indicate an error.
+ */
+int mi_lttng_all_process_attribute_value(struct mi_writer *writer,
+		enum lttng_process_attr process_attr,
+		bool is_open);
+
+/*
+ * Machine interface for track/untrack of an integral process attribute value.
+ *
+ * writer An instance of a machine interface writer.
+ *
+ * Returns zero if the element's value could be written.
+ * Negative values indicate an error.
+ */
+int mi_lttng_integral_process_attribute_value(struct mi_writer *writer,
+		enum lttng_process_attr process_attr,
+		int64_t value,
+		bool is_open);
+
+/*
+ * Machine interface for track/untrack of a string process attribute value.
+ *
+ * writer An instance of a machine interface writer.
+ *
+ * Returns zero if the element's value could be written.
+ * Negative values indicate an error.
+ */
+int mi_lttng_string_process_attribute_value(struct mi_writer *writer,
+		enum lttng_process_attr process_attr,
+		const char *value,
+		bool is_open);
 
 /*
  * Machine interface of a context.

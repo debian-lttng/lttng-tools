@@ -1,20 +1,10 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
- *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
- *               2013 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2013 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -95,6 +85,7 @@ NULL
 
 const char *progname;
 static int lockfile_fd = -1;
+static int opt_print_version;
 
 /* Set to 1 when a SIGUSR1 signal is received. */
 static int recv_child_signal;
@@ -433,8 +424,7 @@ static int set_option(int opt, const char *arg, const char *optname)
 		}
 		exit(ret ? EXIT_FAILURE : EXIT_SUCCESS);
 	} else if (string_match(optname, "version") || opt == 'V') {
-		fprintf(stdout, "%s\n", VERSION);
-		exit(EXIT_SUCCESS);
+		opt_print_version = 1;
 	} else if (string_match(optname, "sig-parent") || opt == 'S') {
 		config.sig_parent = true;
 	} else if (string_match(optname, "kconsumerd-err-sock")) {
@@ -787,6 +777,10 @@ static int config_entry_handler(const struct config_entry *entry, void *unused)
 
 end:
 	return ret;
+}
+
+static void print_version(void) {
+	fprintf(stdout, "%s\n", VERSION);
 }
 
 /*
@@ -1282,7 +1276,7 @@ static int launch_run_as_worker(const char *procname)
 
 static void sessiond_uuid_log(void)
 {
-	char uuid_str[UUID_STR_LEN];
+	char uuid_str[LTTNG_UUID_STR_LEN];
 
 	lttng_uuid_to_str(sessiond_uuid, uuid_str);
 	DBG("Starting lttng-sessiond {%s}", uuid_str);
@@ -1385,6 +1379,12 @@ int main(int argc, char **argv)
 
 	sessiond_config_log(&config);
 	sessiond_uuid_log();
+
+	if (opt_print_version) {
+		print_version();
+		retval = 0;
+		goto exit_options;
+	}
 
 	if (create_lttng_rundir()) {
 		retval = -1;

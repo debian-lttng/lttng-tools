@@ -1,0 +1,70 @@
+lttng-clear(1)
+===============
+:revdate: 2 April 2020
+
+NAME
+----
+lttng-clear - Clear a tracing session
+
+
+SYNOPSIS
+--------
+[verse]
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *clear* ['SESSION' | option:--all]
+
+
+DESCRIPTION
+-----------
+The `lttng clear` command clears one or more tracing sessions, that is,
+it deletes the contents of their tracing buffers and all their local and
+streamed trace data.
+
+If no options are specified, the current tracing session is cleared
+(see man:lttng-create(1) for more information about the current
+tracing session).
+
+If 'SESSION' is specified, the existing tracing session named 'SESSION'
+is cleared.
+
+With the option:--all option, *all* the tracing sessions, as listed in
+the output of `lttng list` (see man:lttng-list(1)), are cleared.
+
+If a tracing session is configured in snapshot mode (see the
+man:lttng-create(1) command's nloption:--snapshot option), only the
+tracing buffers are cleared.
+
+For a given tracing session, if at least one rotation occurred (see
+man:lttng-rotate(1)), only its tracing buffers and its current trace
+chunk are cleared; its archived trace chunks are :not: cleared.
+
+NOTE: The nloption:--disallow-clear option and the
+`LTTNG_RELAYD_DISALLOW_CLEAR` environment variable of
+man:lttng-relayd(8) can disable remote clearing operations. If LTTng
+sends tracing data over the network for 'SESSION' (or for any tracing
+session with the option:--all option) to a relay daemon configured as
+such, `lttng clear` fails.
+
+
+include::common-cmd-options-head.txt[]
+
+
+Target
+~~~~~~
+option:-a, option:--all::
+    Clear all the tracing sessions instead of the current tracing
+    session or the tracing session named 'SESSION'.
+
+
+include::common-cmd-help-options.txt[]
+
+
+include::common-cmd-footer.txt[]
+
+
+SEE ALSO
+--------
+man:lttng-create(1),
+man:lttng-rotate(1),
+man:lttng-set-session(1),
+man:lttng-relayd(8),
+man:lttng(1)

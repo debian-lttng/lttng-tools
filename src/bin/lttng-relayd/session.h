@@ -2,22 +2,12 @@
 #define _SESSION_H
 
 /*
- * Copyright (C) 2013 - Julien Desfossez <jdesfossez@efficios.com>
- *                      David Goulet <dgoulet@efficios.com>
- *               2015 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2013 Julien Desfossez <jdesfossez@efficios.com>
+ * Copyright (C) 2013 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <limits.h>
@@ -28,7 +18,7 @@
 
 #include <lttng/constant.h>
 #include <common/hashtable/hashtable.h>
-#include <common/compat/uuid.h>
+#include <common/uuid.h>
 #include <common/trace-chunk.h>
 #include <common/optional.h>
 
@@ -52,6 +42,11 @@ struct relay_session {
 	 * the other cases.
 	 */
 	lttng_uuid sessiond_uuid;
+	/*
+	 * Contains the creation time on the session daemon's end for 2.11+
+	 * peers. Otherwise, this contains the session creation time on the
+	 * relay daemon's end.
+	 */
 	LTTNG_OPTIONAL(time_t) creation_time;
 	/* Must _not_ be empty for 2.4+ peers. */
 	char session_name[LTTNG_NAME_MAX];
@@ -134,6 +129,12 @@ struct relay_session {
 	struct cds_list_head viewer_session_node;
 	struct lttng_trace_chunk *current_trace_chunk;
 	struct lttng_trace_chunk *pending_closure_trace_chunk;
+	/*
+	 * Prevent live viewers from taking of copy of the chunk
+	 * while new chunk has a temporary directory name.
+	 */
+	bool ongoing_rotation;
+	struct lttng_directory_handle *output_directory;
 	struct rcu_head rcu_node;	/* For call_rcu teardown. */
 };
 
@@ -154,9 +155,6 @@ void session_put(struct relay_session *session);
 
 int session_close(struct relay_session *session);
 int session_abort(struct relay_session *session);
-
-int session_init_output_directory_handle(struct relay_session *session,
-		struct lttng_directory_handle *handle);
 
 void print_sessions(void);
 

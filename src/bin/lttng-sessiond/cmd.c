@@ -1,21 +1,14 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
- * Copyright (C) 2016 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2016 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include "bin/lttng-sessiond/tracker.h"
+#include "lttng/lttng-error.h"
+#include "lttng/tracker.h"
 #define _LGPL_SOURCE
 #include <assert.h>
 #include <inttypes.h>
@@ -998,6 +991,8 @@ static enum lttng_error_code create_connect_relayd(struct lttng_uri *uri,
 
 	/* Create socket for control stream. */
 	if (uri->stype == LTTNG_STREAM_CONTROL) {
+		uint64_t result_flags;
+
 		DBG3("Creating relayd stream socket from URI");
 
 		/* Check relayd version */
@@ -1012,6 +1007,16 @@ static enum lttng_error_code create_connect_relayd(struct lttng_uri *uri,
 		}
 		consumer->relay_major_version = rsock->major;
 		consumer->relay_minor_version = rsock->minor;
+		ret = relayd_get_configuration(rsock, 0,
+				&result_flags);
+		if (ret < 0) {
+			ERR("Unable to get relayd configuration");
+			status = LTTNG_ERR_RELAYD_CONNECT_FAIL;
+			goto close_sock;
+		}
+		if (result_flags & LTTCOMM_RELAYD_CONFIGURATION_FLAG_CLEAR_ALLOWED) {
+			consumer->relay_allows_clear = true;
+		}
 	} else if (uri->stype == LTTNG_STREAM_DATA) {
 		DBG3("Creating relayd data socket from URI");
 	} else {
@@ -1224,6 +1229,8 @@ int cmd_setup_relayd(struct ltt_session *session)
 			usess->consumer->relay_major_version;
 		session->consumer->relay_minor_version =
 			usess->consumer->relay_minor_version;
+		session->consumer->relay_allows_clear =
+			usess->consumer->relay_allows_clear;
 	}
 
 	if (ksess && ksess->consumer && ksess->consumer->type == CONSUMER_DST_NET
@@ -1250,6 +1257,8 @@ int cmd_setup_relayd(struct ltt_session *session)
 			ksess->consumer->relay_major_version;
 		session->consumer->relay_minor_version =
 			ksess->consumer->relay_minor_version;
+		session->consumer->relay_allows_clear =
+			ksess->consumer->relay_allows_clear;
 	}
 
 error:
@@ -1260,7 +1269,7 @@ error:
 /*
  * Start a kernel session by opening all necessary streams.
  */
-static int start_kernel_session(struct ltt_kernel_session *ksess)
+int start_kernel_session(struct ltt_kernel_session *ksess)
 {
 	int ret;
 	struct ltt_kernel_channel *kchan;
@@ -1322,6 +1331,53 @@ error:
 	return ret;
 }
 
+int stop_kernel_session(struct ltt_kernel_session *ksess)
+{
+	struct ltt_kernel_channel *kchan;
+	bool error_occurred = false;
+	int ret;
+
+	if (!ksess || !ksess->active) {
+		return LTTNG_OK;
+	}
+	DBG("Stopping kernel tracing");
+
+	ret = kernel_stop_session(ksess);
+	if (ret < 0) {
+		ret = LTTNG_ERR_KERN_STOP_FAIL;
+		goto error;
+	}
+
+	kernel_wait_quiescent();
+
+	/* Flush metadata after stopping (if exists) */
+	if (ksess->metadata_stream_fd >= 0) {
+		ret = kernel_metadata_flush_buffer(ksess->metadata_stream_fd);
+		if (ret < 0) {
+			ERR("Kernel metadata flush failed");
+			error_occurred = true;
+		}
+	}
+
+	/* Flush all buffers after stopping */
+	cds_list_for_each_entry(kchan, &ksess->channel_list.head, list) {
+		ret = kernel_flush_buffer(kchan);
+		if (ret < 0) {
+			ERR("Kernel flush buffer error");
+			error_occurred = true;
+		}
+	}
+
+	ksess->active = 0;
+	if (error_occurred) {
+		ret = LTTNG_ERR_UNK;
+	} else {
+		ret = LTTNG_OK;
+	}
+error:
+	return ret;
+}
+
 /*
  * Command LTTNG_DISABLE_CHANNEL processed by the client thread.
  */
@@ -1361,108 +1417,6 @@ int cmd_disable_channel(struct ltt_session *session,
 		}
 
 		ret = channel_ust_disable(usess, uchan);
-		if (ret != LTTNG_OK) {
-			goto error;
-		}
-		break;
-	}
-	default:
-		ret = LTTNG_ERR_UNKNOWN_DOMAIN;
-		goto error;
-	}
-
-	ret = LTTNG_OK;
-
-error:
-	rcu_read_unlock();
-	return ret;
-}
-
-/*
- * Command LTTNG_TRACK_PID processed by the client thread.
- *
- * Called with session lock held.
- */
-int cmd_track_pid(struct ltt_session *session, enum lttng_domain_type domain,
-		int pid)
-{
-	int ret;
-
-	rcu_read_lock();
-
-	switch (domain) {
-	case LTTNG_DOMAIN_KERNEL:
-	{
-		struct ltt_kernel_session *ksess;
-
-		ksess = session->kernel_session;
-
-		ret = kernel_track_pid(ksess, pid);
-		if (ret != LTTNG_OK) {
-			goto error;
-		}
-
-		kernel_wait_quiescent();
-		break;
-	}
-	case LTTNG_DOMAIN_UST:
-	{
-		struct ltt_ust_session *usess;
-
-		usess = session->ust_session;
-
-		ret = trace_ust_track_pid(usess, pid);
-		if (ret != LTTNG_OK) {
-			goto error;
-		}
-		break;
-	}
-	default:
-		ret = LTTNG_ERR_UNKNOWN_DOMAIN;
-		goto error;
-	}
-
-	ret = LTTNG_OK;
-
-error:
-	rcu_read_unlock();
-	return ret;
-}
-
-/*
- * Command LTTNG_UNTRACK_PID processed by the client thread.
- *
- * Called with session lock held.
- */
-int cmd_untrack_pid(struct ltt_session *session, enum lttng_domain_type domain,
-		int pid)
-{
-	int ret;
-
-	rcu_read_lock();
-
-	switch (domain) {
-	case LTTNG_DOMAIN_KERNEL:
-	{
-		struct ltt_kernel_session *ksess;
-
-		ksess = session->kernel_session;
-
-		ret = kernel_untrack_pid(ksess, pid);
-		if (ret != LTTNG_OK) {
-			goto error;
-		}
-
-		kernel_wait_quiescent();
-		break;
-	}
-	case LTTNG_DOMAIN_UST:
-	{
-		struct ltt_ust_session *usess;
-
-		usess = session->ust_session;
-
-		ret = trace_ust_untrack_pid(usess, pid);
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -1649,6 +1603,211 @@ error:
 	rcu_read_unlock();
 end:
 	return ret;
+}
+
+enum lttng_error_code cmd_process_attr_tracker_get_tracking_policy(
+		struct ltt_session *session,
+		enum lttng_domain_type domain,
+		enum lttng_process_attr process_attr,
+		enum lttng_tracking_policy *policy)
+{
+	enum lttng_error_code ret_code = LTTNG_OK;
+	const struct process_attr_tracker *tracker;
+
+	switch (domain) {
+	case LTTNG_DOMAIN_KERNEL:
+		if (!session->kernel_session) {
+			ret_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+		tracker = kernel_get_process_attr_tracker(
+				session->kernel_session, process_attr);
+		break;
+	case LTTNG_DOMAIN_UST:
+		if (!session->ust_session) {
+			ret_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+		tracker = trace_ust_get_process_attr_tracker(
+				session->ust_session, process_attr);
+		break;
+	default:
+		ret_code = LTTNG_ERR_UNSUPPORTED_DOMAIN;
+		goto end;
+	}
+	if (tracker) {
+		*policy = process_attr_tracker_get_tracking_policy(tracker);
+	} else {
+		ret_code = LTTNG_ERR_INVALID;
+	}
+end:
+	return ret_code;
+}
+
+enum lttng_error_code cmd_process_attr_tracker_set_tracking_policy(
+		struct ltt_session *session,
+		enum lttng_domain_type domain,
+		enum lttng_process_attr process_attr,
+		enum lttng_tracking_policy policy)
+{
+	enum lttng_error_code ret_code = LTTNG_OK;
+
+	switch (policy) {
+	case LTTNG_TRACKING_POLICY_INCLUDE_SET:
+	case LTTNG_TRACKING_POLICY_EXCLUDE_ALL:
+	case LTTNG_TRACKING_POLICY_INCLUDE_ALL:
+		break;
+	default:
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	switch (domain) {
+	case LTTNG_DOMAIN_KERNEL:
+		if (!session->kernel_session) {
+			ret_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+		ret_code = kernel_process_attr_tracker_set_tracking_policy(
+				session->kernel_session, process_attr, policy);
+		break;
+	case LTTNG_DOMAIN_UST:
+		if (!session->ust_session) {
+			ret_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+		ret_code = trace_ust_process_attr_tracker_set_tracking_policy(
+				session->ust_session, process_attr, policy);
+		break;
+	default:
+		ret_code = LTTNG_ERR_UNSUPPORTED_DOMAIN;
+		break;
+	}
+end:
+	return ret_code;
+}
+
+enum lttng_error_code cmd_process_attr_tracker_inclusion_set_add_value(
+		struct ltt_session *session,
+		enum lttng_domain_type domain,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value)
+{
+	enum lttng_error_code ret_code = LTTNG_OK;
+
+	switch (domain) {
+	case LTTNG_DOMAIN_KERNEL:
+		if (!session->kernel_session) {
+			ret_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+		ret_code = kernel_process_attr_tracker_inclusion_set_add_value(
+				session->kernel_session, process_attr, value);
+		break;
+	case LTTNG_DOMAIN_UST:
+		if (!session->ust_session) {
+			ret_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+		ret_code = trace_ust_process_attr_tracker_inclusion_set_add_value(
+				session->ust_session, process_attr, value);
+		break;
+	default:
+		ret_code = LTTNG_ERR_UNSUPPORTED_DOMAIN;
+		break;
+	}
+end:
+	return ret_code;
+}
+
+enum lttng_error_code cmd_process_attr_tracker_inclusion_set_remove_value(
+		struct ltt_session *session,
+		enum lttng_domain_type domain,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value)
+{
+	enum lttng_error_code ret_code = LTTNG_OK;
+
+	switch (domain) {
+	case LTTNG_DOMAIN_KERNEL:
+		if (!session->kernel_session) {
+			ret_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+		ret_code = kernel_process_attr_tracker_inclusion_set_remove_value(
+				session->kernel_session, process_attr, value);
+		break;
+	case LTTNG_DOMAIN_UST:
+		if (!session->ust_session) {
+			ret_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+		ret_code = trace_ust_process_attr_tracker_inclusion_set_remove_value(
+				session->ust_session, process_attr, value);
+		break;
+	default:
+		ret_code = LTTNG_ERR_UNSUPPORTED_DOMAIN;
+		break;
+	}
+end:
+	return ret_code;
+}
+
+enum lttng_error_code cmd_process_attr_tracker_get_inclusion_set(
+		struct ltt_session *session,
+		enum lttng_domain_type domain,
+		enum lttng_process_attr process_attr,
+		struct lttng_process_attr_values **values)
+{
+	enum lttng_error_code ret_code = LTTNG_OK;
+	const struct process_attr_tracker *tracker;
+	enum process_attr_tracker_status status;
+
+	switch (domain) {
+	case LTTNG_DOMAIN_KERNEL:
+		if (!session->kernel_session) {
+			ret_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+		tracker = kernel_get_process_attr_tracker(
+				session->kernel_session, process_attr);
+		break;
+	case LTTNG_DOMAIN_UST:
+		if (!session->ust_session) {
+			ret_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+		tracker = trace_ust_get_process_attr_tracker(
+				session->ust_session, process_attr);
+		break;
+	default:
+		ret_code = LTTNG_ERR_UNSUPPORTED_DOMAIN;
+		goto end;
+	}
+
+	if (!tracker) {
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	status = process_attr_tracker_get_inclusion_set(tracker, values);
+	switch (status) {
+	case PROCESS_ATTR_TRACKER_STATUS_OK:
+		ret_code = LTTNG_OK;
+		break;
+	case PROCESS_ATTR_TRACKER_STATUS_INVALID_TRACKING_POLICY:
+		ret_code = LTTNG_ERR_PROCESS_ATTR_TRACKER_INVALID_TRACKING_POLICY;
+		break;
+	case PROCESS_ATTR_TRACKER_STATUS_ERROR:
+		ret_code = LTTNG_ERR_NOMEM;
+		break;
+	default:
+		ret_code = LTTNG_ERR_UNK;
+		break;
+	}
+
+end:
+	return ret_code;
 }
 
 /*
@@ -2510,57 +2669,6 @@ ssize_t cmd_list_syscalls(struct lttng_event **events)
 }
 
 /*
- * Command LTTNG_LIST_TRACKER_PIDS processed by the client thread.
- *
- * Called with session lock held.
- */
-ssize_t cmd_list_tracker_pids(struct ltt_session *session,
-		enum lttng_domain_type domain, int32_t **pids)
-{
-	int ret;
-	ssize_t nr_pids = 0;
-
-	switch (domain) {
-	case LTTNG_DOMAIN_KERNEL:
-	{
-		struct ltt_kernel_session *ksess;
-
-		ksess = session->kernel_session;
-		nr_pids = kernel_list_tracker_pids(ksess, pids);
-		if (nr_pids < 0) {
-			ret = LTTNG_ERR_KERN_LIST_FAIL;
-			goto error;
-		}
-		break;
-	}
-	case LTTNG_DOMAIN_UST:
-	{
-		struct ltt_ust_session *usess;
-
-		usess = session->ust_session;
-		nr_pids = trace_ust_list_tracker_pids(usess, pids);
-		if (nr_pids < 0) {
-			ret = LTTNG_ERR_UST_LIST_FAIL;
-			goto error;
-		}
-		break;
-	}
-	case LTTNG_DOMAIN_LOG4J:
-	case LTTNG_DOMAIN_JUL:
-	case LTTNG_DOMAIN_PYTHON:
-	default:
-		ret = LTTNG_ERR_UND;
-		goto error;
-	}
-
-	return nr_pids;
-
-error:
-	/* Return negative value to differentiate return code */
-	return -ret;
-}
-
-/*
  * Command LTTNG_START_TRACE processed by the client thread.
  *
  * Called with session mutex held.
@@ -2573,6 +2681,8 @@ int cmd_start_trace(struct ltt_session *session)
 	struct ltt_ust_session *usess;
 	const bool session_rotated_after_last_stop =
 			session->rotated_after_last_stop;
+	const bool session_cleared_after_last_stop =
+			session->cleared_after_last_stop;
 
 	assert(session);
 
@@ -2583,7 +2693,8 @@ int cmd_start_trace(struct ltt_session *session)
 	/* Is the session already started? */
 	if (session->active) {
 		ret = LTTNG_ERR_TRACE_ALREADY_STARTED;
-		goto error;
+		/* Perform nothing */
+		goto end;
 	}
 
 	if (session->rotation_state == LTTNG_ROTATION_STATE_ONGOING &&
@@ -2619,6 +2730,7 @@ int cmd_start_trace(struct ltt_session *session)
 
 	session->active = 1;
 	session->rotated_after_last_stop = false;
+	session->cleared_after_last_stop = false;
 	if (session->output_traces && !session->current_trace_chunk) {
 		if (!session->has_been_started) {
 			struct lttng_trace_chunk *trace_chunk;
@@ -2652,7 +2764,8 @@ int cmd_start_trace(struct ltt_session *session)
 			 * was produced as the session was stopped, so the
 			 * rotation should happen on reception of the command.
 			 */
-			ret = cmd_rotate_session(session, NULL, true);
+			ret = cmd_rotate_session(session, NULL, true,
+					LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION);
 			if (ret != LTTNG_OK) {
 				goto error;
 			}
@@ -2706,7 +2819,10 @@ error:
 		/* Restore initial state on error. */
 		session->rotated_after_last_stop =
 				session_rotated_after_last_stop;
+		session->cleared_after_last_stop =
+				session_cleared_after_last_stop;
 	}
+end:
 	return ret;
 }
 
@@ -2716,14 +2832,12 @@ error:
 int cmd_stop_trace(struct ltt_session *session)
 {
 	int ret;
-	struct ltt_kernel_channel *kchan;
 	struct ltt_kernel_session *ksession;
 	struct ltt_ust_session *usess;
-	bool error_occurred = false;
 
 	assert(session);
 
-	DBG("Begin stop session %s (id %" PRIu64 ")", session->name, session->id);
+	DBG("Begin stop session \"%s\" (id %" PRIu64 ")", session->name, session->id);
 	/* Short cut */
 	ksession = session->kernel_session;
 	usess = session->ust_session;
@@ -2734,39 +2848,9 @@ int cmd_stop_trace(struct ltt_session *session)
 		goto error;
 	}
 
-	/* Kernel tracer */
-	if (ksession && ksession->active) {
-		DBG("Stop kernel tracing");
-
-		ret = kernel_stop_session(ksession);
-		if (ret < 0) {
-			ret = LTTNG_ERR_KERN_STOP_FAIL;
-			goto error;
-		}
-
-		kernel_wait_quiescent();
-
-		/* Flush metadata after stopping (if exists) */
-		if (ksession->metadata_stream_fd >= 0) {
-			ret = kernel_metadata_flush_buffer(ksession->metadata_stream_fd);
-			if (ret < 0) {
-				ERR("Kernel metadata flush failed");
-				error_occurred = true;
-			}
-		}
-
-		/* Flush all buffers after stopping */
-		cds_list_for_each_entry(kchan, &ksession->channel_list.head, list) {
-			ret = kernel_flush_buffer(kchan);
-			if (ret < 0) {
-				ERR("Kernel flush buffer error");
-				error_occurred = true;
-			}
-		}
-
-		ksession->active = 0;
-		DBG("Kernel session stopped %s (id %" PRIu64 ")", session->name,
-				session->id);
+	ret = stop_kernel_session(ksession);
+	if (ret != LTTNG_OK) {
+		goto error;
 	}
 
 	if (usess && usess->active) {
@@ -2777,9 +2861,11 @@ int cmd_stop_trace(struct ltt_session *session)
 		}
 	}
 
+	DBG("Completed stop session \"%s\" (id %" PRIu64 ")", session->name,
+			session->id);
 	/* Flag inactive after a successful stop. */
 	session->active = 0;
-	ret = !error_occurred ? LTTNG_OK : LTTNG_ERR_UNK;
+	ret = LTTNG_OK;
 
 error:
 	return ret;
@@ -3289,14 +3375,13 @@ int cmd_destroy_session(struct ltt_session *session,
 		session->rotate_size = 0;
 	}
 
-	if (session->most_recent_chunk_id.is_set &&
-			session->most_recent_chunk_id.value != 0 &&
-			session->current_trace_chunk && session->output_traces) {
+	if (session->rotated && session->current_trace_chunk && session->output_traces) {
 		/*
 		 * Perform a last rotation on destruction if rotations have
 		 * occurred during the session's lifetime.
 		 */
-		ret = cmd_rotate_session(session, NULL, false);
+		ret = cmd_rotate_session(session, NULL, false,
+			LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
 		if (ret != LTTNG_OK) {
 			ERR("Failed to perform an implicit rotation as part of the destruction of session \"%s\": %s",
 					session->name, lttng_strerror(-ret));
@@ -3315,10 +3400,19 @@ int cmd_destroy_session(struct ltt_session *session,
 		 * emitted and no renaming of the current trace chunk takes
 		 * place.
 		 */
-		ret = cmd_rotate_session(session, NULL, true);
-		if (ret != LTTNG_OK) {
+		ret = cmd_rotate_session(session, NULL, true,
+			LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION);
+		/*
+		 * Rotation operations may not be supported by the kernel
+		 * tracer. Hence, do not consider this implicit rotation as
+		 * a session destruction error. The library has already stopped
+		 * the session and waited for pending data; there is nothing
+		 * left to do but complete the destruction of the session.
+		 */
+		if (ret != LTTNG_OK &&
+				ret != -LTTNG_ERR_ROTATION_NOT_AVAILABLE_KERNEL) {
 			ERR("Failed to perform a quiet rotation as part of the destruction of session \"%s\": %s",
-					session->name, lttng_strerror(-ret));
+			    session->name, lttng_strerror(ret));
 			destruction_last_error = -ret;
 		}
 	}
@@ -4673,9 +4767,16 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 			goto error_close_trace_chunk;
 		}
 	}
+
 error_close_trace_chunk:
-	if (session_close_trace_chunk(
-			    session, session->current_trace_chunk, NULL, NULL)) {
+	if (session_set_trace_chunk(session, NULL, &snapshot_trace_chunk)) {
+		ERR("Failed to release the current trace chunk of session \"%s\"",
+				session->name);
+		ret_code = LTTNG_ERR_UNK;
+	}
+
+	if (session_close_trace_chunk(session, snapshot_trace_chunk,
+			LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION, NULL)) {
 		/*
 		 * Don't goto end; make sure the chunk is closed for the session
 		 * to allow future snapshots.
@@ -4683,11 +4784,6 @@ error_close_trace_chunk:
 		ERR("Failed to close snapshot trace chunk of session \"%s\"",
 				session->name);
 		ret_code = LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
-	}
-	if (session_set_trace_chunk(session, NULL, NULL)) {
-		ERR("Failed to release the current trace chunk of session \"%s\"",
-				session->name);
-		ret_code = LTTNG_ERR_UNK;
 	}
 error:
 	if (original_ust_consumer_output) {
@@ -4869,7 +4965,8 @@ int cmd_set_session_shm_path(struct ltt_session *session,
  */
 int cmd_rotate_session(struct ltt_session *session,
 		struct lttng_rotate_session_return *rotate_return,
-		bool quiet_rotation)
+		bool quiet_rotation,
+		enum lttng_trace_chunk_command_type command)
 {
 	int ret;
 	uint64_t ongoing_rotation_chunk_id;
@@ -4930,6 +5027,18 @@ int cmd_rotate_session(struct ltt_session *session,
 		cmd_ret = LTTNG_ERR_ROTATION_MULTIPLE_AFTER_STOP;
 		goto end;
 	}
+
+	/*
+	 * After a stop followed by a clear, disallow following rotations a they would
+	 * generate empty chunks.
+	 */
+	if (session->cleared_after_last_stop) {
+		DBG("Session \"%s\" was already cleared after stop, refusing rotation",
+				session->name);
+		cmd_ret = LTTNG_ERR_ROTATION_AFTER_STOP_CLEAR;
+		goto end;
+	}
+
 	if (session->active) {
 		new_trace_chunk = session_create_new_trace_chunk(session, NULL,
 				NULL, NULL);
@@ -4989,11 +5098,7 @@ int cmd_rotate_session(struct ltt_session *session,
 	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 
 	ret = session_close_trace_chunk(session, chunk_being_archived,
-			quiet_rotation ?
-					NULL :
-					&((enum lttng_trace_chunk_command_type){
-							LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED}),
-			session->last_chunk_path);
+		command, session->last_chunk_path);
 	if (ret) {
 		cmd_ret = LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
 		goto error;

@@ -31,15 +31,36 @@
 						<contexts/>
 					</channel>
 				</channels>
-				<trackers>
-					<pid_tracker>
-						<targets>
-							<pid_target>
-								<pid>666</pid>
-							</pid_target>
-						</targets>
-					</pid_tracker>
-				</trackers>
+				<process_attr_trackers>
+					<vpid_process_attr_tracker>
+						<process_attr_values>
+							<vpid>
+								<id>666</id>
+							</vpid>
+						</process_attr_values>
+					</vpid_process_attr_tracker>
+					<vuid_process_attr_tracker>
+						<process_attr_values>
+							<vuid>
+								<id>777</id>
+							</vuid>
+						</process_attr_values>
+					</vuid_process_attr_tracker>
+					<vgid_process_attr_tracker>
+						<process_attr_values>
+							<vgid>
+								<id>888</id>
+							</vgid>
+						</process_attr_values>
+					</vgid_process_attr_tracker>
+					<vpid_process_attr_tracker>
+						<process_attr_values>
+							<vpid>
+								<id>999</id>
+							</vpid>
+						</process_attr_values>
+					</vpid_process_attr_tracker>
+				</process_attr_trackers>
 			</domain>
 		</domains>
 		<started>false</started>

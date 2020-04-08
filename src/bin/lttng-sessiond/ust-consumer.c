@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -56,6 +46,7 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 	char shm_path[PATH_MAX] = "";
 	char root_shm_path[PATH_MAX] = "";
 	bool is_local_trace;
+	size_t consumer_path_offset = 0;
 
 	assert(ua_sess);
 	assert(ua_chan);
@@ -67,7 +58,8 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 
 	is_local_trace = consumer->net_seq_index == -1ULL;
 	/* Format the channel's path (relative to the current trace chunk). */
-	pathname = setup_channel_trace_path(consumer, ua_sess->path);
+	pathname = setup_channel_trace_path(consumer, ua_sess->path,
+			&consumer_path_offset);
 	if (!pathname) {
 		ret = -1;
 		goto error;
@@ -148,7 +140,7 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 			output,
 			(int) ua_chan->attr.type,
 			ua_sess->tracing_id,
-			pathname,
+			&pathname[consumer_path_offset],
 			ua_chan->name,
 			consumer->net_seq_index,
 			ua_chan->key,

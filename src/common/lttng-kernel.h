@@ -1,20 +1,10 @@
 /*
- * Copyright (C) 2011 - Julien Desfossez <julien.desfossez@polymtl.ca>
- *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
- *                      David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 Julien Desfossez <julien.desfossez@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _LTTNG_KERNEL_H
@@ -66,6 +56,25 @@ enum lttng_kernel_context_type {
 	LTTNG_KERNEL_CONTEXT_MIGRATABLE     = 15,
 	LTTNG_KERNEL_CONTEXT_CALLSTACK_KERNEL = 16,
 	LTTNG_KERNEL_CONTEXT_CALLSTACK_USER   = 17,
+	LTTNG_KERNEL_CONTEXT_CGROUP_NS      = 18,
+	LTTNG_KERNEL_CONTEXT_IPC_NS         = 19,
+	LTTNG_KERNEL_CONTEXT_MNT_NS         = 20,
+	LTTNG_KERNEL_CONTEXT_NET_NS         = 21,
+	LTTNG_KERNEL_CONTEXT_PID_NS         = 22,
+	LTTNG_KERNEL_CONTEXT_USER_NS        = 23,
+	LTTNG_KERNEL_CONTEXT_UTS_NS         = 24,
+	LTTNG_KERNEL_CONTEXT_UID            = 25,
+	LTTNG_KERNEL_CONTEXT_EUID           = 26,
+	LTTNG_KERNEL_CONTEXT_SUID           = 27,
+	LTTNG_KERNEL_CONTEXT_GID            = 28,
+	LTTNG_KERNEL_CONTEXT_EGID           = 29,
+	LTTNG_KERNEL_CONTEXT_SGID           = 30,
+	LTTNG_KERNEL_CONTEXT_VUID           = 31,
+	LTTNG_KERNEL_CONTEXT_VEUID          = 32,
+	LTTNG_KERNEL_CONTEXT_VSUID          = 33,
+	LTTNG_KERNEL_CONTEXT_VGID           = 34,
+	LTTNG_KERNEL_CONTEXT_VEGID          = 35,
+	LTTNG_KERNEL_CONTEXT_VSGID          = 36,
 };
 
 /* Perf counter attributes */
@@ -193,5 +202,21 @@ struct lttng_kernel_session_name {
 struct lttng_kernel_session_creation_time {
 	char iso8601[LTTNG_KERNEL_SESSION_CREATION_TIME_ISO8601_LEN];
 } LTTNG_PACKED;
+
+enum lttng_kernel_tracker_type {
+	LTTNG_KERNEL_TRACKER_UNKNOWN		= -1,
+
+	LTTNG_KERNEL_TRACKER_PID		= 0,
+	LTTNG_KERNEL_TRACKER_VPID		= 1,
+	LTTNG_KERNEL_TRACKER_UID		= 2,
+	LTTNG_KERNEL_TRACKER_VUID		= 3,
+	LTTNG_KERNEL_TRACKER_GID		= 4,
+	LTTNG_KERNEL_TRACKER_VGID		= 5,
+};
+
+struct lttng_kernel_tracker_args {
+	enum lttng_kernel_tracker_type type;
+	int32_t id;
+};
 
 #endif /* _LTTNG_KERNEL_H */

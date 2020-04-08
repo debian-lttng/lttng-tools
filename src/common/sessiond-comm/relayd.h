@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
- *                      Julien Desfossez <julien.desfossez@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2012 Julien Desfossez <julien.desfossez@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _RELAYD_COMM
@@ -26,7 +16,7 @@
 #include <common/defaults.h>
 #include <common/index/ctf-index.h>
 #include <common/macros.h>
-#include <common/compat/uuid.h>
+#include <common/uuid.h>
 #include <common/optional.h>
 
 #define RELAYD_VERSION_COMM_MAJOR             VERSION_MAJOR
@@ -291,6 +281,27 @@ struct lttcomm_relayd_trace_chunk_exists {
 struct lttcomm_relayd_trace_chunk_exists_reply {
 	struct lttcomm_relayd_generic_reply generic;
 	uint8_t trace_chunk_exists;
+} LTTNG_PACKED;
+
+enum lttcomm_relayd_configuration_flag {
+	/* The relay daemon (2.12) is configured to allow clear operations. */
+	LTTCOMM_RELAYD_CONFIGURATION_FLAG_CLEAR_ALLOWED = (1 << 0),
+};
+
+struct lttcomm_relayd_get_configuration {
+	uint64_t query_flags;
+} LTTNG_PACKED;
+
+/*
+ * Used to return a relay daemon's configuration in reply to the
+ * RELAYD_GET_CONFIGURATION command.
+ */
+struct lttcomm_relayd_get_configuration_reply {
+	struct lttcomm_relayd_generic_reply generic;
+	/* Set of lttcomm_relayd_configuration_flag. */
+	uint64_t relayd_configuration_flags;
+	/* Optional variable-length payload. */
+	char payload[];
 } LTTNG_PACKED;
 
 #endif	/* _RELAYD_COMM */

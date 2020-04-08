@@ -1,18 +1,20 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 noinst_SCRIPTS = test_multi_lib
 EXTRA_DIST = test_multi_lib
 noinst_PROGRAMS = exec-with-callsites exec-without-callsites
 
 exec_with_callsites_SOURCES = multi-lib-test.c callsites.c
-exec_with_callsites_LDFLAGS = -ldl $(POPT_LIBS)
+exec_with_callsites_LDFLAGS = $(DL_LIBS) $(POPT_LIBS)
 exec_with_callsites_CFLAGS = $(POPT_CFLAGS) $(AM_CFLAGS) -DHAS_CALLSITES=1
 
 exec_without_callsites_SOURCES = multi-lib-test.c
-exec_without_callsites_LDFLAGS = -ldl $(POPT_LIBS) -llttng-ust
+exec_without_callsites_LDFLAGS = $(DL_LIBS) $(POPT_LIBS) $(UST_LIBS)
 exec_without_callsites_LDADD = probes.o
 exec_without_callsites_CFLAGS = $(POPT_CFLAGS) $(AM_CFLAGS) -DHAS_CALLSITES=0
 
 PROBES_SRC=probes.c probes.h
-PROBES_LDF=-shared -module -llttng-ust -avoid-version -rpath $(abs_builddir)/.libs/
+PROBES_LDF=-shared -module $(UST_LIBS) -avoid-version -rpath $(abs_builddir)/.libs/
 PROBES_CF=$(AM_CFLAGS) $(AM_CPPFLAGS) $(CFLAGS) $(CPPFLAGS) -c -I$(srcdir)/
 
 probes.o: probes.c probes.h
@@ -29,7 +31,7 @@ noinst_LTLIBRARIES = libprobes_a.la libprobes_a_prime.la \
 noinst_LTLIBRARIES += libcallsites_1.la libcallsites_2.la
 
 CALLSITES_SRC=callsites.c callsites.h
-CALLSITES_LDF=-shared -module -llttng-ust -avoid-version -rpath $(abs_builddir)/.libs/
+CALLSITES_LDF=-shared -module $(UST_LIBS) -avoid-version -rpath $(abs_builddir)/.libs/
 CALLSITES_CF=-c -I.
 
 libprobes_a_la_SOURCES = $(PROBES_SRC)

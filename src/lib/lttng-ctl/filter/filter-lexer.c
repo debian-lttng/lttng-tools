@@ -692,34 +692,25 @@ static const flex_int32_t yy_rule_can_match_eol[65] =
  *
  * LTTng filter lexer
  *
- * Copyright 2012 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright 2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License, version 2.1 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Lesser General Public License for more details.
  */
 
 #include <stdio.h>
 #include "filter-ast.h"
 #include "filter-parser.h"
 
-extern
-void setstring(struct filter_parser_ctx *parser_ctx, YYSTYPE *lvalp, const char *src);
-
 static void yyunput (int c, register char * yy_bp , yyscan_t yyscanner)
 	__attribute__((unused));
 static int input (yyscan_t yyscanner) __attribute__((unused));
 
-#line 719 "filter-lexer.c"
+#line 710 "filter-lexer.c"
 
-#line 36 "filter-lexer.l"
+#line 27 "filter-lexer.l"
 	/* bison-locations */
-#line 723 "filter-lexer.c"
+#line 714 "filter-lexer.c"
 
 #define INITIAL 0
 #define comment_ml 1
@@ -995,7 +986,7 @@ YY_DECL
 		}
 
 	{
-#line 57 "filter-lexer.l"
+#line 48 "filter-lexer.l"
 
 
 				/*
@@ -1003,7 +994,7 @@ YY_DECL
 				 * and strings.
 				 */ 
 
-#line 1007 "filter-lexer.c"
+#line 998 "filter-lexer.c"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -1074,329 +1065,329 @@ do_action:	/* This label is used only to access EOF actions. */
 
 case 1:
 YY_RULE_SETUP
-#line 64 "filter-lexer.l"
+#line 55 "filter-lexer.l"
 BEGIN(comment_ml);
 	YY_BREAK
 case 2:
 YY_RULE_SETUP
-#line 65 "filter-lexer.l"
+#line 56 "filter-lexer.l"
 /* eat anything that's not a '*' */
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 66 "filter-lexer.l"
+#line 57 "filter-lexer.l"
 /* eat up '*'s not followed by '/'s */
 	YY_BREAK
 case 4:
 /* rule 4 can match eol */
 YY_RULE_SETUP
-#line 67 "filter-lexer.l"
+#line 58 "filter-lexer.l"
 ++yylineno;
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 68 "filter-lexer.l"
+#line 59 "filter-lexer.l"
 BEGIN(INITIAL);
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 70 "filter-lexer.l"
+#line 61 "filter-lexer.l"
 BEGIN(comment_sl);
 	YY_BREAK
 case 7:
 /* rule 7 can match eol */
 YY_RULE_SETUP
-#line 71 "filter-lexer.l"
+#line 62 "filter-lexer.l"
 ++yylineno; BEGIN(INITIAL);
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 73 "filter-lexer.l"
+#line 64 "filter-lexer.l"
 BEGIN(char_const); return CHARACTER_CONSTANT_START;
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 74 "filter-lexer.l"
+#line 65 "filter-lexer.l"
 BEGIN(char_const); return CHARACTER_CONSTANT_START;
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 75 "filter-lexer.l"
+#line 66 "filter-lexer.l"
 BEGIN(INITIAL); return SQUOTE;
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 77 "filter-lexer.l"
+#line 68 "filter-lexer.l"
 BEGIN(string_lit); return STRING_LITERAL_START;
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 78 "filter-lexer.l"
+#line 69 "filter-lexer.l"
 BEGIN(string_lit); return STRING_LITERAL_START;
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 79 "filter-lexer.l"
+#line 70 "filter-lexer.l"
 BEGIN(INITIAL); return DQUOTE;
 	YY_BREAK
 case 14:
 YY_RULE_SETUP
-#line 81 "filter-lexer.l"
+#line 72 "filter-lexer.l"
 return ESCSEQ;
 	YY_BREAK
 case 15:
 /* rule 15 can match eol */
 YY_RULE_SETUP
-#line 82 "filter-lexer.l"
+#line 73 "filter-lexer.l"
 ; /* ignore */
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 83 "filter-lexer.l"
+#line 74 "filter-lexer.l"
 setstring(yyextra, yylval, yytext); return CHAR_STRING_TOKEN;
 	YY_BREAK
 case 17:
 YY_RULE_SETUP
-#line 86 "filter-lexer.l"
+#line 77 "filter-lexer.l"
 setstring(yyextra, yylval, yytext); return HEXADECIMAL_CONSTANT;
 	YY_BREAK
 case 18:
 YY_RULE_SETUP
-#line 87 "filter-lexer.l"
+#line 78 "filter-lexer.l"
 setstring(yyextra, yylval, yytext); return OCTAL_CONSTANT;
 	YY_BREAK
 case 19:
 YY_RULE_SETUP
-#line 88 "filter-lexer.l"
+#line 79 "filter-lexer.l"
 setstring(yyextra, yylval, yytext); return DECIMAL_CONSTANT;
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
-#line 90 "filter-lexer.l"
+#line 81 "filter-lexer.l"
 setstring(yyextra, yylval, yytext); return FLOAT_CONSTANT;
 	YY_BREAK
 case 21:
 YY_RULE_SETUP
-#line 91 "filter-lexer.l"
+#line 82 "filter-lexer.l"
 setstring(yyextra, yylval, yytext); return FLOAT_CONSTANT;
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 92 "filter-lexer.l"
+#line 83 "filter-lexer.l"
 setstring(yyextra, yylval, yytext); return FLOAT_CONSTANT;
 	YY_BREAK
 case 23:
 YY_RULE_SETUP
-#line 93 "filter-lexer.l"
+#line 84 "filter-lexer.l"
 setstring(yyextra, yylval, yytext); return FLOAT_CONSTANT;
 	YY_BREAK
 case 24:
 YY_RULE_SETUP
-#line 94 "filter-lexer.l"
+#line 85 "filter-lexer.l"
 setstring(yyextra, yylval, yytext); return FLOAT_CONSTANT;
 	YY_BREAK
 case 25:
 YY_RULE_SETUP
-#line 95 "filter-lexer.l"
+#line 86 "filter-lexer.l"
 setstring(yyextra, yylval, yytext); return FLOAT_CONSTANT;
 	YY_BREAK
 case 26:
 YY_RULE_SETUP
-#line 97 "filter-lexer.l"
+#line 88 "filter-lexer.l"
 return LSBRAC;
 	YY_BREAK
 case 27:
 YY_RULE_SETUP
-#line 98 "filter-lexer.l"
+#line 89 "filter-lexer.l"
 return RSBRAC;
 	YY_BREAK
 case 28:
 YY_RULE_SETUP
-#line 99 "filter-lexer.l"
+#line 90 "filter-lexer.l"
 return LPAREN;
 	YY_BREAK
 case 29:
 YY_RULE_SETUP
-#line 100 "filter-lexer.l"
+#line 91 "filter-lexer.l"
 return RPAREN;
 	YY_BREAK
 case 30:
 YY_RULE_SETUP
-#line 101 "filter-lexer.l"
+#line 92 "filter-lexer.l"
 return LBRAC;
 	YY_BREAK
 case 31:
 YY_RULE_SETUP
-#line 102 "filter-lexer.l"
+#line 93 "filter-lexer.l"
 return RBRAC;
 	YY_BREAK
 case 32:
 YY_RULE_SETUP
-#line 103 "filter-lexer.l"
+#line 94 "filter-lexer.l"
 return RARROW;
 	YY_BREAK
 case 33:
 YY_RULE_SETUP
-#line 105 "filter-lexer.l"
+#line 96 "filter-lexer.l"
 return STAR;
 	YY_BREAK
 case 34:
 YY_RULE_SETUP
-#line 106 "filter-lexer.l"
+#line 97 "filter-lexer.l"
 return PLUS;
 	YY_BREAK
 case 35:
 YY_RULE_SETUP
-#line 107 "filter-lexer.l"
+#line 98 "filter-lexer.l"
 return MINUS;
 	YY_BREAK
 case 36:
 YY_RULE_SETUP
-#line 109 "filter-lexer.l"
+#line 100 "filter-lexer.l"
 return MOD_OP;
 	YY_BREAK
 case 37:
 YY_RULE_SETUP
-#line 110 "filter-lexer.l"
+#line 101 "filter-lexer.l"
 return DIV_OP;
 	YY_BREAK
 case 38:
 YY_RULE_SETUP
-#line 111 "filter-lexer.l"
+#line 102 "filter-lexer.l"
 return RIGHT_OP;
 	YY_BREAK
 case 39:
 YY_RULE_SETUP
-#line 112 "filter-lexer.l"
+#line 103 "filter-lexer.l"
 return LEFT_OP;
 	YY_BREAK
 case 40:
 YY_RULE_SETUP
-#line 114 "filter-lexer.l"
+#line 105 "filter-lexer.l"
 return EQ_OP;
 	YY_BREAK
 case 41:
 YY_RULE_SETUP
-#line 115 "filter-lexer.l"
+#line 106 "filter-lexer.l"
 return NE_OP;
 	YY_BREAK
 case 42:
 YY_RULE_SETUP
-#line 116 "filter-lexer.l"
+#line 107 "filter-lexer.l"
 return LE_OP;
 	YY_BREAK
 case 43:
 YY_RULE_SETUP
-#line 117 "filter-lexer.l"
+#line 108 "filter-lexer.l"
 return GE_OP;
 	YY_BREAK
 case 44:
 YY_RULE_SETUP
-#line 118 "filter-lexer.l"
+#line 109 "filter-lexer.l"
 return LT_OP;
 	YY_BREAK
 case 45:
 YY_RULE_SETUP
-#line 119 "filter-lexer.l"
+#line 110 "filter-lexer.l"
 return GT_OP;
 	YY_BREAK
 case 46:
 YY_RULE_SETUP
-#line 120 "filter-lexer.l"
+#line 111 "filter-lexer.l"
 return AND_OP;
 	YY_BREAK
 case 47:
 YY_RULE_SETUP
-#line 121 "filter-lexer.l"
+#line 112 "filter-lexer.l"
 return OR_OP;
 	YY_BREAK
 case 48:
 YY_RULE_SETUP
-#line 122 "filter-lexer.l"
+#line 113 "filter-lexer.l"
 return NOT_OP;
 	YY_BREAK
 case 49:
 YY_RULE_SETUP
-#line 124 "filter-lexer.l"
+#line 115 "filter-lexer.l"
 return ASSIGN;
 	YY_BREAK
 case 50:
 YY_RULE_SETUP
-#line 125 "filter-lexer.l"
+#line 116 "filter-lexer.l"
 return COLON;
 	YY_BREAK
 case 51:
 YY_RULE_SETUP
-#line 126 "filter-lexer.l"
+#line 117 "filter-lexer.l"
 return SEMICOLON;
 	YY_BREAK
 case 52:
 YY_RULE_SETUP
-#line 127 "filter-lexer.l"
+#line 118 "filter-lexer.l"
 return DOTDOTDOT;
 	YY_BREAK
 case 53:
 YY_RULE_SETUP
-#line 128 "filter-lexer.l"
+#line 119 "filter-lexer.l"
 return DOT;
 	YY_BREAK
 case 54:
 YY_RULE_SETUP
-#line 129 "filter-lexer.l"
+#line 120 "filter-lexer.l"
 return EQUAL;
 	YY_BREAK
 case 55:
 YY_RULE_SETUP
-#line 130 "filter-lexer.l"
+#line 121 "filter-lexer.l"
 return COMMA;
 	YY_BREAK
 case 56:
 YY_RULE_SETUP
-#line 131 "filter-lexer.l"
+#line 122 "filter-lexer.l"
 return XOR_BIN;
 	YY_BREAK
 case 57:
 YY_RULE_SETUP
-#line 132 "filter-lexer.l"
+#line 123 "filter-lexer.l"
 return AND_BIN;
 	YY_BREAK
 case 58:
 YY_RULE_SETUP
-#line 133 "filter-lexer.l"
+#line 124 "filter-lexer.l"
 return OR_BIN;
 	YY_BREAK
 case 59:
 YY_RULE_SETUP
-#line 134 "filter-lexer.l"
+#line 125 "filter-lexer.l"
 return NOT_BIN;
 	YY_BREAK
 case 60:
 YY_RULE_SETUP
-#line 135 "filter-lexer.l"
+#line 126 "filter-lexer.l"
 printf_debug("<GLOBAL_IDENTIFIER %s>\n", yytext); setstring(yyextra, yylval, yytext); return GLOBAL_IDENTIFIER;
 	YY_BREAK
 case 61:
 YY_RULE_SETUP
-#line 136 "filter-lexer.l"
+#line 127 "filter-lexer.l"
 printf_debug("<IDENTIFIER %s>\n", yytext); setstring(yyextra, yylval, yytext); return IDENTIFIER;
 	YY_BREAK
 case 62:
 /* rule 62 can match eol */
 YY_RULE_SETUP
-#line 137 "filter-lexer.l"
+#line 128 "filter-lexer.l"
 ; /* ignore */
 	YY_BREAK
 case 63:
 YY_RULE_SETUP
-#line 138 "filter-lexer.l"
+#line 129 "filter-lexer.l"
 return ERROR;
 	YY_BREAK
 case 64:
 YY_RULE_SETUP
-#line 139 "filter-lexer.l"
+#line 130 "filter-lexer.l"
 ECHO;
 	YY_BREAK
-#line 1400 "filter-lexer.c"
+#line 1391 "filter-lexer.c"
 case YY_STATE_EOF(INITIAL):
 case YY_STATE_EOF(comment_ml):
 case YY_STATE_EOF(comment_sl):
@@ -2592,6 +2583,6 @@ void yyfree (void * ptr , yyscan_t yyscanner)
 
 #define YYTABLES_NAME "yytables"
 
-#line 139 "filter-lexer.l"
+#line 130 "filter-lexer.l"
 
 
