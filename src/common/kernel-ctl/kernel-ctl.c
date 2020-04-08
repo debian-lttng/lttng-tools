@@ -1,22 +1,13 @@
 /*
- * Copyright (C) 2011 - Julien Desfossez <julien.desfossez@polymtl.ca>
- *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
- *               2016 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 Julien Desfossez <julien.desfossez@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2016 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include "lttng/tracker.h"
 #define _LGPL_SOURCE
 #define __USE_LINUX_IOCTL_DEFS
 #include <sys/ioctl.h>
@@ -228,6 +219,67 @@ int kernctl_untrack_pid(int fd, int pid)
 int kernctl_list_tracker_pids(int fd)
 {
 	return LTTNG_IOCTL_NO_CHECK(fd, LTTNG_KERNEL_SESSION_LIST_TRACKER_PIDS);
+}
+
+static enum lttng_kernel_tracker_type get_kernel_tracker_type(
+		enum lttng_process_attr process_attr)
+{
+	switch (process_attr) {
+	case LTTNG_PROCESS_ATTR_PROCESS_ID:
+		return LTTNG_KERNEL_TRACKER_PID;
+	case LTTNG_PROCESS_ATTR_VIRTUAL_PROCESS_ID:
+		return LTTNG_KERNEL_TRACKER_VPID;
+	case LTTNG_PROCESS_ATTR_USER_ID:
+		return LTTNG_KERNEL_TRACKER_UID;
+	case LTTNG_PROCESS_ATTR_VIRTUAL_USER_ID:
+		return LTTNG_KERNEL_TRACKER_VUID;
+	case LTTNG_PROCESS_ATTR_GROUP_ID:
+		return LTTNG_KERNEL_TRACKER_GID;
+	case LTTNG_PROCESS_ATTR_VIRTUAL_GROUP_ID:
+		return LTTNG_KERNEL_TRACKER_VGID;
+	default:
+		return LTTNG_KERNEL_TRACKER_UNKNOWN;
+	}
+}
+
+int kernctl_track_id(int fd, enum lttng_process_attr process_attr, int id)
+{
+	struct lttng_kernel_tracker_args args;
+
+	args.id = id;
+	args.type = get_kernel_tracker_type(process_attr);
+	if (args.type == LTTNG_KERNEL_TRACKER_UNKNOWN) {
+		errno = EINVAL;
+		return -1;
+	}
+	return LTTNG_IOCTL_CHECK(fd, LTTNG_KERNEL_SESSION_TRACK_ID, &args);
+}
+
+int kernctl_untrack_id(int fd, enum lttng_process_attr process_attr, int id)
+{
+	struct lttng_kernel_tracker_args args;
+
+	args.id = id;
+	args.type = get_kernel_tracker_type(process_attr);
+	if (args.type == LTTNG_KERNEL_TRACKER_UNKNOWN) {
+		errno = EINVAL;
+		return -1;
+	}
+	return LTTNG_IOCTL_CHECK(fd, LTTNG_KERNEL_SESSION_UNTRACK_ID, &args);
+}
+
+int kernctl_list_tracker_ids(int fd, enum lttng_process_attr process_attr)
+{
+	struct lttng_kernel_tracker_args args;
+
+	args.id = -1;
+	args.type = get_kernel_tracker_type(process_attr);
+	if (args.type == LTTNG_KERNEL_TRACKER_UNKNOWN) {
+		errno = EINVAL;
+		return -1;
+	}
+	return LTTNG_IOCTL_NO_CHECK(
+			fd, LTTNG_KERNEL_SESSION_LIST_TRACKER_IDS, &args);
 }
 
 int kernctl_session_regenerate_metadata(int fd)
@@ -451,6 +503,11 @@ int kernctl_buffer_flush(int fd)
 int kernctl_buffer_flush_empty(int fd)
 {
 	return LTTNG_IOCTL_CHECK(fd, RING_BUFFER_FLUSH_EMPTY);
+}
+
+int kernctl_buffer_clear(int fd)
+{
+	return LTTNG_IOCTL_CHECK(fd, RING_BUFFER_CLEAR);
 }
 
 /* returns the version of the metadata. */

@@ -1,26 +1,19 @@
 /*
- * Copyright (C) 2013 - Julien Desfossez <jdesfossez@efficios.com>
- *                      David Goulet <dgoulet@efficios.com>
- *               2015 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2013 Julien Desfossez <jdesfossez@efficios.com>
+ * Copyright (C) 2013 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
 #include <common/common.h>
+#include <common/compat/path.h>
+#include <common/fd-tracker/utils.h>
+#include <common/time.h>
 #include <common/utils.h>
-#include <common/compat/uuid.h>
+#include <common/uuid.h>
 #include <urcu/rculist.h>
 
 #include <sys/stat.h>
@@ -37,7 +30,7 @@
 static uint64_t last_relay_session_id;
 static pthread_mutex_t last_relay_session_id_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static int init_session_output_path(struct relay_session *session)
+static int init_session_output_path_group_by_host(struct relay_session *session)
 {
 	/*
 	 * session_directory:
@@ -71,38 +64,18 @@ static int init_session_output_path(struct relay_session *session)
 		ret = asprintf(&session_directory, "%s/%s", session->hostname,
 				session->session_name);
 	} else {
-		char session_creation_datetime[16];
-		size_t strftime_ret;
-		struct tm *timeinfo;
-		time_t creation_time;
+		char session_creation_datetime[DATETIME_STR_LEN];
 
-		/*
-		 * The 2.11+ protocol guarantees that a creation time
-		 * is provided for a session. This would indicate a
-		 * protocol error or an improper use of this util.
-		 */
-		if (!session->creation_time.is_set) {
-			ERR("Creation time missing for session \"%s\" (protocol error)",
-					session->session_name);
-			ret = -1;
-			goto end;
-		}
-		creation_time = LTTNG_OPTIONAL_GET(session->creation_time);
-
-		timeinfo = localtime(&creation_time);
-		if (!timeinfo) {
-			ERR("Failed to get timeinfo while initializing session output directory handle");
-			ret = -1;
-			goto end;
-		}
-		strftime_ret = strftime(session_creation_datetime,
-				sizeof(session_creation_datetime),
-				"%Y%m%d-%H%M%S", timeinfo);
-		if (strftime_ret == 0) {
+		ret = time_to_datetime_str(
+				LTTNG_OPTIONAL_GET(session->creation_time),
+				session_creation_datetime,
+				sizeof(session_creation_datetime));
+		if (ret) {
 			ERR("Failed to format session creation timestamp while initializing session output directory handle");
 			ret = -1;
 			goto end;
 		}
+
 		ret = asprintf(&session_directory, "%s/%s-%s",
 				session->hostname, session->session_name,
 				session_creation_datetime);
@@ -125,15 +98,120 @@ end:
 	return ret;
 }
 
+static int init_session_output_path_group_by_session(
+		struct relay_session *session)
+{
+	/*
+	 * session_directory:
+	 *
+	 *   session_name/hostname-creation_time/base_path
+	 *
+	 * For session name including the datetime, use it as the complete name
+	 * since. Do not perform modification on it since the datetime is an
+	 * integral part of the name and how a user identify a session.
+	 */
+	int ret = 0;
+	char *session_directory = NULL;
+	char creation_datetime[DATETIME_STR_LEN];
+
+	if (session->output_path[0] != '\0') {
+		/* output_path as been generated already */
+		goto end;
+	}
+
+	ret = time_to_datetime_str(LTTNG_OPTIONAL_GET(session->creation_time),
+			creation_datetime, sizeof(creation_datetime));
+	if (ret) {
+		ERR("Failed to format session creation timestamp while initializing session output directory handle");
+		ret = -1;
+		goto end;
+	}
+
+	ret = asprintf(&session_directory, "%s/%s-%s%s%s",
+			session->session_name, session->hostname,
+			creation_datetime,
+			session->base_path[0] != '\0' ? "/" : "",
+			session->base_path);
+	if (ret < 0) {
+		PERROR("Failed to format session directory name");
+		goto end;
+	}
+
+	if (strlen(session_directory) >= LTTNG_PATH_MAX) {
+		ERR("Session output directory exceeds maximal length");
+		ret = -1;
+		goto end;
+	}
+
+	strcpy(session->output_path, session_directory);
+	ret = 0;
+
+end:
+	free(session_directory);
+	return ret;
+}
+
+static int init_session_output_path(struct relay_session *session)
+{
+	int ret;
+
+	switch (opt_group_output_by) {
+	case RELAYD_GROUP_OUTPUT_BY_HOST:
+		ret = init_session_output_path_group_by_host(session);
+		break;
+	case RELAYD_GROUP_OUTPUT_BY_SESSION:
+		ret = init_session_output_path_group_by_session(session);
+		break;
+	case RELAYD_GROUP_OUTPUT_BY_UNKNOWN:
+	default:
+		abort();
+		break;
+	}
+
+	return ret;
+}
+
+static struct lttng_directory_handle *session_create_output_directory_handle(
+		struct relay_session *session)
+{
+	int ret;
+	/*
+	 * relayd_output_path/session_directory
+	 * e.g. /home/user/lttng-traces/hostname/session_name
+	 */
+	char *full_session_path = NULL;
+	struct lttng_directory_handle *handle = NULL;
+
+	pthread_mutex_lock(&session->lock);
+	full_session_path = create_output_path(session->output_path);
+	if (!full_session_path) {
+		goto end;
+	}
+
+	ret = utils_mkdir_recursive(
+			full_session_path, S_IRWXU | S_IRWXG, -1, -1);
+	if (ret) {
+		ERR("Failed to create session output path \"%s\"",
+				full_session_path);
+		goto end;
+	}
+
+	handle = fd_tracker_create_directory_handle(the_fd_tracker, full_session_path);
+end:
+	pthread_mutex_unlock(&session->lock);
+	free(full_session_path);
+	return handle;
+}
+
 static int session_set_anonymous_chunk(struct relay_session *session)
 {
 	int ret = 0;
 	struct lttng_trace_chunk *chunk = NULL;
 	enum lttng_trace_chunk_status status;
-	struct lttng_directory_handle output_directory;
+	struct lttng_directory_handle *output_directory;
 
-	ret = session_init_output_directory_handle(session, &output_directory);
-	if (ret) {
+	output_directory = session_create_output_directory_handle(session);
+	if (!output_directory) {
 		goto end;
 	}
 
@@ -142,23 +220,56 @@ static int session_set_anonymous_chunk(struct relay_session *session)
 		goto end;
 	}
 
+	lttng_trace_chunk_set_fd_tracker(chunk, the_fd_tracker);
 	status = lttng_trace_chunk_set_credentials_current_user(chunk);
 	if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 		ret = -1;
 		goto end;
 	}
 
-	status = lttng_trace_chunk_set_as_owner(chunk, &output_directory);
+	status = lttng_trace_chunk_set_as_owner(chunk, output_directory);
 	if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 		ret = -1;
 		goto end;
 	}
+
 	session->current_trace_chunk = chunk;
 	chunk = NULL;
 end:
 	lttng_trace_chunk_put(chunk);
-	lttng_directory_handle_fini(&output_directory);
+	lttng_directory_handle_put(output_directory);
 	return ret;
+}
+
+/*
+ * Check if a name is safe to use in a path.
+ *
+ * A name that is deemed "path-safe":
+ *   - Does not contains a path separator (/ or \, platform dependant),
+ *   - Does not start with a '.' (hidden file/folder),
+ *   - Is not empty.
+ */
+static bool is_name_path_safe(const char *name)
+{
+	const size_t name_len = strlen(name);
+
+	/* Not empty. */
+	if (name_len == 0) {
+		WARN("An empty name is not allowed to be used in a path");
+		return false;
+	}
+	/* Does not start with '.'. */
+	if (name[0] == '.') {
+		WARN("Name \"%s\" is not allowed to be used in a path since it starts with '.'", name);
+		return false;
+	}
+	/* Does not contain a path-separator. */
+	if (strchr(name, LTTNG_PATH_SEPARATOR)) {
+		WARN("Name \"%s\" is not allowed to be used in a path since it contains a path separator", name);
+		return false;
+	}
+
+	return true;
 }
 
 /*
@@ -185,19 +296,17 @@ struct relay_session *session_create(const char *session_name,
 	assert(hostname);
 	assert(base_path);
 
-	if (strstr(session_name, ".")) {
-		ERR("Illegal character in session name: \"%s\"",
-				session_name);
+	if (!is_name_path_safe(session_name)) {
+		ERR("Refusing to create session as the provided session name is not path-safe");
+		goto error;
+	}
+	if (!is_name_path_safe(hostname)) {
+		ERR("Refusing to create session as the provided hostname is not path-safe");
 		goto error;
 	}
 	if (strstr(base_path, "../")) {
 		ERR("Invalid session base path walks up the path hierarchy: \"%s\"",
 				base_path);
-		goto error;
-	}
-	if (strstr(hostname, ".")) {
-		ERR("Invalid character in hostname: \"%s\"",
-				hostname);
 		goto error;
 	}
 
@@ -206,6 +315,17 @@ struct relay_session *session_create(const char *session_name,
 		PERROR("Failed to allocate session");
 		goto error;
 	}
+
+	pthread_mutex_lock(&last_relay_session_id_lock);
+	session->id = ++last_relay_session_id;
+	pthread_mutex_unlock(&last_relay_session_id_lock);
+
+	lttng_ht_node_init_u64(&session->session_n, session->id);
+	urcu_ref_init(&session->ref);
+	CDS_INIT_LIST_HEAD(&session->recv_list);
+	pthread_mutex_init(&session->lock, NULL);
+	pthread_mutex_init(&session->recv_list_lock, NULL);
+
 	if (lttng_strncpy(session->session_name, session_name,
 			sizeof(session->session_name))) {
 	        WARN("Session name exceeds maximal allowed length");
@@ -223,6 +343,12 @@ struct relay_session *session_create(const char *session_name,
 	}
 	if (creation_time) {
 		LTTNG_OPTIONAL_SET(&session->creation_time, *creation_time);
+	} else {
+		LTTNG_OPTIONAL_SET(&session->creation_time, time(NULL));
+		if (session->creation_time.value == (time_t) -1) {
+			PERROR("Failed to sample session creation time");
+			goto error;
+		}
 	}
 	session->session_name_contains_creation_time =
 			session_name_contains_creation_time;
@@ -232,17 +358,8 @@ struct relay_session *session_create(const char *session_name,
 		goto error;
 	}
 
-	pthread_mutex_lock(&last_relay_session_id_lock);
-	session->id = ++last_relay_session_id;
-	pthread_mutex_unlock(&last_relay_session_id_lock);
-
 	session->major = major;
 	session->minor = minor;
-	lttng_ht_node_init_u64(&session->session_n, session->id);
-	urcu_ref_init(&session->ref);
-	CDS_INIT_LIST_HEAD(&session->recv_list);
-	pthread_mutex_init(&session->lock, NULL);
-	pthread_mutex_init(&session->recv_list_lock, NULL);
 
 	session->live_timer = live_timer;
 	session->snapshot = snapshot;
@@ -267,6 +384,9 @@ struct relay_session *session_create(const char *session_name,
 	}
 
 	if (id_sessiond && current_chunk_id) {
+		enum lttng_trace_chunk_status chunk_status;
+		struct lttng_directory_handle *session_output_directory;
+
 		session->current_trace_chunk =
 				sessiond_trace_chunk_registry_get_chunk(
 					sessiond_trace_chunk_registry,
@@ -274,13 +394,24 @@ struct relay_session *session_create(const char *session_name,
 					session->id_sessiond.value,
 					*current_chunk_id);
 		if (!session->current_trace_chunk) {
-		        char uuid_str[UUID_STR_LEN];
+		        char uuid_str[LTTNG_UUID_STR_LEN];
 
 			lttng_uuid_to_str(sessiond_uuid, uuid_str);
 			ERR("Could not find trace chunk: sessiond = {%s}, sessiond session id = %" PRIu64 ", trace chunk id = %" PRIu64,
 					uuid_str, *id_sessiond,
 					*current_chunk_id);
+			goto error;
                 }
+
+		chunk_status = lttng_trace_chunk_get_session_output_directory_handle(
+				session->current_trace_chunk,
+				&session_output_directory);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			goto error;
+		}
+
+		assert(session_output_directory);
+		session->output_directory = session_output_directory;
 	} else if (!id_sessiond) {
 		/*
 		 * Pre-2.11 peers will not announce trace chunks. An
@@ -289,6 +420,12 @@ struct relay_session *session_create(const char *session_name,
 		 */
 		ret = session_set_anonymous_chunk(session);
 		if (ret) {
+			goto error;
+		}
+	} else {
+		session->output_directory =
+				session_create_output_directory_handle(session);
+		if (!session->output_directory) {
 			goto error;
 		}
 	}
@@ -380,10 +517,12 @@ static void destroy_session(struct relay_session *session)
 	ret = sessiond_trace_chunk_registry_session_destroyed(
 			sessiond_trace_chunk_registry, session->sessiond_uuid);
 	assert(!ret);
+	lttng_directory_handle_put(session->output_directory);
+	session->output_directory = NULL;
 	call_rcu(&session->rcu_node, rcu_destroy_session);
 }
 
-void session_release(struct urcu_ref *ref)
+static void session_release(struct urcu_ref *ref)
 {
 	struct relay_session *session =
 			caa_container_of(ref, struct relay_session, ref);
@@ -474,39 +613,4 @@ void print_sessions(void)
 		session_put(session);
 	}
 	rcu_read_unlock();
-}
-
-int session_init_output_directory_handle(struct relay_session *session,
-		struct lttng_directory_handle *handle)
-{
-	int ret;
-	/*
-	 * relayd_output_path/session_directory
-	 * e.g. /home/user/lttng-traces/hostname/session_name
-	 */
-	char *full_session_path = NULL;
-
-	pthread_mutex_lock(&session->lock);
-	full_session_path = create_output_path(session->output_path);
-	if (!full_session_path) {
-		ret = -1;
-		goto end;
-	}
-
-	ret = utils_mkdir_recursive(
-			full_session_path, S_IRWXU | S_IRWXG, -1, -1);
-	if (ret) {
-		ERR("Failed to create session output path \"%s\"",
-				full_session_path);
-		goto end;
-	}
-
-	ret = lttng_directory_handle_init(handle, full_session_path);
-	if (ret) {
-		goto end;
-	}
-end:
-	pthread_mutex_unlock(&session->lock);
-	free(full_session_path);
-	return ret;
 }

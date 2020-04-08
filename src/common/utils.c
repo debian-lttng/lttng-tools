@@ -1,22 +1,13 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
- * Copyright (C) 2013 - Raphaël Beamonte <raphael.beamonte@gmail.com>
- * Copyright (C) 2013 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2013 Raphaël Beamonte <raphael.beamonte@gmail.com>
+ * Copyright (C) 2013 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include "common/macros.h"
 #define _LGPL_SOURCE
 #include <assert.h>
 #include <ctype.h>
@@ -59,6 +50,9 @@
 #else
 #error MAX_NAME_LEN_SCANF_IS_A_BROKEN_API must be updated to match (PROC_MEMINFO_FIELD_MAX_NAME_LEN - 1)
 #endif
+
+#define FALLBACK_USER_BUFLEN 16384
+#define FALLBACK_GROUP_BUFLEN 16384
 
 /*
  * Return a partial realpath(3) of the path even if the full path does not
@@ -324,7 +318,7 @@ error:
  * The returned string was allocated in the function, it is thus of
  * the responsibility of the caller to free this memory.
  */
-LTTNG_HIDDEN
+static
 char *_utils_expand_path(const char *path, bool keep_symlink)
 {
 	int ret;
@@ -547,6 +541,7 @@ void utils_close_pipe(int *src)
 		if (ret) {
 			PERROR("close pipe");
 		}
+		src[i] = -1;
 	}
 }
 
@@ -682,21 +677,22 @@ LTTNG_HIDDEN
 int utils_mkdir(const char *path, mode_t mode, int uid, int gid)
 {
 	int ret;
-	struct lttng_directory_handle handle;
+	struct lttng_directory_handle *handle;
 	const struct lttng_credentials creds = {
 		.uid = (uid_t) uid,
 		.gid = (gid_t) gid,
 	};
 
-	ret = lttng_directory_handle_init(&handle, NULL);
-	if (ret) {
+	handle = lttng_directory_handle_create(NULL);
+	if (!handle) {
+		ret = -1;
 		goto end;
 	}
 	ret = lttng_directory_handle_create_subdirectory_as_user(
-			&handle, path, mode,
+			handle, path, mode,
 			(uid >= 0 || gid >= 0) ? &creds : NULL);
-	lttng_directory_handle_fini(&handle);
 end:
+	lttng_directory_handle_put(handle);
 	return ret;
 }
 
@@ -710,21 +706,22 @@ LTTNG_HIDDEN
 int utils_mkdir_recursive(const char *path, mode_t mode, int uid, int gid)
 {
 	int ret;
-	struct lttng_directory_handle handle;
+	struct lttng_directory_handle *handle;
 	const struct lttng_credentials creds = {
 		.uid = (uid_t) uid,
 		.gid = (gid_t) gid,
 	};
 
-	ret = lttng_directory_handle_init(&handle, NULL);
-	if (ret) {
+	handle = lttng_directory_handle_create(NULL);
+	if (!handle) {
+		ret = -1;
 		goto end;
 	}
 	ret = lttng_directory_handle_create_subdirectory_recursive_as_user(
-			&handle, path, mode,
+			handle, path, mode,
 			(uid >= 0 || gid >= 0) ? &creds : NULL);
-	lttng_directory_handle_fini(&handle);
 end:
+	lttng_directory_handle_put(handle);
 	return ret;
 }
 
@@ -1015,7 +1012,7 @@ static inline unsigned int fls_u32(uint32_t x)
 #define HAS_FLS_U32
 #endif
 
-#if defined(__x86_64)
+#if defined(__x86_64) && defined(__LP64__)
 static inline
 unsigned int fls_u64(uint64_t x)
 {
@@ -1354,15 +1351,16 @@ LTTNG_HIDDEN
 int utils_recursive_rmdir(const char *path)
 {
 	int ret;
-	struct lttng_directory_handle handle;
+	struct lttng_directory_handle *handle;
 
-	ret = lttng_directory_handle_init(&handle, NULL);
-	if (ret) {
+	handle = lttng_directory_handle_create(NULL);
+	if (!handle) {
+		ret = -1;
 		goto end;
 	}
-	ret = lttng_directory_handle_remove_subdirectory(&handle, path);
-	lttng_directory_handle_fini(&handle);
+	ret = lttng_directory_handle_remove_subdirectory(handle, path);
 end:
+	lttng_directory_handle_put(handle);
 	return ret;
 }
 
@@ -1501,4 +1499,167 @@ LTTNG_HIDDEN
 int utils_get_memory_total(size_t *value)
 {
 	return read_proc_meminfo_field(PROC_MEMINFO_MEMTOTAL_LINE, value);
+}
+
+LTTNG_HIDDEN
+int utils_change_working_directory(const char *path)
+{
+	int ret;
+
+	assert(path);
+
+	DBG("Changing working directory to \"%s\"", path);
+	ret = chdir(path);
+	if (ret) {
+		PERROR("Failed to change working directory to \"%s\"", path);
+		goto end;
+	}
+
+	/* Check for write access */
+	if (access(path, W_OK)) {
+		if (errno == EACCES) {
+			/*
+			 * Do not treat this as an error since the permission
+			 * might change in the lifetime of the process
+			 */
+			DBG("Working directory \"%s\" is not writable", path);
+		} else {
+			PERROR("Failed to check if working directory \"%s\" is writable",
+					path);
+		}
+	}
+
+end:
+	return ret;
+}
+
+LTTNG_HIDDEN
+enum lttng_error_code utils_user_id_from_name(const char *user_name, uid_t *uid)
+{
+	struct passwd p, *pres;
+	int ret;
+	enum lttng_error_code ret_val = LTTNG_OK;
+	char *buf = NULL;
+	ssize_t buflen;
+
+	buflen = sysconf(_SC_GETPW_R_SIZE_MAX);
+	if (buflen < 0) {
+		buflen = FALLBACK_USER_BUFLEN;
+	}
+
+	buf = zmalloc(buflen);
+	if (!buf) {
+		ret_val = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	for (;;) {
+		ret = getpwnam_r(user_name, &p, buf, buflen, &pres);
+		switch (ret) {
+		case EINTR:
+			continue;
+		case ERANGE:
+			buflen *= 2;
+			free(buf);
+			buf = zmalloc(buflen);
+			if (!buf) {
+				ret_val = LTTNG_ERR_NOMEM;
+				goto end;
+			}
+			continue;
+		default:
+			goto end_loop;
+		}
+	}
+end_loop:
+
+	switch (ret) {
+	case 0:
+		if (pres == NULL) {
+			ret_val = LTTNG_ERR_USER_NOT_FOUND;
+		} else {
+			*uid = p.pw_uid;
+			DBG("Lookup of tracker UID/VUID: name '%s' maps to uid %" PRId64,
+					user_name, (int64_t) *uid);
+			ret_val = LTTNG_OK;
+		}
+		break;
+	case ENOENT:
+	case ESRCH:
+	case EBADF:
+	case EPERM:
+		ret_val = LTTNG_ERR_USER_NOT_FOUND;
+		break;
+	default:
+		ret_val = LTTNG_ERR_NOMEM;
+	}
+end:
+	free(buf);
+	return ret_val;
+}
+
+LTTNG_HIDDEN
+enum lttng_error_code utils_group_id_from_name(
+		const char *group_name, gid_t *gid)
+{
+	struct group g, *gres;
+	int ret;
+	enum lttng_error_code ret_val = LTTNG_OK;
+	char *buf = NULL;
+	ssize_t buflen;
+
+	buflen = sysconf(_SC_GETGR_R_SIZE_MAX);
+	if (buflen < 0) {
+		buflen = FALLBACK_GROUP_BUFLEN;
+	}
+
+	buf = zmalloc(buflen);
+	if (!buf) {
+		ret_val = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	for (;;) {
+		ret = getgrnam_r(group_name, &g, buf, buflen, &gres);
+		switch (ret) {
+		case EINTR:
+			continue;
+		case ERANGE:
+			buflen *= 2;
+			free(buf);
+			buf = zmalloc(buflen);
+			if (!buf) {
+				ret_val = LTTNG_ERR_NOMEM;
+				goto end;
+			}
+			continue;
+		default:
+			goto end_loop;
+		}
+	}
+end_loop:
+
+	switch (ret) {
+	case 0:
+		if (gres == NULL) {
+			ret_val = LTTNG_ERR_GROUP_NOT_FOUND;
+		} else {
+			*gid = g.gr_gid;
+			DBG("Lookup of tracker GID/GUID: name '%s' maps to gid %" PRId64,
+					group_name, (int64_t) *gid);
+			ret_val = LTTNG_OK;
+		}
+		break;
+	case ENOENT:
+	case ESRCH:
+	case EBADF:
+	case EPERM:
+		ret_val = LTTNG_ERR_GROUP_NOT_FOUND;
+		break;
+	default:
+		ret_val = LTTNG_ERR_NOMEM;
+	}
+end:
+	free(buf);
+	return ret_val;
 }

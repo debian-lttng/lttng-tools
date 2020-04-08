@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
- * Copyright (C) 2019 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -511,7 +501,7 @@ error:
  *
  *  Spawn a session daemon by forking and execv.
  */
-static int spawn_sessiond(char *pathname)
+static int spawn_sessiond(const char *pathname)
 {
 	int ret = 0;
 	pid_t pid;
@@ -590,7 +580,7 @@ end:
 static int launch_sessiond(void)
 {
 	int ret;
-	char *pathname = NULL;
+	const char *pathname = NULL;
 
 	ret = lttng_session_daemon_alive();
 	if (ret) {
@@ -637,6 +627,7 @@ end:
 	return ret;
 }
 
+static
 int validate_url_option_combination(void)
 {
 	int ret = 0;

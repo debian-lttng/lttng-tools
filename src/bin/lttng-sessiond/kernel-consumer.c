@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -33,7 +23,8 @@
 #include "session.h"
 #include "lttng-sessiond.h"
 
-static char *create_channel_path(struct consumer_output *consumer)
+static char *create_channel_path(struct consumer_output *consumer,
+		size_t *consumer_path_offset)
 {
 	int ret;
 	char tmp_path[PATH_MAX];
@@ -52,10 +43,11 @@ static char *create_channel_path(struct consumer_output *consumer)
 					consumer->domain_subdir);
 			goto error;
 		}
+		*consumer_path_offset = strlen(consumer->domain_subdir);
 		DBG3("Kernel local consumer trace path relative to current trace chunk: \"%s\"",
 				pathname);
 	} else {
-		/* Network output. */
+		/* Network output, relayd < 2.11. */
 		ret = snprintf(tmp_path, sizeof(tmp_path), "%s%s",
 				consumer->dst.net.base_dir,
 				consumer->domain_subdir);
@@ -74,6 +66,7 @@ static char *create_channel_path(struct consumer_output *consumer)
 			PERROR("lttng_strndup");
 			goto error;
 		}
+		*consumer_path_offset = 0;
 		DBG3("Kernel network consumer subdir path: %s", pathname);
 	}
 
@@ -101,6 +94,7 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 	struct ltt_session *session = NULL;
 	struct lttng_channel_extended *channel_attr_extended;
 	bool is_local_trace;
+	size_t consumer_path_offset = 0;
 
 	/* Safety net */
 	assert(channel);
@@ -115,7 +109,7 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 			channel->channel->name);
 	is_local_trace = consumer->net_seq_index == -1ULL;
 
-	pathname = create_channel_path(consumer);
+	pathname = create_channel_path(consumer, &consumer_path_offset);
 	if (!pathname) {
 		ret = -1;
 		goto error;
@@ -150,7 +144,7 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 	consumer_init_add_channel_comm_msg(&lkm,
 			channel->key,
 			ksession->id,
-			pathname,
+			&pathname[consumer_path_offset],
 			ksession->uid,
 			ksession->gid,
 			consumer->net_seq_index,
@@ -230,7 +224,7 @@ int kernel_consumer_add_metadata(struct consumer_socket *sock,
 	consumer_init_add_channel_comm_msg(&lkm,
 			ksession->metadata->key,
 			ksession->id,
-			DEFAULT_KERNEL_TRACE_DIR,
+			"",
 			ksession->uid,
 			ksession->gid,
 			consumer->net_seq_index,

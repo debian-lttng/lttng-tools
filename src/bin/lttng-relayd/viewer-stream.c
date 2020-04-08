@@ -1,26 +1,20 @@
 /*
- * Copyright (C) 2013 - Julien Desfossez <jdesfossez@efficios.com>
- *                      David Goulet <dgoulet@efficios.com>
- *               2015 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2013 Julien Desfossez <jdesfossez@efficios.com>
+ * Copyright (C) 2013 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
 #include <common/common.h>
 #include <common/index/index.h>
 #include <common/compat/string.h>
+#include <common/utils.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "lttng-relayd.h"
 #include "viewer-stream.h"
@@ -124,13 +118,14 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 	 * If we never received an index for the current stream, delay
 	 * the opening of the index, otherwise open it right now.
 	 */
-	if (stream->index_received_seqcount == 0) {
+	if (stream->index_file == NULL) {
 		vstream->index_file = NULL;
 	} else {
 		const uint32_t connection_major = stream->trace->session->major;
 		const uint32_t connection_minor = stream->trace->session->minor;
+		enum lttng_trace_chunk_status chunk_status;
 
-		vstream->index_file = lttng_index_file_create_from_trace_chunk_read_only(
+		chunk_status = lttng_index_file_create_from_trace_chunk_read_only(
 				vstream->stream_file.trace_chunk,
 				stream->path_name,
 				stream->channel_name, stream->tracefile_size,
@@ -138,8 +133,39 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 				lttng_to_index_major(connection_major,
 						connection_minor),
 				lttng_to_index_minor(connection_major,
-						connection_minor));
-		if (!vstream->index_file) {
+						connection_minor),
+				true, &vstream->index_file);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			if (chunk_status == LTTNG_TRACE_CHUNK_STATUS_NO_FILE) {
+				vstream->index_file = NULL;
+			} else {
+				goto error_unlock;
+			}
+		}
+	}
+
+	/*
+	 * If we never received a data file for the current stream, delay the
+	 * opening, otherwise open it right now.
+	 */
+	if (stream->file) {
+		int ret;
+		char file_path[LTTNG_PATH_MAX];
+		enum lttng_trace_chunk_status status;
+
+		ret = utils_stream_file_path(stream->path_name,
+				stream->channel_name, stream->tracefile_size,
+				vstream->current_tracefile_id, NULL, file_path,
+				sizeof(file_path));
+		if (ret < 0) {
+			goto error_unlock;
+		}
+
+		status = lttng_trace_chunk_open_fs_handle(
+				vstream->stream_file.trace_chunk, file_path,
+				O_RDONLY, 0, &vstream->stream_file.handle,
+				true);
+		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			goto error_unlock;
 		}
 	}
@@ -147,7 +173,8 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 	if (seek_t == LTTNG_VIEWER_SEEK_LAST && vstream->index_file) {
 		off_t lseek_ret;
 
-		lseek_ret = lseek(vstream->index_file->fd, 0, SEEK_END);
+		lseek_ret = fs_handle_seek(
+				vstream->index_file->file, 0, SEEK_END);
 		if (lseek_ret < 0) {
 			goto error_unlock;
 		}
@@ -198,9 +225,9 @@ static void viewer_stream_release(struct urcu_ref *ref)
 
 	viewer_stream_unpublish(vstream);
 
-	if (vstream->stream_file.fd) {
-		stream_fd_put(vstream->stream_file.fd);
-		vstream->stream_file.fd = NULL;
+	if (vstream->stream_file.handle) {
+		fs_handle_close(vstream->stream_file.handle);
+		vstream->stream_file.handle = NULL;
 	}
 	if (vstream->index_file) {
 		lttng_index_file_put(vstream->index_file);
@@ -255,19 +282,42 @@ void viewer_stream_put(struct relay_viewer_stream *vstream)
 	rcu_read_unlock();
 }
 
+void viewer_stream_close_files(struct relay_viewer_stream *vstream)
+{
+	if (vstream->index_file) {
+		lttng_index_file_put(vstream->index_file);
+		vstream->index_file = NULL;
+	}
+	if (vstream->stream_file.handle) {
+	        fs_handle_close(vstream->stream_file.handle);
+		vstream->stream_file.handle = NULL;
+	}
+}
+
+void viewer_stream_sync_tracefile_array_tail(struct relay_viewer_stream *vstream)
+{
+	const struct relay_stream *stream = vstream->stream;
+	uint64_t seq_tail;
+
+	vstream->current_tracefile_id = tracefile_array_get_file_index_tail(stream->tfa);
+	seq_tail = tracefile_array_get_seq_tail(stream->tfa);
+	if (seq_tail == -1ULL) {
+		seq_tail = 0;
+	}
+	vstream->index_sent_seqcount = seq_tail;
+}
+
 /*
  * Rotate a stream to the next tracefile.
  *
  * Must be called with the rstream lock held.
- * Returns 0 on success, 1 on EOF, a negative value on error.
+ * Returns 0 on success, 1 on EOF.
  */
 int viewer_stream_rotate(struct relay_viewer_stream *vstream)
 {
 	int ret;
 	uint64_t new_id;
 	const struct relay_stream *stream = vstream->stream;
-	const uint32_t connection_major = stream->trace->session->major;
-	const uint32_t connection_minor = stream->trace->session->minor;
 
 	/* Detect the last tracefile to open. */
 	if (stream->index_received_seqcount
@@ -307,32 +357,8 @@ int viewer_stream_rotate(struct relay_viewer_stream *vstream)
 			tracefile_array_get_file_index_tail(stream->tfa);
 		vstream->index_sent_seqcount = seq_tail;
 	}
-
-	if (vstream->index_file) {
-		lttng_index_file_put(vstream->index_file);
-		vstream->index_file = NULL;
-	}
-	if (vstream->stream_file.fd) {
-		stream_fd_put(vstream->stream_file.fd);
-		vstream->stream_file.fd = NULL;
-	}
-	vstream->index_file =
-			lttng_index_file_create_from_trace_chunk_read_only(
-					vstream->stream_file.trace_chunk,
-					stream->path_name,
-					stream->channel_name,
-					stream->tracefile_size,
-					vstream->current_tracefile_id,
-					lttng_to_index_major(connection_major,
-							connection_minor),
-					lttng_to_index_minor(connection_major,
-							connection_minor));
-	if (!vstream->index_file) {
-		ret = -1;
-		goto end;
-	} else {
-		ret = 0;
-	}
+	viewer_stream_close_files(vstream);
+	ret = 0;
 end:
 	return ret;
 }

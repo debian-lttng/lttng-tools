@@ -1,18 +1,8 @@
 /*
- * Copyright (C)  2011 - David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -43,6 +33,11 @@
 
 struct ltt_session_destroy_notifier_element {
 	ltt_session_destroy_notifier notifier;
+	void *user_data;
+};
+
+struct ltt_session_clear_notifier_element {
+	ltt_session_clear_notifier notifier;
 	void *user_data;
 };
 
@@ -302,7 +297,7 @@ end:
  *
  * The session list lock must be held.
  */
-int ltt_sessions_ht_alloc(void)
+static int ltt_sessions_ht_alloc(void)
 {
 	int ret = 0;
 
@@ -491,7 +486,8 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 			pthread_mutex_lock(socket->lock);
 			ret = consumer_create_trace_chunk(socket,
 					relayd_id,
-					session->id, new_trace_chunk);
+					session->id, new_trace_chunk,
+					DEFAULT_UST_TRACE_DIR);
 			pthread_mutex_unlock(socket->lock);
                         if (ret) {
 				goto error;
@@ -521,7 +517,8 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 			pthread_mutex_lock(socket->lock);
 			ret = consumer_create_trace_chunk(socket,
 					relayd_id,
-					session->id, new_trace_chunk);
+					session->id, new_trace_chunk,
+					DEFAULT_KERNEL_TRACE_DIR);
 			pthread_mutex_unlock(socket->lock);
                         if (ret) {
 				goto error;
@@ -575,13 +572,14 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 	const time_t chunk_creation_ts = time(NULL);
 	bool is_local_trace;
 	const char *base_path;
-	struct lttng_directory_handle session_output_directory;
+	struct lttng_directory_handle *session_output_directory = NULL;
 	const struct lttng_credentials session_credentials = {
 		.uid = session->uid,
 		.gid = session->gid,
 	};
 	uint64_t next_chunk_id;
 	const struct consumer_output *output;
+	const char *new_path;
 
 	if (consumer_output_override) {
 		output = consumer_output_override;
@@ -605,8 +603,26 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 	next_chunk_id = session->most_recent_chunk_id.is_set ?
 			session->most_recent_chunk_id.value + 1 : 0;
 
+	if (session->current_trace_chunk &&
+			!lttng_trace_chunk_get_name_overridden(session->current_trace_chunk)) {
+		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
+					DEFAULT_CHUNK_TMP_OLD_DIRECTORY);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			goto error;
+		}
+	}
+	if (!session->current_trace_chunk) {
+		if (!session->rotated) {
+			new_path = "";
+		} else {
+			new_path = NULL;
+		}
+	} else {
+		new_path = DEFAULT_CHUNK_TMP_NEW_DIRECTORY;
+	}
+
 	trace_chunk = lttng_trace_chunk_create(next_chunk_id,
-			chunk_creation_ts);
+			chunk_creation_ts, new_path);
 	if (!trace_chunk) {
 		goto error;
 	}
@@ -640,28 +656,29 @@ struct lttng_trace_chunk *session_create_new_trace_chunk(
 	if (ret) {
 		goto error;
 	}
-	ret = lttng_directory_handle_init(&session_output_directory,
-			base_path);
-	if (ret) {
+	session_output_directory = lttng_directory_handle_create(base_path);
+	if (!session_output_directory) {
 		goto error;
 	}
 	chunk_status = lttng_trace_chunk_set_as_owner(trace_chunk,
-			&session_output_directory);
-	lttng_directory_handle_fini(&session_output_directory);
+			session_output_directory);
+	lttng_directory_handle_put(session_output_directory);
+	session_output_directory = NULL;
 	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 		goto error;
 	}
 end:
 	return trace_chunk;
 error:
+	lttng_directory_handle_put(session_output_directory);
 	lttng_trace_chunk_put(trace_chunk);
 	trace_chunk = NULL;
 	goto end;
 }
 
-int session_close_trace_chunk(const struct ltt_session *session,
+int session_close_trace_chunk(struct ltt_session *session,
 		struct lttng_trace_chunk *trace_chunk,
-		const enum lttng_trace_chunk_command_type *close_command,
+		enum lttng_trace_chunk_command_type close_command,
 		char *closed_trace_chunk_path)
 {
 	int ret = 0;
@@ -670,14 +687,13 @@ int session_close_trace_chunk(const struct ltt_session *session,
 	struct consumer_socket *socket;
 	enum lttng_trace_chunk_status chunk_status;
 	const time_t chunk_close_timestamp = time(NULL);
+	const char *new_path;
 
-	if (close_command) {
-		chunk_status = lttng_trace_chunk_set_close_command(
-				trace_chunk, *close_command);
-		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-			ret = -1;
-			goto end;
-		}
+	chunk_status = lttng_trace_chunk_set_close_command(
+			trace_chunk, close_command);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ret = -1;
+		goto end;
 	}
 
 	if (chunk_close_timestamp == (time_t) -1) {
@@ -685,6 +701,44 @@ int session_close_trace_chunk(const struct ltt_session *session,
 				session->name);
 		ret = -1;
 		goto end;
+	}
+
+	if (close_command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_DELETE && !session->rotated) {
+		/* New chunk stays in session output directory. */
+		new_path = "";
+	} else {
+		/* Use chunk name for new chunk. */
+		new_path = NULL;
+	}
+	if (session->current_trace_chunk &&
+			!lttng_trace_chunk_get_name_overridden(session->current_trace_chunk)) {
+		/* Rename new chunk path. */
+		chunk_status = lttng_trace_chunk_rename_path(session->current_trace_chunk,
+					new_path);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+	}
+	if (!lttng_trace_chunk_get_name_overridden(trace_chunk) &&
+			close_command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_NO_OPERATION) {
+		const char *old_path;
+
+		if (!session->rotated) {
+			old_path = "";
+		} else {
+			old_path = NULL;
+		}
+		/* We need to move back the .tmp_old_chunk to its rightful place. */
+		chunk_status = lttng_trace_chunk_rename_path(trace_chunk,
+					old_path);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+	}
+	if (close_command == LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED) {
+		session->rotated = true;
 	}
 	chunk_status = lttng_trace_chunk_set_close_timestamp(trace_chunk,
 			chunk_close_timestamp);
@@ -768,6 +822,25 @@ void session_notify_destruction(const struct ltt_session *session)
 	}
 }
 
+/*
+ * Fire each clear notifier once, and remove them from the array.
+ */
+void session_notify_clear(struct ltt_session *session)
+{
+	size_t i;
+	const size_t count = lttng_dynamic_array_get_count(
+			&session->clear_notifiers);
+
+	for (i = 0; i < count; i++) {
+		const struct ltt_session_clear_notifier_element *element =
+			lttng_dynamic_array_get_element(
+					&session->clear_notifiers, i);
+
+		element->notifier(session, element->user_data);
+	}
+	lttng_dynamic_array_clear(&session->clear_notifiers);
+}
+
 static
 void session_release(struct urcu_ref *ref)
 {
@@ -830,6 +903,7 @@ void session_release(struct urcu_ref *ref)
 		session->ust_session = NULL;
 	}
 	lttng_dynamic_array_reset(&session->destroy_notifiers);
+	lttng_dynamic_array_reset(&session->clear_notifiers);
 	free(session->last_archived_chunk_name);
 	free(session->base_path);
 	free(session);
@@ -895,6 +969,18 @@ int session_add_destroy_notifier(struct ltt_session *session,
 	};
 
 	return lttng_dynamic_array_add_element(&session->destroy_notifiers,
+			&element);
+}
+
+int session_add_clear_notifier(struct ltt_session *session,
+		ltt_session_clear_notifier notifier, void *user_data)
+{
+	const struct ltt_session_clear_notifier_element element = {
+		.notifier = notifier,
+		.user_data = user_data
+	};
+
+	return lttng_dynamic_array_add_element(&session->clear_notifiers,
 			&element);
 }
 
@@ -988,6 +1074,9 @@ enum lttng_error_code session_create(const char *name, uid_t uid, gid_t gid,
 
 	lttng_dynamic_array_init(&new_session->destroy_notifiers,
 			sizeof(struct ltt_session_destroy_notifier_element),
+			NULL);
+	lttng_dynamic_array_init(&new_session->clear_notifiers,
+			sizeof(struct ltt_session_clear_notifier_element),
 			NULL);
 	urcu_ref_init(&new_session->ref);
 	pthread_mutex_init(&new_session->lock, NULL);
@@ -1183,6 +1272,11 @@ int session_reset_rotation_state(struct ltt_session *session,
 				chunk_id);
 		lttng_trace_chunk_put(session->chunk_being_archived);
 		session->chunk_being_archived = NULL;
+		/*
+		 * Fire the clear reply notifiers if we are completing a clear
+		 * rotation.
+		 */
+		session_notify_clear(session);
 	}
 	return ret;
 }

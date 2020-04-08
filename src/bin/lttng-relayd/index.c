@@ -1,20 +1,10 @@
 /*
- * Copyright (C) 2013 - Julien Desfossez <jdesfossez@efficios.com>
- *                      David Goulet <dgoulet@efficios.com>
- *               2015 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2013 Julien Desfossez <jdesfossez@efficios.com>
+ * Copyright (C) 2013 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -273,7 +263,6 @@ int relay_index_try_flush(struct relay_index *index)
 {
 	int ret = 1;
 	bool flushed = false;
-	int fd;
 
 	pthread_mutex_lock(&index->lock);
 	if (index->flushed) {
@@ -283,10 +272,9 @@ int relay_index_try_flush(struct relay_index *index)
 	if (!index->has_index_data || !index->index_file) {
 		goto skip;
 	}
-	fd = index->index_file->fd;
-	DBG2("Writing index for stream ID %" PRIu64 " and seq num %" PRIu64
-			" on fd %d", index->stream->stream_handle,
-			index->index_n.key, fd);
+
+	DBG2("Writing index for stream ID %" PRIu64 " and seq num %" PRIu64,
+			index->stream->stream_handle, index->index_n.key);
 	flushed = true;
 	index->flushed = true;
 	ret = lttng_index_file_write(index->index_file, &index->index_data);
@@ -401,7 +389,6 @@ int relay_index_switch_all_files(struct relay_stream *stream)
 	rcu_read_lock();
 	cds_lfht_for_each_entry(stream->indexes_ht->ht, &iter.iter,
 			index, index_n.node) {
-		DBG("Update index to fd %d", stream->index_file->fd);
 		ret = relay_index_switch_file(index, stream->index_file,
 				stream->pos_after_last_complete_data_index);
 		if (ret) {

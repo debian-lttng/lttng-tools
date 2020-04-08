@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 AM_CPPFLAGS += -DINSTALL_BIN_PATH=\""$(bindir)"\"
 
 if EMBED_HELP
@@ -26,6 +28,7 @@ lttng_SOURCES = command.h conf.c conf.h commands/start.c \
 				commands/rotate.c \
 				commands/enable_rotation.c \
 				commands/disable_rotation.c \
+				commands/clear.c \
 				utils.c utils.h lttng.c
 
 lttng_CFLAGS = $(AM_CFLAGS) $(POPT_CFLAGS)

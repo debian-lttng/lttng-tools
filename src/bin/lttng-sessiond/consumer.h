@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _CONSUMER_H
@@ -151,6 +141,9 @@ struct consumer_output {
 	/* Store the relay protocol in use if the session is remote. */
 	uint32_t relay_major_version;
 	uint32_t relay_minor_version;
+
+	/* True if relayd supports the clear feature. */
+	bool relay_allows_clear;
 
 	/*
 	 * Subdirectory path name used for both local and network
@@ -315,7 +308,8 @@ int consumer_init(struct consumer_socket *socket,
 
 int consumer_create_trace_chunk(struct consumer_socket *socket,
 		uint64_t relayd_id, uint64_t session_id,
-		struct lttng_trace_chunk *chunk);
+		struct lttng_trace_chunk *chunk,
+		const char *domain_subdir);
 int consumer_close_trace_chunk(struct consumer_socket *socket,
 		uint64_t relayd_id, uint64_t session_id,
 		struct lttng_trace_chunk *chunk,
@@ -326,6 +320,9 @@ int consumer_trace_chunk_exists(struct consumer_socket *socket,
 		enum consumer_trace_chunk_exists_status *result);
 
 char *setup_channel_trace_path(struct consumer_output *consumer,
-		const char *session_path);
+		const char *session_path, size_t *consumer_path_offset);
+
+/* Clear command */
+int consumer_clear_channel(struct consumer_socket *socket, uint64_t key);
 
 #endif /* _CONSUMER_H */

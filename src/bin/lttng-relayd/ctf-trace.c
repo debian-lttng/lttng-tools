@@ -1,20 +1,10 @@
 /*
- * Copyright (C) 2013 - Julien Desfossez <jdesfossez@efficios.com>
- *                      David Goulet <dgoulet@efficios.com>
- *               2015 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2013 Julien Desfossez <jdesfossez@efficios.com>
+ * Copyright (C) 2013 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -44,7 +34,7 @@ static void rcu_destroy_ctf_trace(struct rcu_head *rcu_head)
  *
  * MUST be called with the RCU read side lock.
  */
-void ctf_trace_destroy(struct ctf_trace *trace)
+static void ctf_trace_destroy(struct ctf_trace *trace)
 {
 	/*
 	 * Getting to this point, every stream referenced by that trace
@@ -59,7 +49,7 @@ void ctf_trace_destroy(struct ctf_trace *trace)
 	call_rcu(&trace->rcu_node, rcu_destroy_ctf_trace);
 }
 
-void ctf_trace_release(struct urcu_ref *ref)
+static void ctf_trace_release(struct urcu_ref *ref)
 {
 	struct ctf_trace *trace =
 		caa_container_of(ref, struct ctf_trace, ref);

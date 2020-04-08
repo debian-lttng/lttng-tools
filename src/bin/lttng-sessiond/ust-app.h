@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
- * Copyright (C) 2016 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2016 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _LTT_UST_APP_H
@@ -21,7 +11,7 @@
 
 #include <stdint.h>
 
-#include <common/compat/uuid.h>
+#include <common/uuid.h>
 
 #include "trace-ust.h"
 #include "ust-registry.h"
@@ -315,8 +305,6 @@ int ust_app_stop_trace_all(struct ltt_ust_session *usess);
 int ust_app_destroy_trace_all(struct ltt_ust_session *usess);
 int ust_app_list_events(struct lttng_event **events);
 int ust_app_list_event_fields(struct lttng_event_field **fields);
-int ust_app_create_channel_glb(struct ltt_ust_session *usess,
-		struct ltt_ust_channel *uchan);
 int ust_app_create_event_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_event *uevent);
 int ust_app_disable_channel_glb(struct ltt_ust_session *usess,
@@ -365,6 +353,7 @@ enum lttng_error_code ust_app_create_channel_subdirectories(
 		const struct ltt_ust_session *session);
 int ust_app_release_object(struct ust_app *app,
 		struct lttng_ust_object_data *data);
+enum lttng_error_code ust_app_clear_session(struct ltt_session *session);
 
 static inline
 int ust_app_supported(void)
@@ -461,12 +450,6 @@ int ust_app_disable_channel_glb(struct ltt_ust_session *usess,
 }
 static inline
 int ust_app_enable_channel_glb(struct ltt_ust_session *usess,
-		struct ltt_ust_channel *uchan)
-{
-	return 0;
-}
-static inline
-int ust_app_create_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan)
 {
 	return 0;
@@ -607,6 +590,12 @@ enum lttng_error_code ust_app_create_channel_subdirectories(
 
 static inline
 int ust_app_release_object(struct ust_app *app, struct lttng_ust_object_data *data)
+{
+	return 0;
+}
+
+static inline
+enum lttng_error_code ust_app_clear_session(struct ltt_session *session)
 {
 	return 0;
 }

@@ -2,12 +2,12 @@
 .\"     Title: lttng-relayd
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 5 June 2018
+.\"      Date: 2 April 2020
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.11.2
+.\"    Source: LTTng 2.12.0
 .\"  Language: English
 .\"
-.TH "LTTNG\-RELAYD" "8" "5 June 2018" "LTTng 2\&.11\&.2" "LTTng Manual"
+.TH "LTTNG\-RELAYD" "8" "2 April 2020" "LTTng 2\&.12\&.0" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -32,9 +32,11 @@ lttng-relayd \- LTTng 2 relay daemon
 .SH "SYNOPSIS"
 .sp
 .nf
-\fBlttng\-relayd\fR [\fB--background\fR | \fB--daemonize\fR]
-             [\fB--control-port\fR=\fIURL\fR] [\fB--data-port\fR=\fIURL\fR] [\fB--live-port\fR=\fIURL\fR]
-             [\fB--output\fR=\fIPATH\fR] [\fB-v\fR | \fB-vv\fR | \fB-vvv\fR]
+\fBlttng\-relayd\fR [\fB--background\fR | \fB--daemonize\fR] [\fB--config\fR=\fIPATH\fR]
+             [\fB--control-port\fR=\fIURL\fR] [\fB--data-port\fR=\fIURL\fR] [\fB--fd-pool-size\fR=\fICOUNT\fR]
+             [\fB--live-port\fR=\fIURL\fR] [\fB--output\fR=\fIPATH\fR]
+             [\fB-v\fR | \fB-vv\fR | \fB-vvv\fR] [\fB--working-directory\fR=\fIPATH\fR]
+             [\fB--group-output-by-session\fR] [\fB--disallow-clear\fR]
 .fi
 .SH "DESCRIPTION"
 .sp
@@ -51,36 +53,199 @@ The relay daemon does not require any particular permissions, as long as it can 
 Once a trace has been streamed completely, the trace can be processed by any tool that can process an LTTng trace located on the local file system\&.
 .SS "Output directory"
 .sp
-By default, the relay daemon writes the traces to:
+The relay daemon uses different output path patterns depending on:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Its configuration\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The connected peer\(cqs tracing session configuration\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The connected peer\(cqs LTTng session daemon (see
+\fBlttng-sessiond\fR(8)) version\&.
+.RE
+.sp
+Consider the following variables:
+.PP
+\fIBASE\fR
+.RS 4
+Base output directory:
+\fB$LTTNG_HOME/lttng-traces\fR
+or the argument of the
+\fB--output\fR
+option\&.
+.if n \{\
+.sp
+.\}
+.RS 4
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+\fB$LTTNG_HOME\fR
+defaults to
+\fB$HOME\fR
+when not explicitly set\&.
+.sp .5v
+.RE
+.RE
+.PP
+\fIHOSTNAME\fR
+.RS 4
+Peer\(cqs hostname\&.
+.RE
+.PP
+\fISESSION\fR
+.RS 4
+Tracing session name\&.
+.RE
+.PP
+\fIDATETIME\fR
+.RS 4
+Unique tracing session date/time\&.
+.RE
+.PP
+\fITRACEPATH\fR
+.RS 4
+Custom trace path (\fITRACEPATH\fR
+part of the
+\fBlttng-create\fR(1)
+command\(cqs
+\fB--set-url\fR
+option\(cqs argument, if any)\&.
+.RE
+.sp
+The relay daemon output path patterns are:
+.PP
+Hostname grouping (without \fB--group-output-by-session\fR)
+.RS 4
+.PP
+Without a custom trace path
+.RS 4
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
-$LTTNG_HOME/lttng\-traces/\fIHOSTNAME\fR/\fISESSION\fR/\fIDOMAIN\fR
+\fIBASE\fR/\fIHOSTNAME\fR/\fISESSION\fR\-\fIDATETIME\fR
 .fi
 .if n \{\
 .RE
 .\}
+.RE
+.PP
+With a custom trace path
+.RS 4
 .sp
-with:
-.PP
-\fIHOSTNAME\fR
+.if n \{\
 .RS 4
-Remote hostname\&.
+.\}
+.nf
+\fIBASE\fR/\fIHOSTNAME\fR/\fITRACEPATH\fR
+.fi
+.if n \{\
+.RE
+.\}
+.RE
 .RE
 .PP
-\fISESSION\fR
+Tracing session grouping (with \fB--group-output-by-session\fR)
 .RS 4
-Full session name\&.
-.RE
 .PP
-\fIDOMAIN\fR
+Without a custom trace path
 .RS 4
-Tracing domain\&.
-.RE
+.PP
+The peer\(cqs LTTng session daemon version is at least 2\&.4
+.RS 4
 .sp
-You can override the default output directory prefix (\fB$LTTNG_HOME/lttng-traces\fR) with the \fB--output\fR option\&. The other parts depend on the remote configuration\&.
+.if n \{\
+.RS 4
+.\}
+.nf
+\fIBASE\fR/\fISESSION\fR/\fIHOSTNAME\fR\-\fIDATETIME\fR
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+Otherwise
+.RS 4
+Defaults to the hostname grouping pattern:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\fIBASE\fR/\fIHOSTNAME\fR/\fISESSION\fR\-\fIDATETIME\fR
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.RE
+.PP
+With a custom trace path
+.RS 4
+.PP
+The peer\(cqs LTTng session daemon version is at least 2\&.4
+.RS 4
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\fIBASE\fR/\fISESSION\fR/\fIHOSTNAME\fR\-\fIDATETIME\fR/\fITRACEPATH\fR
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+Otherwise
+.RS 4
+Defaults to the hostname grouping pattern:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\fIBASE\fR/\fIHOSTNAME\fR/\fITRACEPATH\fR
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.RE
+.RE
 .SS "URL format"
 .sp
 The \fB--control-port\fR, \fB--data-port\fR, and \fB--live-port\fR options specify URLs\&.
@@ -123,11 +288,41 @@ Start as Unix daemon, but keep file descriptors (console) open\&. Use the
 option instead to close the file descriptors\&.
 .RE
 .PP
+\fB-f\fR \fIPATH\fR, \fB--config\fR=\fIPATH\fR
+.RS 4
+Load relay daemon configuration from path
+\fIPATH\fR\&.
+.RE
+.PP
 \fB-d\fR, \fB--daemonize\fR
 .RS 4
 Start as Unix daemon, and close file descriptors (console)\&. Use the
 \fB--background\fR
 option instead to keep the file descriptors open\&.
+.RE
+.PP
+\fB-x\fR, \fB--disallow-clear\fR
+.RS 4
+Disallow clearing operations (see
+\fBlttng-clear\fR(1))\&.
+.sp
+See also the
+\fBLTTNG_RELAYD_DISALLOW_CLEAR\fR
+environment variable\&.
+.RE
+.PP
+\fB--fd-pool-size\fR=\fISIZE\fR
+.RS 4
+Set the size of the file descriptor pool to
+\fISIZE\fR\&.
+.sp
+\fISIZE\fR
+is the maximum number of file descriptors that may be kept opened simultaneously by the relay daemon\&.
+.sp
+Default: the soft
+\fBRLIMIT_NOFILE\fR
+resource limit of the process (see
+\fBgetrlimit\fR(2))\&.
 .RE
 .PP
 \fB-g\fR \fIGROUP\fR, \fB--group\fR=\fIGROUP\fR
@@ -138,14 +333,14 @@ as Unix tracing group (default:
 \fBtracing\fR)\&.
 .RE
 .PP
-\fB-o\fR \fIPATH\fR, \fB--output\fR=\fIPATH\fR
+\fB-w\fR \fIPATH\fR, \fB--working-directory\fR=\fIPATH\fR
 .RS 4
-Set base directory of written trace data to
+Set the working directory of the processes the relay daemon creates to
 \fIPATH\fR\&.
 .sp
-See the
-\fIOutput directory\fR
-section above for more information\&.
+See also the
+\fBLTTNG_RELAYD_WORKING_DIRECTORY\fR
+environment variable\&.
 .RE
 .PP
 \fB-v\fR, \fB--verbose\fR
@@ -159,9 +354,28 @@ letters to the option (that is,
 and
 \fB-vvv\fR)\&.
 .RE
+.SS "Output"
+.sp
+See the \fIOutput directory\fR section above for more information\&.
+.PP
+\fB-p\fR, \fB--group-output-by-host\fR
+.RS 4
+Group the written trace directories by hostname (default)\&.
+.RE
+.PP
+\fB-s\fR, \fB--group-output-by-session\fR
+.RS 4
+Group the written trace directories by tracing session name instead of by hostname\&.
+.RE
+.PP
+\fB-o\fR \fIPATH\fR, \fB--output\fR=\fIPATH\fR
+.RS 4
+Set the base output directory of the written trace directories to
+\fIPATH\fR\&.
+.RE
 .SS "Ports"
 .sp
-See the \fIURL format\fR section above for more information about the syntax of the following options\*(Aq \fIURL\fR argument\&.
+See the \fIURL format\fR section above for more information about the syntax of the following \fIURL\fR argument\&.
 .PP
 \fB-C\fR \fIURL\fR, \fB--control-port\fR=\fIURL\fR
 .RS 4
@@ -207,6 +421,16 @@ Set to 1 to abort the process after the first error is encountered\&.
 \fBLTTNG_NETWORK_SOCKET_TIMEOUT\fR
 .RS 4
 Socket connection, receive and send timeout (milliseconds)\&. A value of 0 or \-1 uses the timeout of the operating system (default)\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_DISALLOW_CLEAR\fR
+.RS 4
+Set to 1 to disallow clearing operations (see
+\fBlttng-clear\fR(1))\&.
+.sp
+The
+\fB--disallow-clear\fR
+option overrides this variable\&.
 .RE
 .PP
 \fBLTTNG_RELAYD_HEALTH\fR
@@ -292,6 +516,15 @@ in
 \fBtcp\fR(7)
 for more information\&.
 .RE
+.PP
+\fBLTTNG_RELAYD_WORKING_DIRECTORY\fR
+.RS 4
+Working directory of the processes the relay daemon creates\&.
+.sp
+The
+\fB--working-directory\fR
+option overrides this variable\&.
+.RE
 .SH "FILES"
 .PP
 \fB$LTTNG_HOME/.lttng\fR
@@ -301,7 +534,7 @@ User LTTng runtime and configuration directory\&.
 .PP
 \fB$LTTNG_HOME/lttng-traces\fR
 .RS 4
-Default output directory of LTTng traces\&. This can be overridden with the
+Default base output directory of LTTng traces\&. This can be overridden with the
 \fB--output\fR
 option\&.
 .RE
@@ -440,4 +673,4 @@ Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.p
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
 .SH "SEE ALSO"
 .sp
-\fBlttng\fR(1), \fBlttng-sessiond\fR(8), \fBlttng-crash\fR(1), \fBlttng-ust\fR(3), \fBbabeltrace\fR(1)
+\fBlttng\fR(1), \fBlttng-sessiond\fR(8), \fBlttng-crash\fR(1), \fBlttng-ust\fR(3), \fBbabeltrace2\fR(1)

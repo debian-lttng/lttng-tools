@@ -1,18 +1,8 @@
 /*
- * Copyright (C) - 2012 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by as
- * published by the Free Software Foundation; only version 2 of the License.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <assert.h>
@@ -30,7 +20,7 @@ int lttng_opt_mi;
 /* Number of TAP tests in this file */
 #define NUM_TESTS 11
 
-void test_uri_parsing(void)
+static void test_uri_parsing(void)
 {
 	ssize_t size;
 	const char *s_uri1;
@@ -198,7 +188,7 @@ void test_uri_parsing(void)
 	assert(!uri);
 }
 
-void test_uri_cmp()
+static void test_uri_cmp()
 {
 	struct lttng_uri *uri1, *uri2;
 	const char *s_uri1 = "net://localhost";

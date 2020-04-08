@@ -5,23 +5,8 @@
  *
  * Copyright (C) 2018 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * SPDX-License-Identifier: MIT
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
  */
 
 #include <stddef.h>
@@ -37,6 +22,7 @@
 
 const char *session_name;
 
+static
 bool schedules_equal(const struct lttng_rotation_schedule *a,
 		const struct lttng_rotation_schedule *b)
 {
@@ -99,6 +85,7 @@ end:
 	return equal;
 }
 
+static
 void test_add_null_session(void)
 {
 	enum lttng_rotation_status status;
@@ -112,6 +99,7 @@ void test_add_null_session(void)
 	lttng_rotation_schedule_destroy(size_schedule);
 }
 
+static
 void test_add_null_schedule(void)
 {
 	enum lttng_rotation_status status;
@@ -121,6 +109,7 @@ void test_add_null_schedule(void)
 			"NULL schedule rejected by lttng_session_add_rotation_schedule()");
 }
 
+static
 void test_add_uninitialized_schedule(void)
 {
 	enum lttng_rotation_status status;
@@ -147,6 +136,7 @@ void test_add_uninitialized_schedule(void)
 	lttng_rotation_schedule_destroy(periodic_schedule);
 }
 
+static
 void test_remove_null_session(void)
 {
 	enum lttng_rotation_status status;
@@ -160,6 +150,7 @@ void test_remove_null_session(void)
 	lttng_rotation_schedule_destroy(size_schedule);
 }
 
+static
 void test_remove_null_schedule(void)
 {
 	enum lttng_rotation_status status;
@@ -169,6 +160,7 @@ void test_remove_null_schedule(void)
 			"NULL schedule rejected by lttng_session_remove_rotation_schedule()");
 }
 
+static
 void test_remove_uninitialized_schedule(void)
 {
 	enum lttng_rotation_status status;
@@ -191,6 +183,7 @@ void test_remove_uninitialized_schedule(void)
 	lttng_rotation_schedule_destroy(periodic_schedule);
 }
 
+static
 void test_uninitialized_schedule_get(void)
 {
 	uint64_t value;
@@ -215,6 +208,7 @@ void test_uninitialized_schedule_get(void)
 
 }
 
+static
 void test_add_list_remove_schedule(
 		const struct lttng_rotation_schedule *original_schedule)
 {
@@ -264,6 +258,7 @@ void test_add_list_remove_schedule(
 
 }
 
+static
 void test_add_list_remove_size_schedule(void)
 {
 	struct lttng_rotation_schedule *size_schedule;
@@ -276,6 +271,7 @@ void test_add_list_remove_size_schedule(void)
 	lttng_rotation_schedule_destroy(size_schedule);
 }
 
+static
 void test_add_list_remove_periodic_schedule(void)
 {
 	struct lttng_rotation_schedule *periodic_schedule;

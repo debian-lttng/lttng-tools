@@ -2,12 +2,12 @@
 .\"     Title: lttng-untrack
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 14 March 2017
+.\"      Date: 4 March 2020
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.11.2
+.\"    Source: LTTng 2.12.0
 .\"  Language: English
 .\"
-.TH "LTTNG\-UNTRACK" "1" "14 March 2017" "LTTng 2\&.11\&.2" "LTTng Manual"
+.TH "LTTNG\-UNTRACK" "1" "4 March 2020" "LTTng 2\&.12\&.0" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -28,25 +28,49 @@
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
 .SH "NAME"
-lttng-untrack \- Remove one or more entries from an LTTng resource tracker
+lttng-untrack \- Remove one or more values from an LTTng process attribute tracker
 .SH "SYNOPSIS"
 .sp
+Remove specific process attribute values from a Linux kernel domain tracker:
+.sp
 .nf
-\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBuntrack\fR (\fB--kernel\fR | \fB--userspace\fR)
-      [\fB--session\fR=\fISESSION\fR] (\fB--pid\fR=\fIPID\fR[,\fIPID\fR]\&... | \fB--all\fR \fB--pid\fR)
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBuntrack\fR \fB--kernel\fR
+      (\fB--pid\fR=PID[,PID]\&... | \fB--vpid\fR=VPID[,VPID]\&... |
+      \fB--uid\fR=UID[,UID]\&... | \fB--vuid\fR=VUID[,VUID]\&... |
+      \fB--gid\fR=GID[,GID]\&... | \fB--vgid\fR=VGID[,VGID]\&... )\&...
+.fi
+.sp
+Remove all possible process attribute values from a Linux kernel domain tracker:
+.sp
+.nf
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBuntrack\fR \fB--kernel\fR
+      \fB--all\fR (\fB--pid\fR | \fB--vpid\fR | \fB--uid\fR |
+      \fB--vuid\fR | \fB--gid\fR | \fB--vgid\fR )\&...
+.fi
+.sp
+Remove specific process attribute values from a user space domain tracker:
+.sp
+.nf
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBuntrack\fR \fB--userspace\fR
+      (\fB--vpid\fR=VPID[,VPID]\&... | \fB--vuid\fR=VUID[,VUID]\&... | \fB--vgid\fR=VGID[,VGID]\&...)\&...
+.fi
+.sp
+Remove all possible process attribute values from a user space domain tracker:
+.sp
+.nf
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBuntrack\fR \fB--userspace\fR
+      \fB--all\fR (\fB--vpid\fR | \fB--vgid\fR | \fB--vuid\fR)\&...
 .fi
 .SH "DESCRIPTION"
 .sp
-The \fBlttng untrack\fR commands removes one or more entries from a resource tracker\&.
+The \fBlttng untrack\fR commands removes one or more values from a process attribute tracker\&.
 .sp
 See \fBlttng-track\fR(1) to learn more about LTTng trackers\&.
 .sp
-The untrack command removes specific resources from a tracker\&. The resources to remove must have been precedently added by \fBlttng-track\fR(1)\&. It is also possible to remove all the resources from the whitelist using the \fB--all\fR option\&.
-.sp
-As of this version, the only available tracker is the PID tracker\&.
+The untrack command removes specific process attribute values from a tracker\(cqs inclusion set\&. The attributes to remove must have been precedently added by \fBlttng-track\fR(1)\&. It is also possible to remove all the possible values of a process attribute from the inclusion set using the \fB--all\fR option\&.
 .SS "Example"
 .sp
-One common operation is to create a tracing session (see \fBlttng-create\fR(1)), remove all the entries from the PID tracker whitelist, start tracing, and then manually track PIDs while tracing is active\&.
+One common operation is to create a tracing session (see \fBlttng-create\fR(1)), remove all the entries from the PID tracker inclusion set, start tracing, and then manually track PIDs while tracing is active\&.
 .sp
 Assume the maximum system PID is 7 for this example\&.
 .sp
@@ -62,7 +86,7 @@ $ lttng create
 .RE
 .\}
 .sp
-Initial whitelist:
+Initial inclusion set:
 .sp
 .if n \{\
 .RS 4
@@ -80,13 +104,13 @@ Command:
 .RS 4
 .\}
 .nf
-$ lttng untrack \-\-userspace \-\-pid \-\-all
+$ lttng untrack \-\-kernel \-\-pid \-\-all
 .fi
 .if n \{\
 .RE
 .\}
 .sp
-Whitelist:
+inclusion set:
 .sp
 .if n \{\
 .RS 4
@@ -104,16 +128,16 @@ Commands:
 .RS 4
 .\}
 .nf
-$ lttng enable\-event \-\-userspace \&.\&.\&.
+$ lttng enable\-event \-\-kernel \&.\&.\&.
 $ lttng start
 $ # \&.\&.\&.
-$ lttng track \-\-userspace \-\-pid=3,5
+$ lttng track \-\-kernel \-\-pid=3,5
 .fi
 .if n \{\
 .RE
 .\}
 .sp
-Whitelist:
+inclusion set:
 .sp
 .if n \{\
 .RS 4
@@ -131,13 +155,13 @@ Command:
 .RS 4
 .\}
 .nf
-$ lttng track \-\-userspace \-\-pid=2
+$ lttng track \-\-kernel \-\-pid=2
 .fi
 .if n \{\
 .RE
 .\}
 .sp
-Whitelist:
+inclusion set:
 .sp
 .if n \{\
 .RS 4
@@ -157,18 +181,18 @@ One of:
 .PP
 \fB-k\fR, \fB--kernel\fR
 .RS 4
-Untrack resources tracked in the Linux kernel domain\&.
+Track process attributes in the Linux kernel domain\&.
 .RE
 .PP
 \fB-u\fR, \fB--userspace\fR
 .RS 4
-Untrack resources tracked in the user space domain\&.
+Track process attributes in the user space domain\&.
 .RE
 .SS "Target"
 .PP
-\fB-s\fR, \fB--session\fR=\fISESSION\fR
+\fB-s\fR \fISESSION\fR, \fB--session\fR=\fISESSION\fR
 .RS 4
-Untrack resources in the tracing session named
+Untrack process attributes in the tracing session named
 \fISESSION\fR
 instead of the current tracing session\&.
 .RE
@@ -176,21 +200,156 @@ instead of the current tracing session\&.
 .PP
 \fB-a\fR, \fB--all\fR
 .RS 4
-Used in conjunction with an empty
-\fB--pid\fR
+Used in conjunction with a single, empty
+\fB--pid\fR,
+\fB--vpid\fR,
+\fB--uid\fR,
+\fB--vuid\fR,
+\fB--gid\fR, or
+\fB--vgid\fR
 option: untrack
 \fIall\fR
-process IDs (clear the whitelist)\&.
+possible process attribute values (remove all values from the inclusion set)\&.
 .RE
 .PP
 \fB-p\fR [\fIPID\fR[,\fIPID\fR]\&...], \fB--pid\fR[=\fIPID\fR[,\fIPID\fR]\&...]
 .RS 4
-Untrack process IDs
+Untrack process ID values
 \fIPID\fR
-(remove them from the current whitelist)\&.
+(remove them from the process ID inclusion set)\&.
+.sp
+\fIPID\fR
+is the process ID attribute of a process as seen from the
+\fIroot PID namespace\fR
+(see
+\fBpid_namespaces\fR(7))\&. It can only be used with the
+\fB--kernel\fR
+domain option\&.
 .sp
 The
 \fIPID\fR
+argument must be omitted when also using the
+\fB--all\fR
+option\&.
+.RE
+.PP
+\fB--vpid\fR[=\fIVPID\fR[,\fIVPID\fR]\&...]
+.RS 4
+Untrack virtual process ID values
+\fIVPID\fR
+(remove them from the virtual process ID inclusion set)\&.
+.sp
+\fIVPID\fR
+is the virtual process ID attribute of a process as seen from the
+\fIPID namespace\fR
+of the process (see
+\fBpid_namespaces\fR(7))\&.
+.sp
+The
+\fIVPID\fR
+argument must be omitted when also using the
+\fB--all\fR
+option\&.
+.RE
+.PP
+\fB--uid\fR[=\fIUSER\fR[,\fIUSER\fR]\&...]
+.RS 4
+Untrack user ID process attribute values
+\fIUSER\fR
+(remove them from the user ID inclusion set)\&.
+.sp
+\fIUSER\fR
+is the real user ID (see
+\fBgetuid\fR(3)) of a process as seen from the
+\fIroot user namespace\fR
+(see
+\fBuser_namespaces\fR(7))\&. It can only be used with the
+\fB--kernel\fR
+domain option\&.
+.sp
+\fIUSER\fR
+can also be a user name\&. No name resolution is performed;
+\fIUSER\fR
+will be matched against the names in the inclusion set\&.
+.sp
+The
+\fIUSER\fR
+argument must be omitted when also using the
+\fB--all\fR
+option\&.
+.RE
+.PP
+\fB--vuid\fR[=\fIUSER\fR[,\fIUSER\fR]\&...]
+.RS 4
+Untrack virtual user ID process attribute values
+\fIUSER\fR
+(remove them from the virtual user ID inclusion set)\&.
+.sp
+\fIUSER\fR
+is the real user ID (see
+\fBgetuid\fR(3)) of a process as seen from the
+\fIuser namespace\fR
+of the process (see
+\fBuser_namespaces\fR(7))\&.
+.sp
+\fIUSER\fR
+can also be a user name\&. No name resolution is performed;
+\fIUSER\fR
+will be matched against the names in the inclusion set\&.
+.sp
+The
+\fIUSER\fR
+argument must be omitted when also using the
+\fB--all\fR
+option\&.
+.RE
+.PP
+\fB--gid\fR[=\fIGROUP\fR[,\fIGROUP\fR]\&...]
+.RS 4
+Untrack group ID process attribute values
+\fIGROUP\fR
+(remove them from the group ID inclusion set)\&.
+.sp
+\fIGROUP\fR
+is the real group ID (see
+\fBgetgid\fR(3)) of a process as seen from the
+\fIroot user namespace\fR
+(see
+\fBuser_namespaces\fR(7))\&. It can only be used with the
+\fB--kernel\fR
+domain option\&.
+.sp
+\fIGROUP\fR
+can also be a group name\&. No name resolution is performed;
+\fIGROUP\fR
+will be matched against the names in the inclusion set\&.
+.sp
+The
+\fIGROUP\fR
+argument must be omitted when also using the
+\fB--all\fR
+option\&.
+.RE
+.PP
+\fB--vgid\fR[=\fIGROUP\fR[,\fIGROUP\fR]\&...]
+.RS 4
+Untrack virtual group ID process attribute values
+\fIGROUP\fR(remove them from the virtual group ID inclusion set)\&.
+.sp
+\fIGROUP\fR
+is the real group ID (see
+\fBgetgid\fR(3)) of a process as seen from the
+\fIuser namespace\fR
+of the process (see
+\fBuser_namespaces\fR(7))\&.
+.sp
+\fIGROUP\fR
+can also be a group name\&. No name resolution is performed;
+\fIGROUP\fR
+will be matched against the names in the inclusion set\&.
+.sp
+The
+\fIGROUP\fR
 argument must be omitted when also using the
 \fB--all\fR
 option\&.

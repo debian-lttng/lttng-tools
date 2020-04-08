@@ -1,18 +1,8 @@
 /*
- * Copyright (C) - 2018 Francis Deslauriers <francis.deslauriers@efficios.com>
+ * Copyright (C) 2018 Francis Deslauriers <francis.deslauriers@efficios.com>
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License as published by the
- * Free Software Foundation; version 2.1 of the License.
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
- * This library is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License
- * for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this library; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
  */
 
 #include <dlfcn.h>
@@ -25,13 +15,15 @@
 #include "callsites.h"
 #endif
 
-void exec_callsite()
+void exec_callsite(void);
+void exec_callsite(void)
 {
 #if HAS_CALLSITES
 	call_tracepoint();
 #endif
 }
 
+static
 void print_list(void)
 {
 	fprintf(stderr, "Test list (-t X):\n");
@@ -41,6 +33,8 @@ void print_list(void)
 	fprintf(stderr, "\t2: simulate the upgrade of a library containing the callsites using dlopen() and dlclose(). \n");
 }
 
+#if HAS_CALLSITES
+static
 int dl_open_all(int nb_libraries, char **libraries)
 {
 	int i, ret = 0;
@@ -71,6 +65,7 @@ error:
  * Takes 2 paths to libraries, dlopen() the first, trace, dlopen() the second,
  * and dlclose the first to simulate the upgrade of a library.
  */
+static
 int upgrade_lib(int nb_libraries, char **libraries)
 {
 	int i, ret = 0;
@@ -102,11 +97,14 @@ int upgrade_lib(int nb_libraries, char **libraries)
 error:
 	return ret;
 }
+#endif /* HAS_CALLSITES */
 
+#if !HAS_CALLSITES
 /*
  * Simulate the upgrade of a library containing a callsite.
  * Receives two libraries containing callsites for the same tracepoint.
  */
+static
 int upgrade_callsite(int nb_libraries, char **libraries)
 {
 	int ret = 0;
@@ -169,6 +167,7 @@ int upgrade_callsite(int nb_libraries, char **libraries)
 error:
 	return ret;
 }
+#endif /* !HAS_CALLSITES */
 
 int main(int argc, const char **argv)
 {

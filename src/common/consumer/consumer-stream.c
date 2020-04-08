@@ -1,20 +1,10 @@
 /*
- * Copyright (C) 2011 - Julien Desfossez <julien.desfossez@polymtl.ca>
- *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
- * Copyright (C) 2013 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2011 Julien Desfossez <julien.desfossez@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2013 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -594,7 +584,7 @@ int consumer_stream_create_output_files(struct lttng_consumer_stream *stream,
 
 	DBG("Opening stream output file \"%s\"", stream_path);
 	chunk_status = lttng_trace_chunk_open_file(stream->trace_chunk, stream_path,
-			flags, mode, &stream->out_fd);
+			flags, mode, &stream->out_fd, false);
         if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 		ERR("Failed to open stream file \"%s\"", stream->name);
 		ret = -1;
@@ -605,15 +595,15 @@ int consumer_stream_create_output_files(struct lttng_consumer_stream *stream,
 		if (stream->index_file) {
 			lttng_index_file_put(stream->index_file);
 		}
-                stream->index_file = lttng_index_file_create_from_trace_chunk(
+		chunk_status = lttng_index_file_create_from_trace_chunk(
 				stream->trace_chunk,
 				stream->chan->pathname,
 				stream->name,
 				stream->chan->tracefile_size,
 				stream->tracefile_count_current,
 				CTF_INDEX_MAJOR, CTF_INDEX_MINOR,
-				false);
-		if (!stream->index_file) {
+				false, &stream->index_file);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			ret = -1;
 			goto end;
 		}

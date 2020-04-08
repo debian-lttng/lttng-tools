@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2017 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -2959,7 +2949,7 @@ bool evaluate_buffer_usage_condition(const struct lttng_condition *condition,
 		 * forego this double-multiplication or it could be performed
 		 * as fixed-point math.
 		 *
-		 * Note that caching should accomodate the case where the
+		 * Note that caching should accommodates the case where the
 		 * condition applies to multiple channels (i.e. don't assume
 		 * that all channels matching my_chann* have the same size...)
 		 */

@@ -1,20 +1,10 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
- *                      Julien Desfossez <julien.desfossez@polymtl.ca>
- *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 Julien Desfossez <julien.desfossez@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 /*
@@ -35,7 +25,7 @@
 #include <common/compat/socket.h>
 #include <common/uri.h>
 #include <common/defaults.h>
-#include <common/compat/uuid.h>
+#include <common/uuid.h>
 #include <common/macros.h>
 #include <common/optional.h>
 
@@ -60,54 +50,57 @@
 
 enum lttcomm_sessiond_command {
 	/* Tracer command */
-	LTTNG_ADD_CONTEXT                     = 0,
+	LTTNG_ADD_CONTEXT                               = 0,
 	/* LTTNG_CALIBRATE used to be here */
-	LTTNG_DISABLE_CHANNEL                 = 2,
-	LTTNG_DISABLE_EVENT                   = 3,
-	LTTNG_LIST_SYSCALLS                   = 4,
-	LTTNG_ENABLE_CHANNEL                  = 5,
-	LTTNG_ENABLE_EVENT                    = 6,
+	LTTNG_DISABLE_CHANNEL                           = 2,
+	LTTNG_DISABLE_EVENT                             = 3,
+	LTTNG_LIST_SYSCALLS                             = 4,
+	LTTNG_ENABLE_CHANNEL                            = 5,
+	LTTNG_ENABLE_EVENT                              = 6,
 	/* 7 */
 	/* Session daemon command */
 	/* 8 */
-	LTTNG_DESTROY_SESSION                 = 9,
-	LTTNG_LIST_CHANNELS                   = 10,
-	LTTNG_LIST_DOMAINS                    = 11,
-	LTTNG_LIST_EVENTS                     = 12,
-	LTTNG_LIST_SESSIONS                   = 13,
-	LTTNG_LIST_TRACEPOINTS                = 14,
-	LTTNG_REGISTER_CONSUMER               = 15,
-	LTTNG_START_TRACE                     = 16,
-	LTTNG_STOP_TRACE                      = 17,
-	LTTNG_LIST_TRACEPOINT_FIELDS          = 18,
+	LTTNG_DESTROY_SESSION                           = 9,
+	LTTNG_LIST_CHANNELS                             = 10,
+	LTTNG_LIST_DOMAINS                              = 11,
+	LTTNG_LIST_EVENTS                               = 12,
+	LTTNG_LIST_SESSIONS                             = 13,
+	LTTNG_LIST_TRACEPOINTS                          = 14,
+	LTTNG_REGISTER_CONSUMER                         = 15,
+	LTTNG_START_TRACE                               = 16,
+	LTTNG_STOP_TRACE                                = 17,
+	LTTNG_LIST_TRACEPOINT_FIELDS                    = 18,
 
 	/* Consumer */
-	LTTNG_DISABLE_CONSUMER                = 19,
-	LTTNG_ENABLE_CONSUMER                 = 20,
-	LTTNG_SET_CONSUMER_URI                = 21,
+	LTTNG_DISABLE_CONSUMER                          = 19,
+	LTTNG_ENABLE_CONSUMER                           = 20,
+	LTTNG_SET_CONSUMER_URI                          = 21,
 	/* 22 */
 	/* 23 */
-	LTTNG_DATA_PENDING                    = 24,
-	LTTNG_SNAPSHOT_ADD_OUTPUT             = 25,
-	LTTNG_SNAPSHOT_DEL_OUTPUT             = 26,
-	LTTNG_SNAPSHOT_LIST_OUTPUT            = 27,
-	LTTNG_SNAPSHOT_RECORD                 = 28,
+	LTTNG_DATA_PENDING                              = 24,
+	LTTNG_SNAPSHOT_ADD_OUTPUT                       = 25,
+	LTTNG_SNAPSHOT_DEL_OUTPUT                       = 26,
+	LTTNG_SNAPSHOT_LIST_OUTPUT                      = 27,
+	LTTNG_SNAPSHOT_RECORD                           = 28,
 	/* 29 */
 	/* 30 */
-	LTTNG_SAVE_SESSION                    = 31,
-	LTTNG_TRACK_PID                       = 32,
-	LTTNG_UNTRACK_PID                     = 33,
-	LTTNG_LIST_TRACKER_PIDS               = 34,
-	LTTNG_SET_SESSION_SHM_PATH            = 40,
-	LTTNG_REGENERATE_METADATA             = 41,
-	LTTNG_REGENERATE_STATEDUMP            = 42,
-	LTTNG_REGISTER_TRIGGER                = 43,
-	LTTNG_UNREGISTER_TRIGGER              = 44,
-	LTTNG_ROTATE_SESSION                  = 45,
-	LTTNG_ROTATION_GET_INFO               = 46,
-	LTTNG_ROTATION_SET_SCHEDULE           = 47,
-	LTTNG_SESSION_LIST_ROTATION_SCHEDULES = 48,
-	LTTNG_CREATE_SESSION_EXT              = 49
+	LTTNG_SAVE_SESSION                              = 31,
+	LTTNG_PROCESS_ATTR_TRACKER_ADD_INCLUDE_VALUE    = 32,
+	LTTNG_PROCESS_ATTR_TRACKER_REMOVE_INCLUDE_VALUE = 33,
+	LTTNG_PROCESS_ATTR_TRACKER_GET_POLICY           = 34,
+	LTTNG_PROCESS_ATTR_TRACKER_SET_POLICY           = 35,
+	LTTNG_PROCESS_ATTR_TRACKER_GET_INCLUSION_SET     = 36,
+	LTTNG_SET_SESSION_SHM_PATH                      = 40,
+	LTTNG_REGENERATE_METADATA                       = 41,
+	LTTNG_REGENERATE_STATEDUMP                      = 42,
+	LTTNG_REGISTER_TRIGGER                          = 43,
+	LTTNG_UNREGISTER_TRIGGER                        = 44,
+	LTTNG_ROTATE_SESSION                            = 45,
+	LTTNG_ROTATION_GET_INFO                         = 46,
+	LTTNG_ROTATION_SET_SCHEDULE                     = 47,
+	LTTNG_SESSION_LIST_ROTATION_SCHEDULES           = 48,
+	LTTNG_CREATE_SESSION_EXT                        = 49,
+	LTTNG_CLEAR_SESSION                             = 50,
 };
 
 enum lttcomm_relayd_command {
@@ -139,6 +132,10 @@ enum lttcomm_relayd_command {
 	RELAYD_CLOSE_TRACE_CHUNK            = 20,
 	/* Ask the relay whether a trace chunk exists (2.11+) */
 	RELAYD_TRACE_CHUNK_EXISTS           = 21,
+	/* Get the current configuration of a relayd peer (2.12+) */
+	RELAYD_GET_CONFIGURATION            = 22,
+
+	/* Feature branch specific commands start at 10000. */
 };
 
 /*
@@ -181,6 +178,7 @@ enum lttcomm_return_code {
 	LTTCOMM_CONSUMERD_TRACE_CHUNK_EXISTS_LOCAL, /* Trace chunk exists on consumer daemon. */
 	LTTCOMM_CONSUMERD_TRACE_CHUNK_EXISTS_REMOTE,/* Trace chunk exists on relay daemon. */
 	LTTCOMM_CONSUMERD_UNKNOWN_TRACE_CHUNK,      /* Unknown trace chunk. */
+	LTTCOMM_CONSUMERD_RELAYD_CLEAR_DISALLOWED,  /* Relayd does not accept clear command. */
 
 	/* MUST be last element */
 	LTTCOMM_NR,						/* Last element */
@@ -260,6 +258,13 @@ struct lttcomm_proto_ops {
 	ssize_t (*sendmsg) (struct lttcomm_sock *sock, const void *buf,
 			size_t len, int flags);
 };
+
+struct process_attr_integral_value_comm {
+	union {
+		int64_t _signed;
+		uint64_t _unsigned;
+	} u;
+} LTTNG_PACKED;
 
 /*
  * Data structure received from lttng client to session daemon.
@@ -348,8 +353,35 @@ struct lttcomm_session_msg {
 			char shm_path[PATH_MAX];
 		} LTTNG_PACKED set_shm_path;
 		struct {
-			uint32_t pid;
-		} LTTNG_PACKED pid_tracker;
+			/* enum lttng_process_attr */
+			int32_t process_attr;
+			/* enum lttng_process_attr_value_type */
+			int32_t value_type;
+
+			struct process_attr_integral_value_comm integral_value;
+			/*
+			 * For user/group names, a variable length,
+			 * zero-terminated, string of length 'name_len'
+			 * (including the terminator) follows.
+			 *
+			 * integral_value should not be used in those cases.
+			 */
+			uint32_t name_len;
+		} LTTNG_PACKED process_attr_tracker_add_remove_include_value;
+		struct {
+			/* enum lttng_process_attr */
+			int32_t process_attr;
+		} LTTNG_PACKED process_attr_tracker_get_inclusion_set;
+		struct {
+			/* enum lttng_process_attr */
+			int32_t process_attr;
+		} LTTNG_PACKED process_attr_tracker_get_tracking_policy;
+		struct {
+			/* enum lttng_process_attr */
+			int32_t process_attr;
+			/* enum lttng_tracking_policy */
+			int32_t tracking_policy;
+		} LTTNG_PACKED process_attr_tracker_set_tracking_policy;
 		struct {
 			uint32_t length;
 		} LTTNG_PACKED trigger;
@@ -454,6 +486,13 @@ struct lttcomm_session_destroy_command_header {
 };
 
 /*
+ * tracker command header.
+ */
+struct lttcomm_tracker_command_header {
+	uint32_t nb_tracker_id;
+} LTTNG_PACKED;
+
+/*
  * Data structure for the response from sessiond to the lttng client.
  */
 struct lttcomm_lttng_msg {
@@ -543,7 +582,7 @@ struct lttcomm_consumer_msg {
 			uint64_t key;				/* Unique channel key. */
 			/* ID of the session's current trace chunk. */
 			LTTNG_OPTIONAL_COMM(uint64_t) LTTNG_PACKED chunk_id;
-			unsigned char uuid[UUID_LEN];	/* uuid for ust tracer. */
+			unsigned char uuid[LTTNG_UUID_LEN];	/* uuid for ust tracer. */
 			uint32_t chan_id;			/* Channel ID on the tracer side. */
 			uint64_t tracefile_size;	/* bytes */
 			uint32_t tracefile_count;	/* number of tracefiles */
@@ -660,6 +699,9 @@ struct lttcomm_consumer_msg {
 		struct {
 			lttng_uuid sessiond_uuid;
 		} LTTNG_PACKED init;
+		struct {
+			uint64_t key;
+		} LTTNG_PACKED clear_channel;
 	} u;
 } LTTNG_PACKED;
 

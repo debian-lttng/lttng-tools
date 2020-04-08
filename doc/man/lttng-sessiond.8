@@ -4,10 +4,10 @@
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
 .\"      Date: 17 September 2018
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.11.2
+.\"    Source: LTTng 2.12.0
 .\"  Language: English
 .\"
-.TH "LTTNG\-SESSIOND" "8" "17 September 2018" "LTTng 2\&.11\&.2" "LTTng Manual"
+.TH "LTTNG\-SESSIOND" "8" "17 September 2018" "LTTng 2\&.12\&.0" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -54,7 +54,7 @@ The \fILinux Trace Toolkit: next generation\fR <https://lttng.org/> is an open s
 .sp
 LTTng consists of Linux kernel modules (for Linux kernel tracing) and dynamically loaded libraries (for user application and library tracing)\&.
 .sp
-The \fILTTng session daemon\fR is a tracing registry which allows the user to interact with multiple tracers (kernel and user space) within the same container, a \fItracing session\fR\&. Traces can be gathered from the Linux kernel and/or from instrumented applications (see \fBlttng-ust\fR(3))\&. You can aggregate and read the events of LTTng traces using \fBbabeltrace\fR(1)\&.
+The \fILTTng session daemon\fR is a tracing registry which allows the user to interact with multiple tracers (kernel and user space) within the same container, a \fItracing session\fR\&. Traces can be gathered from the Linux kernel and/or from instrumented applications (see \fBlttng-ust\fR(3))\&. You can aggregate and read the events of LTTng traces using \fBbabeltrace2\fR(1)\&.
 .sp
 To trace the Linux kernel, the session daemon needs to be running as \fBroot\fR\&. LTTng uses a \fItracing group\fR to allow specific users to interact with the root session daemon\&. The default tracing group name is \fBtracing\fR\&. You can use the \fB--group\fR option to set the tracing group name to use\&.
 .sp
@@ -123,6 +123,12 @@ Start as Unix daemon, but keep file descriptors (console) open\&. Use the
 option instead to close the file descriptors\&.
 .RE
 .PP
+\fB-f\fR \fIPATH\fR, \fB--config\fR=\fIPATH\fR
+.RS 4
+Load session daemon configuration from path
+\fIPATH\fR\&.
+.RE
+.PP
 \fB-d\fR, \fB--daemonize\fR
 .RS 4
 Start as Unix daemon, and close file descriptors (console)\&. Use the
@@ -130,13 +136,7 @@ Start as Unix daemon, and close file descriptors (console)\&. Use the
 option instead to keep the file descriptors open\&.
 .RE
 .PP
-\fB-f\fR, \fB--config\fR=\fIPATH\fR
-.RS 4
-Load session daemon configuration from path
-\fIPATH\fR\&.
-.RE
-.PP
-\fB-g\fR, \fB--group\fR=\fIGROUP\fR
+\fB-g\fR \fIGROUP\fR, \fB--group\fR=\fIGROUP\fR
 .RS 4
 Use
 \fIGROUP\fR
@@ -144,7 +144,7 @@ as Unix tracing group (default:
 \fBtracing\fR)\&.
 .RE
 .PP
-\fB-l\fR, \fB--load\fR=\fIPATH\fR
+\fB-l\fR \fIPATH\fR, \fB--load\fR=\fIPATH\fR
 .RS 4
 Automatically load tracing session configurations from
 \fIPATH\fR, either a directory or a file, instead of loading them from the default search directories\&.
@@ -588,4 +588,4 @@ Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.p
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
 .SH "SEE ALSO"
 .sp
-\fBlttng\fR(1), \fBlttng-relayd\fR(8), \fBlttng-crash\fR(1), \fBlttng-ust\fR(3), \fBbabeltrace\fR(1)
+\fBlttng\fR(1), \fBlttng-relayd\fR(8), \fBlttng-crash\fR(1), \fBlttng-ust\fR(3), \fBbabeltrace2\fR(1)

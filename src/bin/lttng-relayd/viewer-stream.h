@@ -2,22 +2,12 @@
 #define _VIEWER_STREAM_H
 
 /*
- * Copyright (C) 2013 - Julien Desfossez <jdesfossez@efficios.com>
- *                      David Goulet <dgoulet@efficios.com>
- *               2015 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2013 Julien Desfossez <jdesfossez@efficios.com>
+ * Copyright (C) 2013 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <limits.h>
@@ -50,8 +40,7 @@ struct relay_viewer_stream {
 	struct relay_stream *stream;
 
 	struct {
-		/* FD from which to read the stream data. */
-		struct stream_fd *fd;
+		struct fs_handle *handle;
 		struct lttng_trace_chunk *trace_chunk;
 	} stream_file;
 	/* index file from which to read the index data. */
@@ -91,5 +80,7 @@ int viewer_stream_rotate(struct relay_viewer_stream *vstream);
 bool viewer_stream_is_tracefile_seq_readable(struct relay_viewer_stream *vstream,
 		uint64_t seq);
 void print_viewer_streams(void);
+void viewer_stream_close_files(struct relay_viewer_stream *vstream);
+void viewer_stream_sync_tracefile_array_tail(struct relay_viewer_stream *vstream);
 
 #endif /* _VIEWER_STREAM_H */

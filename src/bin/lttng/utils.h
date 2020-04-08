@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _LTTNG_UTILS_H
@@ -55,11 +45,13 @@ int get_count_order_ulong(unsigned long x);
 const char *get_domain_str(enum lttng_domain_type domain);
 const char *get_event_type_str(enum lttng_event_type event_type);
 
-int print_missing_or_multiple_domains(unsigned int sum);
+int print_missing_or_multiple_domains(unsigned int domain_count,
+		bool include_agent_domains);
 
 int spawn_relayd(const char *pathname, int port);
 int check_relayd(void);
 void print_session_stats(const char *session_name);
+int get_session_stats_str(const char *session_name, char **str);
 int show_cmd_help(const char *cmd_name, const char *help_msg);
 
 int print_trace_archive_location(

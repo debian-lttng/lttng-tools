@@ -1,20 +1,15 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include "bin/lttng-sessiond/tracker.h"
+#include "common/tracker.h"
+#include "common/utils.h"
+#include "lttng/lttng-error.h"
+#include "lttng/tracker.h"
 #define _LGPL_SOURCE
 #include <fcntl.h>
 #include <stdlib.h>
@@ -679,120 +674,370 @@ error:
 	return ret;
 }
 
-
-int kernel_track_pid(struct ltt_kernel_session *session, int pid)
+static
+struct process_attr_tracker *_kernel_get_process_attr_tracker(
+		struct ltt_kernel_session *session,
+		enum lttng_process_attr process_attr)
 {
-	int ret;
-
-	DBG("Kernel track PID %d for session id %" PRIu64 ".",
-			pid, session->id);
-	ret = kernctl_track_pid(session->fd, pid);
-	if (!ret) {
-		return LTTNG_OK;
-	}
-	switch (-ret) {
-	case EINVAL:
-		return LTTNG_ERR_INVALID;
-	case ENOMEM:
-		return LTTNG_ERR_NOMEM;
-	case EEXIST:
-		return LTTNG_ERR_PID_TRACKED;
+	switch (process_attr) {
+	case LTTNG_PROCESS_ATTR_PROCESS_ID:
+		return session->tracker_pid;
+	case LTTNG_PROCESS_ATTR_VIRTUAL_PROCESS_ID:
+		return session->tracker_vpid;
+	case LTTNG_PROCESS_ATTR_USER_ID:
+		return session->tracker_uid;
+	case LTTNG_PROCESS_ATTR_VIRTUAL_USER_ID:
+		return session->tracker_vuid;
+	case LTTNG_PROCESS_ATTR_GROUP_ID:
+		return session->tracker_gid;
+	case LTTNG_PROCESS_ATTR_VIRTUAL_GROUP_ID:
+		return session->tracker_vgid;
 	default:
-		return LTTNG_ERR_UNK;
+		return NULL;
 	}
 }
 
-int kernel_untrack_pid(struct ltt_kernel_session *session, int pid)
+const struct process_attr_tracker *kernel_get_process_attr_tracker(
+		struct ltt_kernel_session *session,
+		enum lttng_process_attr process_attr)
 {
-	int ret;
-
-	DBG("Kernel untrack PID %d for session id %" PRIu64 ".",
-			pid, session->id);
-	ret = kernctl_untrack_pid(session->fd, pid);
-	if (!ret) {
-		return LTTNG_OK;
-	}
-	switch (-ret) {
-	case EINVAL:
-		return LTTNG_ERR_INVALID;
-	case ENOMEM:
-		return LTTNG_ERR_NOMEM;
-	case ENOENT:
-		return LTTNG_ERR_PID_NOT_TRACKED;
-	default:
-		return LTTNG_ERR_UNK;
-	}
+	return (const struct process_attr_tracker *)
+			_kernel_get_process_attr_tracker(session, process_attr);
 }
 
-ssize_t kernel_list_tracker_pids(struct ltt_kernel_session *session,
-		int **_pids)
+enum lttng_error_code kernel_process_attr_tracker_set_tracking_policy(
+		struct ltt_kernel_session *session,
+		enum lttng_process_attr process_attr,
+		enum lttng_tracking_policy policy)
 {
-	int fd, ret;
-	int pid;
-	ssize_t nbmem, count = 0;
-	FILE *fp;
-	int *pids;
+	int ret;
+	enum lttng_error_code ret_code = LTTNG_OK;
+	struct process_attr_tracker *tracker =
+			_kernel_get_process_attr_tracker(session, process_attr);
+	enum lttng_tracking_policy previous_policy;
 
-	fd = kernctl_list_tracker_pids(session->fd);
-	if (fd < 0) {
-		PERROR("kernel tracker pids list");
-		goto error;
-	}
-
-	fp = fdopen(fd, "r");
-	if (fp == NULL) {
-		PERROR("kernel tracker pids list fdopen");
-		goto error_fp;
-	}
-
-	nbmem = KERNEL_TRACKER_PIDS_INIT_LIST_SIZE;
-	pids = zmalloc(sizeof(*pids) * nbmem);
-	if (pids == NULL) {
-		PERROR("alloc list pids");
-		count = -ENOMEM;
+	if (!tracker) {
+		ret_code = LTTNG_ERR_INVALID;
 		goto end;
 	}
 
-	while (fscanf(fp, "process { pid = %u; };\n", &pid) == 1) {
-		if (count >= nbmem) {
-			int *new_pids;
-			size_t new_nbmem;
+	previous_policy = process_attr_tracker_get_tracking_policy(tracker);
+	ret = process_attr_tracker_set_tracking_policy(tracker, policy);
+	if (ret) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
 
-			new_nbmem = nbmem << 1;
-			DBG("Reallocating pids list from %zu to %zu entries",
-					nbmem, new_nbmem);
-			new_pids = realloc(pids, new_nbmem * sizeof(*new_pids));
-			if (new_pids == NULL) {
-				PERROR("realloc list events");
-				free(pids);
-				count = -ENOMEM;
+	if (previous_policy == policy) {
+		goto end;
+	}
+
+	switch (policy) {
+	case LTTNG_TRACKING_POLICY_INCLUDE_ALL:
+		if (process_attr == LTTNG_PROCESS_ATTR_PROCESS_ID) {
+			/*
+			 * Maintain a special case for the process ID process
+			 * attribute tracker as it was the only supported
+			 * attribute prior to 2.12.
+			 */
+			ret = kernctl_track_pid(session->fd, -1);
+		} else {
+			ret = kernctl_track_id(session->fd, process_attr, -1);
+		}
+		break;
+	case LTTNG_TRACKING_POLICY_EXCLUDE_ALL:
+	case LTTNG_TRACKING_POLICY_INCLUDE_SET:
+		/* fall-through. */
+		if (process_attr == LTTNG_PROCESS_ATTR_PROCESS_ID) {
+			/*
+			 * Maintain a special case for the process ID process
+			 * attribute tracker as it was the only supported
+			 * attribute prior to 2.12.
+			 */
+			ret = kernctl_untrack_pid(session->fd, -1);
+		} else {
+			ret = kernctl_untrack_id(session->fd, process_attr, -1);
+		}
+		break;
+	default:
+		abort();
+	}
+	/* kern-ctl error handling */
+	switch (-ret) {
+	case 0:
+		ret_code = LTTNG_OK;
+		break;
+	case EINVAL:
+		ret_code = LTTNG_ERR_INVALID;
+		break;
+	case ENOMEM:
+		ret_code = LTTNG_ERR_NOMEM;
+		break;
+	case EEXIST:
+		ret_code = LTTNG_ERR_PROCESS_ATTR_EXISTS;
+		break;
+	default:
+		ret_code = LTTNG_ERR_UNK;
+		break;
+	}
+end:
+	return ret_code;
+}
+
+enum lttng_error_code kernel_process_attr_tracker_inclusion_set_add_value(
+		struct ltt_kernel_session *session,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value)
+{
+	int ret, integral_value;
+	enum lttng_error_code ret_code;
+	struct process_attr_tracker *tracker;
+	enum process_attr_tracker_status status;
+
+	/*
+	 * Convert process attribute tracker value to the integral
+	 * representation required by the kern-ctl API.
+	 */
+	switch (process_attr) {
+	case LTTNG_PROCESS_ATTR_PROCESS_ID:
+	case LTTNG_PROCESS_ATTR_VIRTUAL_PROCESS_ID:
+		integral_value = (int) value->value.pid;
+		break;
+	case LTTNG_PROCESS_ATTR_USER_ID:
+	case LTTNG_PROCESS_ATTR_VIRTUAL_USER_ID:
+		if (value->type == LTTNG_PROCESS_ATTR_VALUE_TYPE_USER_NAME) {
+			uid_t uid;
+
+			ret_code = utils_user_id_from_name(
+					value->value.user_name, &uid);
+			if (ret_code != LTTNG_OK) {
 				goto end;
 			}
-			/* Zero the new memory */
-			memset(new_pids + nbmem, 0,
-				(new_nbmem - nbmem) * sizeof(*new_pids));
-			nbmem = new_nbmem;
-			pids = new_pids;
+			integral_value = (int) uid;
+		} else {
+			integral_value = (int) value->value.uid;
 		}
-		pids[count++] = pid;
+		break;
+	case LTTNG_PROCESS_ATTR_GROUP_ID:
+	case LTTNG_PROCESS_ATTR_VIRTUAL_GROUP_ID:
+		if (value->type == LTTNG_PROCESS_ATTR_VALUE_TYPE_GROUP_NAME) {
+			gid_t gid;
+
+			ret_code = utils_group_id_from_name(
+					value->value.group_name, &gid);
+			if (ret_code != LTTNG_OK) {
+				goto end;
+			}
+			integral_value = (int) gid;
+		} else {
+			integral_value = (int) value->value.gid;
+		}
+		break;
+	default:
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
 	}
 
-	*_pids = pids;
-	DBG("Kernel list tracker pids done (%zd pids)", count);
+	tracker = _kernel_get_process_attr_tracker(session, process_attr);
+	if (!tracker) {
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	status = process_attr_tracker_inclusion_set_add_value(tracker, value);
+	if (status != PROCESS_ATTR_TRACKER_STATUS_OK) {
+		switch (status) {
+		case PROCESS_ATTR_TRACKER_STATUS_EXISTS:
+			ret_code = LTTNG_ERR_PROCESS_ATTR_EXISTS;
+			break;
+		case PROCESS_ATTR_TRACKER_STATUS_INVALID_TRACKING_POLICY:
+			ret_code = LTTNG_ERR_PROCESS_ATTR_TRACKER_INVALID_TRACKING_POLICY;
+			break;
+		case PROCESS_ATTR_TRACKER_STATUS_ERROR:
+		default:
+			ret_code = LTTNG_ERR_UNK;
+			break;
+		}
+		goto end;
+	}
+
+	DBG("Kernel track %s %d for session id %" PRIu64,
+			lttng_process_attr_to_string(process_attr),
+			integral_value, session->id);
+	if (process_attr == LTTNG_PROCESS_ATTR_PROCESS_ID) {
+		/*
+		 * Maintain a special case for the process ID process attribute
+		 * tracker as it was the only supported attribute prior to 2.12.
+		 */
+		ret = kernctl_track_pid(session->fd, integral_value);
+	} else {
+		ret = kernctl_track_id(
+				session->fd, process_attr, integral_value);
+	}
+	if (ret == 0) {
+		ret_code = LTTNG_OK;
+		goto end;
+	}
+
+	kernel_wait_quiescent();
+
+	/* kern-ctl error handling */
+	switch (-ret) {
+	case 0:
+		ret_code = LTTNG_OK;
+		break;
+	case EINVAL:
+		ret_code = LTTNG_ERR_INVALID;
+		break;
+	case ENOMEM:
+		ret_code = LTTNG_ERR_NOMEM;
+		break;
+	case EEXIST:
+		ret_code = LTTNG_ERR_PROCESS_ATTR_EXISTS;
+		break;
+	default:
+		ret_code = LTTNG_ERR_UNK;
+		break;
+	}
+
+	/* Attempt to remove the value from the tracker. */
+	status = process_attr_tracker_inclusion_set_remove_value(
+			tracker, value);
+	if (status != PROCESS_ATTR_TRACKER_STATUS_OK) {
+		ERR("Failed to roll-back the tracking of kernel %s process attribute %d while handling a kern-ctl error",
+				lttng_process_attr_to_string(process_attr),
+				integral_value);
+	}
 end:
-	ret = fclose(fp);	/* closes both fp and fd */
-	if (ret) {
-		PERROR("fclose");
-	}
-	return count;
+	return ret_code;
+}
 
-error_fp:
-	ret = close(fd);
-	if (ret) {
-		PERROR("close");
+enum lttng_error_code kernel_process_attr_tracker_inclusion_set_remove_value(
+		struct ltt_kernel_session *session,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value)
+{
+	int ret, integral_value;
+	enum lttng_error_code ret_code;
+	struct process_attr_tracker *tracker;
+	enum process_attr_tracker_status status;
+
+	/*
+	 * Convert process attribute tracker value to the integral
+	 * representation required by the kern-ctl API.
+	 */
+	switch (process_attr) {
+	case LTTNG_PROCESS_ATTR_PROCESS_ID:
+	case LTTNG_PROCESS_ATTR_VIRTUAL_PROCESS_ID:
+		integral_value = (int) value->value.pid;
+		break;
+	case LTTNG_PROCESS_ATTR_USER_ID:
+	case LTTNG_PROCESS_ATTR_VIRTUAL_USER_ID:
+		if (value->type == LTTNG_PROCESS_ATTR_VALUE_TYPE_USER_NAME) {
+			uid_t uid;
+
+			ret_code = utils_user_id_from_name(
+					value->value.user_name, &uid);
+			if (ret_code != LTTNG_OK) {
+				goto end;
+			}
+			integral_value = (int) uid;
+		} else {
+			integral_value = (int) value->value.uid;
+		}
+		break;
+	case LTTNG_PROCESS_ATTR_GROUP_ID:
+	case LTTNG_PROCESS_ATTR_VIRTUAL_GROUP_ID:
+		if (value->type == LTTNG_PROCESS_ATTR_VALUE_TYPE_GROUP_NAME) {
+			gid_t gid;
+
+			ret_code = utils_group_id_from_name(
+					value->value.group_name, &gid);
+			if (ret_code != LTTNG_OK) {
+				goto end;
+			}
+			integral_value = (int) gid;
+		} else {
+			integral_value = (int) value->value.gid;
+		}
+		break;
+	default:
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
 	}
-error:
-	return -1;
+
+	tracker = _kernel_get_process_attr_tracker(session, process_attr);
+	if (!tracker) {
+		ret_code = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	status = process_attr_tracker_inclusion_set_remove_value(
+			tracker, value);
+	if (status != PROCESS_ATTR_TRACKER_STATUS_OK) {
+		switch (status) {
+		case PROCESS_ATTR_TRACKER_STATUS_MISSING:
+			ret_code = LTTNG_ERR_PROCESS_ATTR_MISSING;
+			break;
+		case PROCESS_ATTR_TRACKER_STATUS_INVALID_TRACKING_POLICY:
+			ret_code = LTTNG_ERR_PROCESS_ATTR_TRACKER_INVALID_TRACKING_POLICY;
+			break;
+		case PROCESS_ATTR_TRACKER_STATUS_ERROR:
+		default:
+			ret_code = LTTNG_ERR_UNK;
+			break;
+		}
+		goto end;
+	}
+
+	DBG("Kernel track %s %d for session id %" PRIu64,
+			lttng_process_attr_to_string(process_attr),
+			integral_value, session->id);
+	if (process_attr == LTTNG_PROCESS_ATTR_PROCESS_ID) {
+		/*
+		 * Maintain a special case for the process ID process attribute
+		 * tracker as it was the only supported attribute prior to 2.12.
+		 */
+		ret = kernctl_untrack_pid(session->fd, integral_value);
+	} else {
+		ret = kernctl_untrack_id(
+				session->fd, process_attr, integral_value);
+	}
+	if (ret == 0) {
+		ret_code = LTTNG_OK;
+		goto end;
+	}
+	kernel_wait_quiescent();
+
+	/* kern-ctl error handling */
+	switch (-ret) {
+	case 0:
+		ret_code = LTTNG_OK;
+		break;
+	case EINVAL:
+		ret_code = LTTNG_ERR_INVALID;
+		break;
+	case ENOMEM:
+		ret_code = LTTNG_ERR_NOMEM;
+		break;
+	case ENOENT:
+		ret_code = LTTNG_ERR_PROCESS_ATTR_MISSING;
+		break;
+	default:
+		ret_code = LTTNG_ERR_UNK;
+		break;
+	}
+
+	/* Attempt to add the value to the tracker. */
+	status = process_attr_tracker_inclusion_set_add_value(
+			tracker, value);
+	if (status != PROCESS_ATTR_TRACKER_STATUS_OK) {
+		ERR("Failed to roll-back the tracking of kernel %s process attribute %d while handling a kern-ctl error",
+				lttng_process_attr_to_string(process_attr),
+				integral_value);
+	}
+end:
+	return ret_code;
 }
 
 /*
@@ -1289,6 +1534,7 @@ enum lttng_error_code kernel_snapshot_record(
 	struct lttng_ht_iter iter;
 	struct ltt_kernel_metadata *saved_metadata;
 	char *trace_path = NULL;
+	size_t consumer_path_offset = 0;
 
 	assert(ksess);
 	assert(ksess->consumer);
@@ -1315,7 +1561,7 @@ enum lttng_error_code kernel_snapshot_record(
 	}
 
 	trace_path = setup_channel_trace_path(ksess->consumer,
-			DEFAULT_KERNEL_TRACE_DIR);
+			DEFAULT_KERNEL_TRACE_DIR, &consumer_path_offset);
 	if (!trace_path) {
 		status = LTTNG_ERR_INVALID;
 		goto error;
@@ -1338,7 +1584,7 @@ enum lttng_error_code kernel_snapshot_record(
 		cds_list_for_each_entry(chan, &ksess->channel_list.head, list) {
 			status = consumer_snapshot_channel(socket, chan->key, output, 0,
 					ksess->uid, ksess->gid,
-					trace_path, wait,
+					&trace_path[consumer_path_offset], wait,
 					nb_packets_per_stream);
 			if (status != LTTNG_OK) {
 				(void) kernel_consumer_destroy_metadata(socket,
@@ -1349,7 +1595,8 @@ enum lttng_error_code kernel_snapshot_record(
 
 		/* Snapshot metadata, */
 		status = consumer_snapshot_channel(socket, ksess->metadata->key, output,
-				1, ksess->uid, ksess->gid, trace_path, wait, 0);
+				1, ksess->uid, ksess->gid, &trace_path[consumer_path_offset],
+				wait, 0);
 		if (status != LTTNG_OK) {
 			goto error_consumer;
 		}
@@ -1494,7 +1741,7 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 					ksess->uid, ksess->gid, ksess->consumer,
 					/* is_metadata_channel */ false);
 			if (ret < 0) {
-				status = LTTNG_ERR_KERN_CONSUMER_FAIL;
+				status = LTTNG_ERR_ROTATION_FAIL_CONSUMER;
 				goto error;
 			}
 		}
@@ -1506,7 +1753,7 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 				ksess->uid, ksess->gid, ksess->consumer,
 				/* is_metadata_channel */ true);
 		if (ret < 0) {
-			status = LTTNG_ERR_KERN_CONSUMER_FAIL;
+			status = LTTNG_ERR_ROTATION_FAIL_CONSUMER;
 			goto error;
 		}
 	}
@@ -1645,4 +1892,84 @@ LTTNG_HIDDEN
 bool kernel_tracer_is_initialized(void)
 {
 	return kernel_tracer_fd >= 0;
+}
+
+/*
+ *  Clear a kernel session.
+ *
+ * Return LTTNG_OK on success or else an LTTng error code.
+ */
+enum lttng_error_code kernel_clear_session(struct ltt_session *session)
+{
+	int ret;
+	enum lttng_error_code status = LTTNG_OK;
+	struct consumer_socket *socket;
+	struct lttng_ht_iter iter;
+	struct ltt_kernel_session *ksess = session->kernel_session;
+
+	assert(ksess);
+	assert(ksess->consumer);
+
+	DBG("Clear kernel session %s (session %" PRIu64 ")",
+			session->name, session->id);
+
+	rcu_read_lock();
+
+	if (ksess->active) {
+		ERR("Expecting inactive session %s (%" PRIu64 ")", session->name, session->id);
+		status = LTTNG_ERR_FATAL;
+		goto end;
+	}
+
+	/*
+	 * Note that this loop will end after one iteration given that there is
+	 * only one kernel consumer.
+	 */
+	cds_lfht_for_each_entry(ksess->consumer->socks->ht, &iter.iter,
+			socket, node.node) {
+		struct ltt_kernel_channel *chan;
+
+		/* For each channel, ask the consumer to clear it. */
+		cds_list_for_each_entry(chan, &ksess->channel_list.head, list) {
+			DBG("Clear kernel channel %" PRIu64 ", session %s",
+					chan->key, session->name);
+			ret = consumer_clear_channel(socket, chan->key);
+			if (ret < 0) {
+				goto error;
+			}
+		}
+
+		if (!ksess->metadata) {
+			/*
+			 * Nothing to do for the metadata.
+			 * This is a snapshot session.
+			 * The metadata is genererated on the fly.
+			 */
+			continue;
+		}
+
+		/*
+		 * Clear the metadata channel.
+		 * Metadata channel is not cleared per se but we still need to
+		 * perform a rotation operation on it behind the scene.
+		 */
+		ret = consumer_clear_channel(socket, ksess->metadata->key);
+		if (ret < 0) {
+			goto error;
+		}
+	}
+
+	goto end;
+error:
+	switch (-ret) {
+	case LTTCOMM_CONSUMERD_RELAYD_CLEAR_DISALLOWED:
+	      status = LTTNG_ERR_CLEAR_RELAY_DISALLOWED;
+	      break;
+	default:
+	      status = LTTNG_ERR_CLEAR_FAIL_CONSUMER;
+	      break;
+	}
+end:
+	rcu_read_unlock();
+	return status;
 }

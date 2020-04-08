@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2017 - Julien Desfossez <jdesfossez@efficios.com>
- * Copyright (C) 2018 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2017 Julien Desfossez <jdesfossez@efficios.com>
+ * Copyright (C) 2018 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -109,33 +99,6 @@ struct rotation_thread_timer_queue *rotation_thread_timer_queue_create(void)
 	pthread_mutex_init(&queue->lock, NULL);
 end:
 	return queue;
-}
-
-void log_job_destruction(const struct rotation_thread_job *job)
-{
-	enum lttng_error_level log_level;
-	const char *job_type_str = get_job_type_str(job->type);
-
-	switch (job->type) {
-	case ROTATION_THREAD_JOB_TYPE_SCHEDULED_ROTATION:
-		/*
-		 * Not a problem, the scheduled rotation is racing with the teardown
-		 * of the daemon. In this case, the rotation will not happen, which
-		 * is not a problem (or at least, not important enough to delay
-		 * the shutdown of the session daemon).
-		 */
-		log_level = PRINT_DBG;
-		break;
-	case ROTATION_THREAD_JOB_TYPE_CHECK_PENDING_ROTATION:
-		/* This is not expected to happen; warn the user. */
-		log_level = PRINT_WARN;
-		break;
-	default:
-		abort();
-	}
-
-	LOG(log_level, "Rotation thread timer queue still contains job of type %s targeting session \"%s\" on destruction",
-			job_type_str, job->session->name);
 }
 
 void rotation_thread_timer_queue_destroy(
@@ -564,7 +527,8 @@ int launch_session_rotation(struct ltt_session *session)
 	DBG("[rotation-thread] Launching scheduled time-based rotation on session \"%s\"",
 			session->name);
 
-	ret = cmd_rotate_session(session, &rotation_return, false);
+	ret = cmd_rotate_session(session, &rotation_return, false,
+		LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
 	if (ret == LTTNG_OK) {
 		DBG("[rotation-thread] Scheduled time-based rotation successfully launched on session \"%s\"",
 				session->name);
@@ -711,7 +675,8 @@ int handle_condition(const struct lttng_condition *condition,
 		goto end_unlock;
 	}
 
-	ret = cmd_rotate_session(session, NULL, false);
+	ret = cmd_rotate_session(session, NULL, false,
+		LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
 	if (ret == -LTTNG_ERR_ROTATION_PENDING) {
 		DBG("Rotate already pending, subscribe to the next threshold value");
 	} else if (ret != LTTNG_OK) {
@@ -796,6 +761,7 @@ end:
 	return ret;
 }
 
+static
 void *thread_rotation(void *data)
 {
 	int ret;

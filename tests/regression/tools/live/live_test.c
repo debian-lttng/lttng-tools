@@ -1,18 +1,8 @@
 /*
- * Copyright (c) - 2013 Julien Desfossez <jdesfossez@efficios.com>
+ * Copyright (C) 2013 Julien Desfossez <jdesfossez@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by as
- * published by the Free Software Foundation; only version 2 of the License.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <assert.h>
@@ -107,7 +97,7 @@ ssize_t lttng_live_send(int fd, const void *buf, size_t len)
 }
 
 static
-int connect_viewer(char *hostname)
+int connect_viewer(const char *hostname)
 {
 	struct hostent *host;
 	struct sockaddr_in server_addr;
@@ -148,6 +138,7 @@ end:
 	return ret;
 }
 
+static
 int establish_connection(void)
 {
 	struct lttng_viewer_cmd cmd;
@@ -192,6 +183,7 @@ error:
 /*
  * Returns the number of sessions, should be 1 during the unit test.
  */
+static
 int list_sessions(uint64_t *session_id)
 {
 	struct lttng_viewer_cmd cmd;
@@ -239,6 +231,7 @@ error:
 	return -1;
 }
 
+static
 int create_viewer_session(void)
 {
 	struct lttng_viewer_cmd cmd;
@@ -277,6 +270,7 @@ error:
 	return -1;
 }
 
+static
 int attach_session(uint64_t id)
 {
 	struct lttng_viewer_cmd cmd;
@@ -366,6 +360,7 @@ error:
 	return -1;
 }
 
+static
 int get_metadata(void)
 {
 	struct lttng_viewer_cmd cmd;
@@ -461,6 +456,7 @@ error:
 	return -1;
 }
 
+static
 int get_next_index(void)
 {
 	struct lttng_viewer_cmd cmd;
@@ -626,6 +622,7 @@ error:
 	return -1;
 }
 
+static
 int detach_viewer_session(uint64_t id)
 {
 	struct lttng_viewer_cmd cmd;

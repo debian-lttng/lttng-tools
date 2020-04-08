@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2019 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License, version 2.1 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
- * for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include <common/dynamic-array.h>
@@ -88,6 +78,22 @@ void lttng_dynamic_array_reset(struct lttng_dynamic_array *array)
 }
 
 LTTNG_HIDDEN
+void lttng_dynamic_array_clear(struct lttng_dynamic_array *array)
+{
+	if (array->destructor) {
+		size_t i;
+
+		for (i = 0; i < lttng_dynamic_array_get_count(array); i++) {
+			array->destructor(lttng_dynamic_array_get_element(array,
+					i));
+		}
+	}
+
+	(void) lttng_dynamic_buffer_set_size(&array->buffer, 0);
+	array->size = 0;
+}
+
+LTTNG_HIDDEN
 void lttng_dynamic_pointer_array_init(
 		struct lttng_dynamic_pointer_array *array,
 		lttng_dynamic_pointer_array_destructor destructor)
@@ -137,4 +143,29 @@ void lttng_dynamic_pointer_array_reset(
 		array->array.destructor = NULL;
 	}
 	lttng_dynamic_array_reset(&array->array);
+}
+
+LTTNG_HIDDEN
+void lttng_dynamic_pointer_array_clear(
+		struct lttng_dynamic_pointer_array *array)
+{
+	const lttng_dynamic_array_element_destructor destructor =
+			array->array.destructor;
+
+	/*
+	 * Prevent the destructor from being used by the underlying
+	 * dynamic array.
+	 */
+	array->array.destructor = NULL;
+	if (destructor) {
+		size_t i, count = lttng_dynamic_pointer_array_get_count(array);
+
+		for (i = 0; i < count; i++) {
+			void *ptr = lttng_dynamic_pointer_array_get_pointer(
+					array, i);
+			destructor(ptr);
+		}
+	}
+	lttng_dynamic_array_clear(&array->array);
+	array->array.destructor = destructor;
 }

@@ -1,20 +1,11 @@
 /*
- * Copyright (C) 2017 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2017 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include "version.h"
 #include "sessiond-config.h"
 #include <assert.h>
 #include "lttng-ust-ctl.h"
@@ -40,7 +31,7 @@ struct sessiond_config sessiond_config_build_defaults = {
 	.daemonize = 				false,
 	.sig_parent = 				false,
 
-	.tracing_group_name.value = 		DEFAULT_TRACING_GROUP,
+	.tracing_group_name.value = 		(char *) DEFAULT_TRACING_GROUP,
 	.kmod_probes_list.value =		NULL,
 	.kmod_extra_probes_list.value =		NULL,
 
@@ -497,6 +488,19 @@ LTTNG_HIDDEN
 void sessiond_config_log(struct sessiond_config *config)
 {
 	DBG_NO_LOC("[sessiond configuration]");
+	DBG_NO_LOC("\tversion                        %s", VERSION);
+	if (GIT_VERSION[0] != '\0') {
+		DBG_NO_LOC("\tgit version                    %s", GIT_VERSION);
+	}
+	if (EXTRA_VERSION_NAME[0] != '\0') {
+		DBG_NO_LOC("\textra version name             %s", EXTRA_VERSION_NAME);
+	}
+	if (EXTRA_VERSION_DESCRIPTION[0] != '\0') {
+		DBG_NO_LOC("\textra version description:\n\t%s", EXTRA_VERSION_DESCRIPTION);
+	}
+	if (EXTRA_VERSION_PATCHES[0] != '\0') {
+		DBG_NO_LOC("\textra version patches:\n\t%s", EXTRA_VERSION_PATCHES);
+	}
 	DBG_NO_LOC("\tverbose:                       %i", config->verbose);
 	DBG_NO_LOC("\tverbose consumer:              %i", config->verbose_consumer);
 	DBG_NO_LOC("\tquiet mode:                    %s", config->quiet ? "True" : "False");

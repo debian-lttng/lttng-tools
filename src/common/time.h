@@ -1,19 +1,8 @@
 /*
- * Copyright (C) 2016 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2016 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
  */
 
 #ifndef LTTNG_TIME_H
@@ -38,6 +27,7 @@
 #define USEC_PER_HOURS  (USEC_PER_MINUTE * MINUTE_PER_HOUR)
 
 #define ISO8601_STR_LEN sizeof("YYYYmmddTHHMMSS+HHMM")
+#define DATETIME_STR_LEN sizeof("YYYYmmdd-HHMMSS")
 
 LTTNG_HIDDEN
 bool locale_supports_utf8(void);
@@ -73,5 +63,8 @@ struct timespec timespec_abs_diff(struct timespec ts_a, struct timespec ts_b);
  */
 LTTNG_HIDDEN
 int time_to_iso8601_str(time_t time, char *str, size_t len);
+
+LTTNG_HIDDEN
+int time_to_datetime_str(time_t time, char *str, size_t len);
 
 #endif /* LTTNG_TIME_H */

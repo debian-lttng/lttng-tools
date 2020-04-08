@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
- *               2018 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2018 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -46,7 +36,7 @@
  * returned.
  */
 char *setup_channel_trace_path(struct consumer_output *consumer,
-		const char *session_path)
+		const char *session_path, size_t *consumer_path_offset)
 {
 	int ret;
 	char *pathname;
@@ -69,13 +59,15 @@ char *setup_channel_trace_path(struct consumer_output *consumer,
 	if (consumer->type == CONSUMER_DST_NET &&
 			consumer->relay_major_version == 2 &&
 			consumer->relay_minor_version < 11) {
-		ret = snprintf(pathname, LTTNG_PATH_MAX, "%s%s/%s%s",
+		ret = snprintf(pathname, LTTNG_PATH_MAX, "%s%s/%s/%s",
 				consumer->dst.net.base_dir,
 				consumer->chunk_path, consumer->domain_subdir,
 				session_path);
+		*consumer_path_offset = 0;
 	} else {
-		ret = snprintf(pathname, LTTNG_PATH_MAX, "%s%s",
+		ret = snprintf(pathname, LTTNG_PATH_MAX, "%s/%s",
 				consumer->domain_subdir, session_path);
+		*consumer_path_offset = strlen(consumer->domain_subdir) + 1;
 	}
 	DBG3("Consumer trace path relative to current trace chunk: \"%s\"",
 			pathname);
@@ -624,6 +616,7 @@ struct consumer_output *consumer_copy_output(struct consumer_output *src)
 	output->snapshot = src->snapshot;
 	output->relay_major_version = src->relay_major_version;
 	output->relay_minor_version = src->relay_minor_version;
+	output->relay_allows_clear = src->relay_allows_clear;
 	memcpy(&output->dst, &src->dst, sizeof(output->dst));
 	ret = consumer_copy_sockets(output, src);
 	if (ret < 0) {
@@ -1724,6 +1717,34 @@ error:
 	return ret;
 }
 
+int consumer_clear_channel(struct consumer_socket *socket, uint64_t key)
+{
+	int ret;
+	struct lttcomm_consumer_msg msg;
+
+	assert(socket);
+
+	DBG("Consumer clear channel %" PRIu64, key);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.cmd_type = LTTNG_CONSUMER_CLEAR_CHANNEL;
+	msg.u.clear_channel.key = key;
+
+	health_code_update();
+
+	pthread_mutex_lock(socket->lock);
+	ret = consumer_send_msg(socket, &msg);
+	if (ret < 0) {
+		goto error_socket;
+	}
+
+error_socket:
+	pthread_mutex_unlock(socket->lock);
+
+	health_code_update();
+	return ret;
+}
+
 int consumer_init(struct consumer_socket *socket,
 		const lttng_uuid sessiond_uuid)
 {
@@ -1755,13 +1776,15 @@ error:
  */
 int consumer_create_trace_chunk(struct consumer_socket *socket,
 		uint64_t relayd_id, uint64_t session_id,
-		struct lttng_trace_chunk *chunk)
+		struct lttng_trace_chunk *chunk,
+		const char *domain_subdir)
 {
 	int ret;
 	enum lttng_trace_chunk_status chunk_status;
 	struct lttng_credentials chunk_credentials;
-	const struct lttng_directory_handle *chunk_directory_handle;
-	int chunk_dirfd;
+	const struct lttng_directory_handle *chunk_directory_handle = NULL;
+	struct lttng_directory_handle *domain_handle = NULL;
+	int domain_dirfd;
 	const char *chunk_name;
 	bool chunk_name_overridden;
 	uint64_t chunk_id;
@@ -1769,6 +1792,7 @@ int consumer_create_trace_chunk(struct consumer_socket *socket,
 	char creation_timestamp_buffer[ISO8601_STR_LEN];
 	const char *creation_timestamp_str = "(none)";
 	const bool chunk_has_local_output = relayd_id == -1ULL;
+	enum lttng_trace_chunk_status tc_status;
 	struct lttcomm_consumer_msg msg = {
 		.cmd_type = LTTNG_CONSUMER_CREATE_TRACE_CHUNK,
 		.u.create_trace_chunk.session_id = session_id,
@@ -1830,9 +1854,34 @@ int consumer_create_trace_chunk(struct consumer_socket *socket,
 	msg.u.create_trace_chunk.chunk_id = chunk_id;
 
 	if (chunk_has_local_output) {
-		chunk_status = lttng_trace_chunk_get_chunk_directory_handle(
+		chunk_status = lttng_trace_chunk_borrow_chunk_directory_handle(
 				chunk, &chunk_directory_handle);
 		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
+		chunk_status = lttng_trace_chunk_get_credentials(
+				chunk, &chunk_credentials);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			/*
+			 * Not associating credentials to a sessiond chunk is a
+			 * fatal internal error.
+			 */
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
+		tc_status = lttng_trace_chunk_create_subdirectory(
+				chunk, domain_subdir);
+		if (tc_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			PERROR("Failed to create chunk domain output directory \"%s\"",
+				domain_subdir);
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
+		domain_handle = lttng_directory_handle_create_from_handle(
+				domain_subdir,
+				chunk_directory_handle);
+		if (!domain_handle) {
 			ret = -LTTNG_ERR_FATAL;
 			goto error;
 		}
@@ -1845,20 +1894,10 @@ int consumer_create_trace_chunk(struct consumer_socket *socket,
 		 * The ownership of the chunk directory handle's is maintained
 		 * by the trace chunk.
 		 */
-		chunk_dirfd = lttng_directory_handle_get_dirfd(
-				chunk_directory_handle);
-		assert(chunk_dirfd >= 0);
+		domain_dirfd = lttng_directory_handle_get_dirfd(
+				domain_handle);
+		assert(domain_dirfd >= 0);
 
-		chunk_status = lttng_trace_chunk_get_credentials(
-				chunk, &chunk_credentials);
-		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-			/*
-			 * Not associating credentials to a sessiond chunk is a
-			 * fatal internal error.
-			 */
-			ret = -LTTNG_ERR_FATAL;
-			goto error;
-		}
 		msg.u.create_trace_chunk.credentials.value.uid =
 				chunk_credentials.uid;
 		msg.u.create_trace_chunk.credentials.value.gid =
@@ -1881,9 +1920,9 @@ int consumer_create_trace_chunk(struct consumer_socket *socket,
 	}
 
 	if (chunk_has_local_output) {
-		DBG("Sending trace chunk directory fd to consumer");
+		DBG("Sending trace chunk domain directory fd to consumer");
 		health_code_update();
-		ret = consumer_send_fds(socket, &chunk_dirfd, 1);
+		ret = consumer_send_fds(socket, &domain_dirfd, 1);
 		health_code_update();
 		if (ret < 0) {
 			ERR("Trace chunk creation error on consumer");
@@ -1892,6 +1931,7 @@ int consumer_create_trace_chunk(struct consumer_socket *socket,
 		}
 	}
 error:
+	lttng_directory_handle_put(domain_handle);
 	return ret;
 }
 

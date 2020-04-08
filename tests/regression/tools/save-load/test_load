@@ -1,19 +1,8 @@
 #!/bin/bash
 #
-# Copyright (C) - 2014 David Goulet <dgoulet@efficios.com>
+# Copyright (C) 2014 David Goulet <dgoulet@efficios.com>
 #
-# This library is free software; you can redistribute it and/or modify it under
-# the terms of the GNU Lesser General Public License as published by the Free
-# Software Foundation; version 2.1 of the License.
-#
-# This library is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
-# details.
-#
-# You should have received a copy of the GNU Lesser General Public License
-# along with this library; if not, write to the Free Software Foundation, Inc.,
-# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+# SPDX-License-Identifier: LGPL-2.1-only
 
 TEST_DESC="Load session(s)"
 
@@ -27,7 +16,7 @@ EVENT_NAME="tp:tptest"
 
 DIR=$(readlink -f $TESTDIR)
 
-NUM_TESTS=67
+NUM_TESTS=75
 
 source $TESTDIR/utils/utils.sh
 
@@ -112,6 +101,9 @@ function test_all_load()
 	destroy_lttng_session_ok $SESSION_NAME
 	destroy_lttng_session_ok "$SESSION_NAME-complex"
 	destroy_lttng_session_ok "$SESSION_NAME-trackers"
+	destroy_lttng_session_ok "tracker_legacy_all"
+	destroy_lttng_session_ok "tracker_legacy_none"
+	destroy_lttng_session_ok "tracker_legacy_selective"
 
 	stop_lttng_relayd
 }
@@ -140,19 +132,36 @@ function test_trackers()
 		break;
 	fi
 	$TESTDIR/../src/bin/lttng/$LTTNG_BIN --mi XML list "$SESSION_NAME-trackers" > $mi_output_file
-	mi_result=$($CURDIR/../mi/extract_xml -e $mi_output_file "//lttng:command/lttng:output/lttng:sessions/lttng:session/lttng:domains/lttng:domain/lttng:trackers/lttng:pid_tracker/lttng:targets/lttng:pid_target")
+	mi_result=$($CURDIR/../mi/extract_xml -e $mi_output_file "//lttng:command/lttng:output/lttng:sessions/lttng:session/lttng:domains/lttng:domain/lttng:process_attr_trackers/lttng:vpid_process_attr_tracker/lttng:process_attr_values/lttng:vpid")
 	if [[ $mi_result = "true" ]]; then
-	    ok 0 "Pid target is present"
+	    ok 0 "VPID target is present"
 	else
-	    fail "Pid target missing"
+	    fail "VPID target missing"
+	fi
+
+	mi_result=$($CURDIR/../mi/extract_xml -e $mi_output_file "//lttng:command/lttng:output/lttng:sessions/lttng:session/lttng:domains/lttng:domain/lttng:process_attr_trackers/lttng:vuid_process_attr_tracker/lttng:process_attr_values/lttng:vuid")
+	if [[ $mi_result = "true" ]]; then
+	    ok 0 "VUID target is present"
+	else
+	    fail "VUID target missing"
+	fi
+
+	mi_result=$($CURDIR/../mi/extract_xml -e $mi_output_file "//lttng:command/lttng:output/lttng:sessions/lttng:session/lttng:domains/lttng:domain/lttng:process_attr_trackers/lttng:vgid_process_attr_tracker/lttng:process_attr_values/lttng:vgid")
+	if [[ $mi_result = "true" ]]; then
+	    ok 0 "VGID target is present"
+	else
+	    fail "VGID target missing"
 	fi
 
 	# Test to remove the target just to make sure
-	lttng_untrack_ok "-p 666 -u -s $SESSION_NAME-trackers"
-	rm $mi_output_file
+	lttng_untrack_ok "--vpid 666 -u -s $SESSION_NAME-trackers"
+	lttng_untrack_ok "--vuid 777 -u -s $SESSION_NAME-trackers"
+	lttng_untrack_ok "--vgid 888 -u -s $SESSION_NAME-trackers"
+	# Actually using vpid (backward compat)
+	lttng_untrack_ok "--pid 999 -u -s $SESSION_NAME-trackers"
 
 	destroy_lttng_session_ok "$SESSION_NAME-trackers"
-	rm -rf ${mi_output_file}
+	rm -f ${mi_output_file}
 }
 
 function test_override_url_normal()

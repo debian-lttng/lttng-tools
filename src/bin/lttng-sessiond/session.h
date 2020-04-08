@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _LTT_SESSION_H
@@ -35,6 +25,8 @@
 struct ltt_ust_session;
 
 typedef void (*ltt_session_destroy_notifier)(const struct ltt_session *session,
+		void *user_data);
+typedef void (*ltt_session_clear_notifier)(const struct ltt_session *session,
 		void *user_data);
 
 /*
@@ -170,9 +162,20 @@ struct ltt_session {
 	 * Keep a state if this session was rotated after the last stop command.
 	 * We only allow one rotation after a stop. At destroy, we also need to
 	 * know if a rotation occurred since the last stop to rename the current
-	 * chunk.
+	 * chunk. After a stop followed by rotate, all subsequent clear
+	 * (without prior start) will succeed, but will be effect-less.
 	 */
 	bool rotated_after_last_stop;
+	/*
+	 * Track whether the session was cleared after last stop. All subsequent
+	 * clear (without prior start) will succeed, but will be effect-less. A
+	 * subsequent rotate (without prior start) will return an error.
+	 */
+	bool cleared_after_last_stop;
+	/*
+	 * True if the session has had an explicit non-quiet rotation.
+	 */
+	bool rotated;
 	/*
 	 * Condition and trigger for size-based rotations.
 	 */
@@ -187,6 +190,7 @@ struct ltt_session {
 	char *last_archived_chunk_name;
 	LTTNG_OPTIONAL(uint64_t) last_archived_chunk_id;
 	struct lttng_dynamic_array destroy_notifiers;
+	struct lttng_dynamic_array clear_notifiers;
 	/* Session base path override. Set non-null. */
 	char *base_path;
 };
@@ -203,6 +207,10 @@ void session_unlock_list(void);
 void session_destroy(struct ltt_session *session);
 int session_add_destroy_notifier(struct ltt_session *session,
 		ltt_session_destroy_notifier notifier, void *user_data);
+
+int session_add_clear_notifier(struct ltt_session *session,
+		ltt_session_clear_notifier notifier, void *user_data);
+void session_notify_clear(struct ltt_session *session);
 
 bool session_get(struct ltt_session *session);
 void session_put(struct ltt_session *session);
@@ -251,9 +259,9 @@ int session_set_trace_chunk(struct ltt_session *session,
  * Close a chunk on the remote peers of a session. Has no effect on the
  * ltt_session itself.
  */
-int session_close_trace_chunk(const struct ltt_session *session,
+int session_close_trace_chunk(struct ltt_session *session,
 		struct lttng_trace_chunk *trace_chunk,
-		const enum lttng_trace_chunk_command_type *close_command,
+		enum lttng_trace_chunk_command_type close_command,
 		char *path);
 
 bool session_output_supports_trace_chunks(const struct ltt_session *session);

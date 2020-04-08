@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -40,6 +30,17 @@ bool relayd_supports_chunks(const struct lttcomm_relayd_sock *sock)
 	if (sock->major > 2) {
 		return true;
 	} else if (sock->major == 2 && sock->minor >= 11) {
+		return true;
+	}
+	return false;
+}
+
+static
+bool relayd_supports_get_configuration(const struct lttcomm_relayd_sock *sock)
+{
+	if (sock->major > 2) {
+		return true;
+	} else if (sock->major == 2 && sock->minor >= 12) {
 		return true;
 	}
 	return false;
@@ -491,20 +492,36 @@ error:
  * On success return 0 else return ret_code negative value.
  */
 int relayd_add_stream(struct lttcomm_relayd_sock *rsock, const char *channel_name,
-		const char *pathname, uint64_t *stream_id,
+		const char *domain_name, const char *_pathname, uint64_t *stream_id,
 		uint64_t tracefile_size, uint64_t tracefile_count,
 		struct lttng_trace_chunk *trace_chunk)
 {
 	int ret;
 	struct lttcomm_relayd_status_stream reply;
+	char pathname[RELAYD_COMM_LTTNG_PATH_MAX];
+	const char *separator;
 
 	/* Code flow error. Safety net. */
 	assert(rsock);
 	assert(channel_name);
-	assert(pathname);
+	assert(domain_name);
+	assert(_pathname);
 	assert(trace_chunk);
 
 	DBG("Relayd adding stream for channel name %s", channel_name);
+
+	if (_pathname[0] == '\0') {
+		separator = "";
+	} else {
+		separator = "/";
+	}
+	ret = snprintf(pathname, RELAYD_COMM_LTTNG_PATH_MAX, "%s%s%s",
+			domain_name, separator, _pathname);
+	if (ret <= 0 || ret >= RELAYD_COMM_LTTNG_PATH_MAX) {
+		ERR("stream path too long.");
+		ret = -1;
+		goto error;
+	}
 
 	/* Compat with relayd 2.1 */
 	if (rsock->minor == 1) {
@@ -1513,6 +1530,57 @@ int relayd_trace_chunk_exists(struct lttcomm_relayd_sock *sock,
 				", exists = %s", chunk_id,
 				reply.trace_chunk_exists ? "true" : "false");
 		*chunk_exists = !!reply.trace_chunk_exists;
+	}
+end:
+	return ret;
+}
+
+int relayd_get_configuration(struct lttcomm_relayd_sock *sock,
+		uint64_t query_flags,
+		uint64_t *result_flags)
+{
+	int ret = 0;
+	struct lttcomm_relayd_get_configuration msg = (typeof(msg)) {
+		.query_flags = htobe64(query_flags),
+	};
+	struct lttcomm_relayd_get_configuration_reply reply = {};
+
+	if (!relayd_supports_get_configuration(sock)) {
+		DBG("Refusing to get relayd configuration (unsupported by relayd)");
+		if (query_flags) {
+			ret = -1;
+			goto end;
+		}
+		*result_flags = 0;
+		goto end;
+	}
+
+	ret = send_command(sock, RELAYD_GET_CONFIGURATION, &msg, sizeof(msg),
+			0);
+	if (ret < 0) {
+		ERR("Failed to send get configuration command to relay daemon");
+		goto end;
+	}
+
+	ret = recv_reply(sock, &reply, sizeof(reply));
+	if (ret < 0) {
+		ERR("Failed to receive relay daemon get configuration command reply");
+		goto end;
+	}
+
+	reply.generic.ret_code = be32toh(reply.generic.ret_code);
+	if (reply.generic.ret_code != LTTNG_OK) {
+		ret = -1;
+		ERR("Relayd get configuration replied error %d",
+				reply.generic.ret_code);
+	} else {
+		reply.relayd_configuration_flags =
+			be64toh(reply.relayd_configuration_flags);
+		ret = 0;
+		DBG("Relayd successfully got configuration: query_flags = %" PRIu64
+				", results_flags = %" PRIu64, query_flags,
+				reply.relayd_configuration_flags);
+		*result_flags = reply.relayd_configuration_flags;
 	}
 end:
 	return ret;

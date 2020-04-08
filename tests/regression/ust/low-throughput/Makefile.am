@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 AM_CPPFLAGS += -I$(srcdir)
 
 noinst_PROGRAMS = gen-events
 gen_events_SOURCES = main.c tp.c tp.h
-gen_events_LDADD = -llttng-ust -lurcu $(DL_LIBS)
+gen_events_LDADD = $(UST_LIBS) $(DL_LIBS)
 
 noinst_SCRIPTS = test_low_throughput
 EXTRA_DIST = test_low_throughput

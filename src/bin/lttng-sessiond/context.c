@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
- * Copyright (C) 2016 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2016 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -266,6 +256,63 @@ int context_kernel_add(struct ltt_kernel_session *ksession,
 		break;
 	case LTTNG_EVENT_CONTEXT_CALLSTACK_USER:
 		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_CALLSTACK_USER;
+		break;
+	case LTTNG_EVENT_CONTEXT_CGROUP_NS:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_CGROUP_NS;
+		break;
+	case LTTNG_EVENT_CONTEXT_IPC_NS:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_IPC_NS;
+		break;
+	case LTTNG_EVENT_CONTEXT_MNT_NS:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_MNT_NS;
+		break;
+	case LTTNG_EVENT_CONTEXT_NET_NS:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_NET_NS;
+		break;
+	case LTTNG_EVENT_CONTEXT_PID_NS:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_PID_NS;
+		break;
+	case LTTNG_EVENT_CONTEXT_USER_NS:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_USER_NS;
+		break;
+	case LTTNG_EVENT_CONTEXT_UTS_NS:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_UTS_NS;
+		break;
+	case LTTNG_EVENT_CONTEXT_UID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_UID;
+		break;
+	case LTTNG_EVENT_CONTEXT_EUID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_EUID;
+		break;
+	case LTTNG_EVENT_CONTEXT_SUID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_SUID;
+		break;
+	case LTTNG_EVENT_CONTEXT_GID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_GID;
+		break;
+	case LTTNG_EVENT_CONTEXT_EGID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_EGID;
+		break;
+	case LTTNG_EVENT_CONTEXT_SGID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_SGID;
+		break;
+	case LTTNG_EVENT_CONTEXT_VUID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_VUID;
+		break;
+	case LTTNG_EVENT_CONTEXT_VEUID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_VEUID;
+		break;
+	case LTTNG_EVENT_CONTEXT_VSUID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_VSUID;
+		break;
+	case LTTNG_EVENT_CONTEXT_VGID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_VGID;
+		break;
+	case LTTNG_EVENT_CONTEXT_VEGID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_VEGID;
+		break;
+	case LTTNG_EVENT_CONTEXT_VSGID:
+		kctx->ctx.ctx = LTTNG_KERNEL_CONTEXT_VSGID;
 		break;
 	default:
 		ret = LTTNG_ERR_KERN_CONTEXT_FAIL;

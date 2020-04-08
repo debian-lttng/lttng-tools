@@ -1,25 +1,14 @@
 #!/bin/bash
 #
-# Copyright (C) - 2014 Jonathan Rajotte <jonathan.r.julien@gmail.com>
+# Copyright (C) 2014 Jonathan Rajotte <jonathan.r.julien@gmail.com>
 #
-# This library is free software; you can redistribute it and/or modify it under
-# the terms of the GNU Lesser General Public License as published by the Free
-# Software Foundation; version 2.1 of the License.
-#
-# This library is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
-# details.
-#
-# You should have received a copy of the GNU Lesser General Public License
-# along with this library; if not, write to the Free Software Foundation, Inc.,
-# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+# SPDX-License-Identifier: LGPL-2.1-only
 
 TEST_DESC="Machine interface testing"
 
 CURDIR=$(dirname $0)/
 TESTDIR=$CURDIR/../../../
-XSD_PATH=$TESTDIR/../src/common/mi-lttng-3.0.xsd
+XSD_PATH=$TESTDIR/../src/common/mi-lttng-4.0.xsd
 
 #Test app for ust event
 TESTAPP_PATH="$TESTDIR/utils/testapp"
@@ -50,14 +39,14 @@ XPATH_LIST_UST_EVENT="$XPATH_CMD_OUTPUT/lttng:domains/lttng:domain[./lttng:type 
 XPATH_SNAPSHOT_ADD_SNAPSHOT="$XPATH_CMD_OUTPUT/lttng:snapshot_action[./lttng:name = 'add-output']/lttng:output"
 XPATH_SNAPSHOT_LIST="$XPATH_CMD_OUTPUT/lttng:snapshot_action[./lttng:name = 'list-output']/lttng:output"
 XPATH_SNAPSHOT_DEL="$XPATH_CMD_OUTPUT/lttng:snapshot_action[./lttng:name = 'del-output']/lttng:output"
-XPATH_TRACK_UNTRACK_PID="$XPATH_CMD_OUTPUT/lttng:targets/lttng:pid_target"
-XPATH_PID_TRACKER="$XPATH_CMD_OUTPUT/lttng:sessions/lttng:session/lttng:domains/lttng:domain/lttng:trackers/lttng:pid_tracker"
+XPATH_TRACK_UNTRACK_VPID="$XPATH_CMD_OUTPUT/lttng:process_attr_trackers/lttng:vpid_process_attr_tracker/lttng:process_attr_values/lttng:vpid/lttng:type"
+XPATH_VPID_TRACKER="$XPATH_CMD_OUTPUT/lttng:sessions/lttng:session/lttng:domains/lttng:domain/lttng:process_attr_trackers/lttng:vpid_process_attr_tracker"
 
 DEVNULL=/dev/null 2>&1
 
 DIR=$(readlink -f $TESTDIR)
 
-NUM_TESTS=230
+NUM_TESTS=246
 
 source $TESTDIR/utils/utils.sh
 
@@ -544,7 +533,9 @@ function test_list_ust_event ()
 	OUTPUT_DEST=$OUTPUT_DIR/$OUTPUT_FILE
 
 	#Begin testing
-	$TESTAPP_BIN $NR_ITER $NR_USEC_WAIT ${file_sync_after_first} ${file_sync_before_last} & 2>/dev/null
+	$TESTAPP_BIN -i $NR_ITER -w $NR_USEC_WAIT \
+		--sync-after-first-event ${file_sync_after_first} \
+		--sync-before-last-event ${file_sync_before_last} & 2>/dev/null
 
 	while [ ! -f "${file_sync_after_first}" ]; do
 		sleep 0.5
@@ -676,7 +667,7 @@ function test_snapshot () {
 	#Test fail command
 	#No channel enable start command should return element success false
 	OUTPUT_DEST=$OUTPUT_DIR/$OUTPUT_FILE
-	lttng_snapshot_add_output_ok $session_name $snapshot_path
+	lttng_snapshot_add_output_ok $session_name file://$snapshot_path
 	$XML_VALIDATE $OUTPUT_DEST
 	ok $? "Mi test: snapshot xsd validation"
 
@@ -764,7 +755,7 @@ function test_track_untrack ()
 	ok $? "Mi test: track pid is a success"
 
 	#Verify that there is 3 process
-	extract_xml $OUTPUT_DEST $XPATH_TRACK_UNTRACK_PID"/lttng:pid" result
+	extract_xml $OUTPUT_DEST $XPATH_TRACK_UNTRACK_VPID"/lttng:id" result
 	num=$(echo "$result" | wc -l)
 	test "$num" -eq "3"
 	ok $? "Mi test: track pid expecting 3 processes got $num"
@@ -775,7 +766,7 @@ function test_track_untrack ()
 	ok $? "Mi test: session list with pid_tracker validate"
 
 	#Check the good count
-	extract_xml $OUTPUT_DEST $XPATH_PID_TRACKER"/lttng:targets/lttng:pid_target/lttng:pid" result
+	extract_xml $OUTPUT_DEST $XPATH_VPID_TRACKER"/lttng:process_attr_values/lttng:vpid/lttng:type/lttng:id" result
 	num=$(echo "$result" | wc -l)
 	test "$num" -eq "3"
 	ok $? "Mi test: tracker pid listing expecting 3 target got $num"
@@ -791,7 +782,7 @@ function test_track_untrack ()
 	ok $? "Mi test: untrack pid is a success"
 
 	#Verify that there is 2 untracked pids
-	extract_xml $OUTPUT_DEST $XPATH_TRACK_UNTRACK_PID"/lttng:pid" result
+	extract_xml $OUTPUT_DEST $XPATH_TRACK_UNTRACK_VPID"/lttng:id" result
 	num=$(echo "$result" | wc -l)
 	test "$num" -eq "2"
 	ok $? "Mi test: untrack pid expecting 2 process got $num"
@@ -802,7 +793,7 @@ function test_track_untrack ()
 	ok $? "Mi test: session list with pid_tracker validate"
 
 	#Check the good count
-	extract_xml $OUTPUT_DEST $XPATH_PID_TRACKER"/lttng:targets/lttng:pid_target/lttng:pid" result
+	extract_xml $OUTPUT_DEST $XPATH_VPID_TRACKER"/lttng:targets/lttng:vpid_target/lttng:type/lttng:pid" result
 	num=$(echo "$result" | wc -l)
 	test "$num" -eq "1"
 	ok $? "Mi test: tracker pid listing expecting 1 process got $num"
@@ -818,14 +809,14 @@ function test_track_untrack ()
 	ok $? "Mi test: untrack all pid is a success"
 
 	#Verify that there is 1 untracked pid
-	extract_xml $OUTPUT_DEST $XPATH_TRACK_UNTRACK_PID"/lttng:pid" result
+	extract_xml $OUTPUT_DEST $XPATH_TRACK_UNTRACK_VPID"/lttng:all" result
 	num=$(echo "$result" | wc -l)
 	test "$num" -eq "1"
 	ok $? "Mi test: untrack pid expecting 1 process got $num"
 
-	#Test if the id is * which represent the all argument
-	test "$result" = "*"
-	ok $? "Mi test: pid expected is * got $result"
+	#Test if type "all" is "true" which represent the all argument
+	test "$result" = "true"
+	ok $? "Mi test: pid expected is true got $result"
 
 	#Test if pid_tracker is enabled as definied by pid_tracker
 	#behavior. If all pid are untrack than the pid_tracker is still
@@ -835,7 +826,7 @@ function test_track_untrack ()
 	ok $? "Mi test: session list with pid_tracker validate"
 
 	#Check the good count
-	extract_xml $OUTPUT_DEST $XPATH_PID_TRACKER"/lttng:targets/lttng:pid_target/lttng:pid" result
+	extract_xml $OUTPUT_DEST $XPATH_VPID_TRACKER"/lttng:targets/lttng:vpid_target/lttng:type/lttng:pid" result
 	num=$(echo -n "$result" | wc -l)
 	test "$num" -eq "0"
 	ok $? "Mi test: tracker pid listing expecting 0 process got $num"
@@ -851,14 +842,14 @@ function test_track_untrack ()
 	ok $? "Mi test: track all pid is a success"
 
 	#Verify that there is 1 tracked process
-	extract_xml $OUTPUT_DEST $XPATH_TRACK_UNTRACK_PID"/lttng:pid" result
+	extract_xml $OUTPUT_DEST $XPATH_TRACK_UNTRACK_VPID"/lttng:all" result
 	num=$(echo "$result" | wc -l)
 	test "$num" -eq "1"
 	ok $? "Mi test: track pid expecting 1 process got $num"
 
-	#Test if the id is * wich represent the all argument
-	test "$result" = "*"
-	ok $? "Mi test: pid expected is * got $result"
+	#Test if the id is true wich represent the all argument
+	test "$result" = "true"
+	ok $? "Mi test: pid expected is true got $result"
 
 	#Test if pid_tracker is enabled as definied by pid_tracker
 	#behavior. If all pid are untrack thant the pid_tracker is
@@ -867,9 +858,9 @@ function test_track_untrack ()
 	$XML_VALIDATE $OUTPUT_DEST
 	ok $? "Mi test: session list with pid_tracker validate"
 
-	node_check_xml $OUTPUT_DEST $XPATH_PID_TRACKER result
+	node_check_xml $OUTPUT_DEST $XPATH_VPID_TRACKER result
 	test "$result" = ""
-	ok $? "Mi test: Pid_tracker node is absent as defined"
+	ok $? "Mi test: VPID_tracker node is absent as defined"
 
 	OUTPUT_DEST=$DEVNULL
 	destroy_lttng_sessions
@@ -885,6 +876,56 @@ function test_add_context_list()
 
 	$XML_VALIDATE $OUTPUT_DEST
 	ok $? "Mi test: context listing validation"
+}
+
+function test_clear_session ()
+{
+	# Since the session are not started there is no real clear done.
+	# We are testing the MI output only here.
+	local session_name=(
+			"testSession1"
+			"testSession2"
+			"testSession3")
+
+	OUTPUT_FILE="clear_session.xml"
+
+	#Test build up
+	OUTPUT_DEST=$DEVNULL
+	for (( i = 0; i < 3; i++ )); do
+		create_lttng_session_ok ${session_name[$i]} $OUTPUT_DIR
+	done
+
+	OUTPUT_DEST=$OUTPUT_DIR/$OUTPUT_FILE
+	lttng_clear_session_ok  ${session_name[0]}
+	$XML_VALIDATE $OUTPUT_DEST
+	ok $? "MI test: clear session ${session_name[0]} xsd validation"
+
+	#Verify that we cleared the good session
+	extract_xml $OUTPUT_DEST $XPATH_SESSION"/lttng:name/text()" result
+	test "$result" = "${session_name[0]}"
+	ok $? "Mi test: cleared session: $result expected: ${session_name[0]}"
+
+	#Destroy all and count:should be 3
+	lttng_clear_all
+	$XML_VALIDATE $OUTPUT_DEST
+	ok $? "MI test: clear all session xsd validation"
+
+	#Verify that we cleared 3 sessions
+	extract_xml $OUTPUT_DEST $XPATH_SESSION"/lttng:name/text()" result
+	num=$(echo "$result" | wc -l)
+	test "$num" -eq "3"
+	ok $? "Mi test: $num / 3 sessions discovered"
+
+	destroy_lttng_sessions
+
+	#Verify that if no session is present command fail and mi report it.
+	lttng_clear_session_fail ${session_name[0]}
+	$XML_VALIDATE $OUTPUT_DEST
+	ok $? "MI test: failing clear session ${session_name[0]} xsd validation"
+	extract_xml $OUTPUT_DEST $XPATH_COMMAND_SUCCESS result
+	test "$result" = "false"
+	ok $? "Mi test: clear command on ${session_name[0]} failed as expected"
+
 }
 
 start_lttng_sessiond $SESSIOND_LOAD_DIR
@@ -904,6 +945,7 @@ TESTS=(
 	test_track_untrack
 	test_list_session_long_path
 	test_add_context_list
+	test_clear_session
 )
 
 

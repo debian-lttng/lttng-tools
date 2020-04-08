@@ -1,23 +1,15 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _LTT_KERNEL_CTL_H
 #define _LTT_KERNEL_CTL_H
 
+#include "lttng/lttng-error.h"
+#include "lttng/tracker.h"
 #include "session.h"
 #include "snapshot.h"
 #include "trace-kernel.h"
@@ -30,7 +22,6 @@
  * dynamic reallocation is performed.
  */
 #define KERNEL_EVENT_INIT_LIST_SIZE 64
-#define KERNEL_TRACKER_PIDS_INIT_LIST_SIZE 64
 
 int kernel_add_channel_context(struct ltt_kernel_channel *chan,
 		struct ltt_kernel_context *ctx);
@@ -43,8 +34,21 @@ int kernel_disable_channel(struct ltt_kernel_channel *chan);
 int kernel_disable_event(struct ltt_kernel_event *event);
 int kernel_enable_event(struct ltt_kernel_event *event);
 int kernel_enable_channel(struct ltt_kernel_channel *chan);
-int kernel_track_pid(struct ltt_kernel_session *session, int pid);
-int kernel_untrack_pid(struct ltt_kernel_session *session, int pid);
+enum lttng_error_code kernel_process_attr_tracker_set_tracking_policy(
+		struct ltt_kernel_session *session,
+		enum lttng_process_attr process_attr,
+		enum lttng_tracking_policy policy);
+enum lttng_error_code kernel_process_attr_tracker_inclusion_set_add_value(
+		struct ltt_kernel_session *session,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value);
+enum lttng_error_code kernel_process_attr_tracker_inclusion_set_remove_value(
+		struct ltt_kernel_session *session,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value);
+const struct process_attr_tracker *kernel_get_process_attr_tracker(
+		struct ltt_kernel_session *session,
+		enum lttng_process_attr process_attr);
 int kernel_open_metadata(struct ltt_kernel_session *session);
 int kernel_open_metadata_stream(struct ltt_kernel_session *session);
 int kernel_open_channel_stream(struct ltt_kernel_channel *channel);
@@ -65,10 +69,9 @@ enum lttng_error_code kernel_snapshot_record(
 		uint64_t nb_packets_per_stream);
 int kernel_syscall_mask(int chan_fd, char **syscall_mask, uint32_t *nr_bits);
 enum lttng_error_code kernel_rotate_session(struct ltt_session *session);
+enum lttng_error_code kernel_clear_session(struct ltt_session *session);
 
 int init_kernel_workarounds(void);
-ssize_t kernel_list_tracker_pids(struct ltt_kernel_session *session,
-		int **_pids);
 int kernel_supports_ring_buffer_snapshot_sample_positions(void);
 int kernel_supports_ring_buffer_packet_sequence_number(void);
 int init_kernel_tracer(void);

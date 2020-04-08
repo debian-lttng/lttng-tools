@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2013 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2013 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef LTTNG_UST_REGISTRY_H
@@ -22,7 +12,7 @@
 #include <stdint.h>
 
 #include <common/hashtable/hashtable.h>
-#include <common/compat/uuid.h>
+#include <common/uuid.h>
 
 #include "lttng-ust-ctl.h"
 
@@ -48,7 +38,7 @@ struct ust_registry_session {
 	/* Next enumeration ID available. */
 	uint64_t next_enum_id;
 	/* Universal unique identifier used by the tracer. */
-	unsigned char uuid[UUID_LEN];
+	unsigned char uuid[LTTNG_UUID_LEN];
 
 	/* session ABI description */
 

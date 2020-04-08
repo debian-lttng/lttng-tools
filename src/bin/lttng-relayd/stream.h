@@ -2,22 +2,12 @@
 #define _STREAM_H
 
 /*
- * Copyright (C) 2013 - Julien Desfossez <jdesfossez@efficios.com>
- *                      David Goulet <dgoulet@efficios.com>
- *               2015 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2013 Julien Desfossez <jdesfossez@efficios.com>
+ * Copyright (C) 2013 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <limits.h>
@@ -31,7 +21,6 @@
 #include <common/buffer-view.h>
 
 #include "session.h"
-#include "stream-fd.h"
 #include "tracefile-array.h"
 
 struct lttcomm_relayd_index;
@@ -79,8 +68,7 @@ struct relay_stream {
 	/* seq num to encounter before closing. */
 	uint64_t last_net_seq_num;
 
-	/* FD on which to write the stream data. */
-	struct stream_fd *stream_fd;
+	struct fs_handle *file;
 	/* index file on which to write the index data. */
 	struct lttng_index_file *index_file;
 

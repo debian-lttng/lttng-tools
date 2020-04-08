@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2013 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2013 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -549,8 +539,8 @@ static void destroy_enum_rcu(struct rcu_head *head)
  * Lookup enumeration by name and comparing enumeration entries.
  * Needs to be called from RCU read-side critical section.
  */
-struct ust_registry_enum *
-	ust_registry_lookup_enum(struct ust_registry_session *session,
+static struct ust_registry_enum *ust_registry_lookup_enum(
+		struct ust_registry_session *session,
 		const struct ust_registry_enum *reg_enum_lookup)
 {
 	struct ust_registry_enum *reg_enum = NULL;
@@ -681,7 +671,7 @@ end:
  * the enumeration.
  * This MUST be called within a RCU read side lock section.
  */
-void ust_registry_destroy_enum(struct ust_registry_session *reg_session,
+static void ust_registry_destroy_enum(struct ust_registry_session *reg_session,
 		struct ust_registry_enum *reg_enum)
 {
 	int ret;

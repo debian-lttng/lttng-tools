@@ -1,19 +1,9 @@
 #!/bin/bash
 #
-# Copyright (C) - 2012 Christian Babeux <christian.babeux@efficios.com>
+# Copyright (C) 2012 Christian Babeux <christian.babeux@efficios.com>
 #
-# This program is free software; you can redistribute it and/or modify it
-# under the terms of the GNU General Public License, version 2 only, as
-# published by the Free Software Foundation.
+# SPDX-License-Identifier: GPL-2.0-only
 #
-# This program is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-# more details.
-#
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 51
-# Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 TEST_DESC="Event exclusion"
 
@@ -26,7 +16,7 @@ TESTAPP_NAME="gen-ust-nevents"
 TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
 NR_ITER=100
 NR_USEC_WAIT=1
-NUM_TESTS=149
+NUM_TESTS=178
 
 source $TESTDIR/utils/utils.sh
 
@@ -35,12 +25,45 @@ function enable_ust_lttng_all_event_exclusion()
 	sess_name="$1"
 	exclusion="$2"
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-event -a -s $sess_name -u -x "$exclusion"
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-event -u "tp:*" -s $sess_name -x "$exclusion" > /dev/null
 }
 
 function run_apps
 {
-	 $TESTAPP_BIN $NR_ITER $NR_USEC_WAIT
+	$TESTAPP_BIN --iter $NR_ITER --wait $NR_USEC_WAIT >/dev/null 2>&1
+	ok $? "Running test application"
+}
+
+# Testing for the absence of an event when testing exclusion is tricky. An
+# event could be absent because our exclusion mechanism works but also because
+# the event was not generate in the first place. This function test the ability
+# of our test suite to generate events.
+function dry_run
+{
+	trace_path=$(mktemp -d)
+
+	# Create session
+	create_lttng_session_ok $SESSION_NAME $trace_path
+
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-event -u "tp:*" -s $SESSION_NAME > /dev/null
+	ok $? "Enabling events without exclusion"
+
+	# Trace apps
+	start_lttng_tracing_ok $SESSION_NAME
+	run_apps
+	stop_lttng_tracing_ok $SESSION_NAME
+
+	nb_events=$(babeltrace $trace_path | wc -l)
+	if [ "$nb_events" -ne "0" ]; then
+		ok 0 "Events were found during the dry run without exclusion"
+	else
+		fail "No events were found during the dry run without exclusion"
+	fi
+
+	rm -rf $trace_path
+
+	# Destroy session
+	destroy_lttng_session_ok $SESSION_NAME
 }
 
 function test_exclusion
@@ -63,7 +86,7 @@ function test_exclusion
 	# Destroy session
 	destroy_lttng_session_ok $SESSION_NAME
 
-	stats=`babeltrace $trace_path | $STATS_BIN --tracepoint "$event_name_expected_to_be_missing" | grep -v index`
+	stats=`babeltrace $trace_path | $STATS_BIN --tracepoint "$event_name_expected_to_be_missing" | grep -v index 2> /dev/null`
 	if [ ! -z "$stats" ]; then
 		fail "Excluded event \"$event_name_expected_to_be_missing\" was found in trace!"
 	else
@@ -93,10 +116,14 @@ function test_exclusion_fail
 
 plan_tests $NUM_TESTS
 
-print_test_banner $TEST_DESC
+print_test_banner "$TEST_DESC"
 
 start_lttng_sessiond
 
+diag "Enable event without exclusion"
+dry_run
+
+diag "Enable event with exclusion"
 test_exclusion 'tp:tptest2' 'tp:tptest2'
 test_exclusion 'tp:tptest3' 'tp:tptest3'
 test_exclusion 'tp:tptest*' 'tp:tptest1'
@@ -120,12 +147,12 @@ test_exclusion '*3' 'tp:tptest3'
 test_exclusion 'tp*test3,*2' 'tp:tptest2'
 test_exclusion '**tp*test3,*2' 'tp:tptest3'
 
-# Cannot use exclusions with non-globbing event name
+diag "Cannot use exclusions with non-globbing event name"
 test_exclusion_fail "allo" "lol"
 test_exclusion_fail "allo" "meow,lol"
 test_exclusion_fail "allo" "z*em"
 
-# Exclusion name excludes all possible event names
+diag "Exclusion name excludes all possible event names"
 test_exclusion_fail "allo*" "all*"
 test_exclusion_fail "allo*" "ze,all*,yes"
 

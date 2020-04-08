@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2014 - David Goulet <dgoulet@efficios.com>
- * Copyright (C) 2019 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2014 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This library is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License, version 2.1 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
- * This library is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
- * for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this library; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #ifndef LTTNG_SESSION_H
@@ -23,6 +13,9 @@
 extern "C" {
 #endif
 
+#include <lttng/constant.h>
+
+struct lttng_handle;
 struct lttng_session_descriptor;
 struct lttng_destruction_handle;
 
@@ -213,39 +206,6 @@ extern enum lttng_error_code lttng_session_get_creation_time(
  */
 extern int lttng_set_session_shm_path(const char *session_name,
 		const char *shm_path);
-
-/*
- * Add PID to session tracker.
- *
- * A pid argument >= 0 adds the PID to the session tracker.
- * A pid argument of -1 means "track all PIDs".
- *
- * Return 0 on success else a negative LTTng error code.
- */
-extern int lttng_track_pid(struct lttng_handle *handle, int pid);
-
-/*
- * Remove PID from session tracker.
- *
- * A pid argument >= 0 removes the PID from the session tracker.
- * A pid argument of -1 means "untrack all PIDs".
- *
- * Return 0 on success else a negative LTTng error code.
- */
-extern int lttng_untrack_pid(struct lttng_handle *handle, int pid);
-
-/*
- * List PIDs in the tracker.
- *
- * enabled is set to whether the PID tracker is enabled.
- * pids is set to an allocated array of PIDs currently tracked. On
- * success, pids must be freed by the caller.
- * nr_pids is set to the number of entries contained by the pids array.
- *
- * Returns 0 on success, else a negative LTTng error code.
- */
-extern int lttng_list_tracker_pids(struct lttng_handle *handle,
-		int *enabled, int32_t **pids, size_t *nr_pids);
 
 #ifdef __cplusplus
 }

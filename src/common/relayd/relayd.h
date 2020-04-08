@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _RELAYD_H
@@ -49,7 +39,7 @@ int relayd_create_session(struct lttcomm_relayd_sock *rsock,
 		time_t creation_time, bool session_name_contains_creation_time,
 		char *output_path);
 int relayd_add_stream(struct lttcomm_relayd_sock *sock, const char *channel_name,
-		const char *pathname, uint64_t *stream_id,
+		const char *domain_name, const char *pathname, uint64_t *stream_id,
 		uint64_t tracefile_size, uint64_t tracefile_count,
 		struct lttng_trace_chunk *trace_chunk);
 int relayd_streams_sent(struct lttcomm_relayd_sock *rsock);
@@ -83,5 +73,8 @@ int relayd_close_trace_chunk(struct lttcomm_relayd_sock *sock,
 		char *path);
 int relayd_trace_chunk_exists(struct lttcomm_relayd_sock *sock,
 		uint64_t chunk_id, bool *chunk_exists);
+int relayd_get_configuration(struct lttcomm_relayd_sock *sock,
+		uint64_t query_flags,
+		uint64_t *result_flags);
 
 #endif /* _RELAYD_H */

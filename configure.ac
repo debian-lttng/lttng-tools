@@ -1,5 +1,6 @@
+dnl SPDX-License-Identifier: GPL-2.0-only
 AC_PREREQ([2.64])
-AC_INIT([lttng-tools],[2.11.2],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
+AC_INIT([lttng-tools],[2.12.0],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
 
 AC_CONFIG_HEADERS([include/config.h])
 AC_CONFIG_AUX_DIR([config])
@@ -24,6 +25,36 @@ AC_PROG_CC_STDC
 AC_PROG_CXX
 RW_PROG_CXX_WORKS
 AM_CONDITIONAL([CXX_WORKS], [test "x$rw_cv_prog_cxx_works" = "xyes"])
+
+# Detect warning flags supported by the compiler, append them to WARN_CFLAGS.
+#
+# Pass -Werror as an extra flag during the test: this is needed to make the
+# -Wunknown-warning-option diagnostic fatal with clang.
+AX_APPEND_COMPILE_FLAGS([ dnl
+		-Wall dnl
+		dnl We currently get this warning when building with Clang:
+		dnl
+		dnl /usr/include/setjmp.h:54:12: error: declaration of built-in function '__sigsetjmp' requires the declaration of the 'jmp_buf' type, commonly provided in the header <setjmp.h>. [-Werror,-Wincomplete-setjmp-declaration]
+		dnl extern int __sigsetjmp (struct __jmp_buf_tag __env[1], int __savemask) __THROWNL;
+		dnl            ^
+		-Wno-incomplete-setjmp-declaration dnl
+		-Wdiscarded-qualifiers dnl
+		-Wmissing-declarations dnl
+		-Wmissing-prototypes dnl
+		-Wmissing-parameter-type dnl
+		-Wold-style-definition dnl
+		-Wstrict-prototypes dnl
+	],
+	[WARN_CFLAGS],
+	[-Werror])
+
+# When given, add -Werror to WARN_CFLAGS.
+AC_ARG_ENABLE([Werror],
+	[AS_HELP_STRING([--enable-Werror], [Treat compiler warnings as errors.])]
+)
+AS_IF([test "x$enable_Werror" = "xyes"],
+	[WARN_CFLAGS="${WARN_CFLAGS} -Werror"]
+)
 
 # Checks for programs.
 AC_PROG_GREP
@@ -153,8 +184,8 @@ AC_DEFINE_UNQUOTED([VERSION_MAJOR], $major_version, [LTTng-Tools major version n
 AC_DEFINE_UNQUOTED([VERSION_MINOR], $minor_version, [LTTng-Tools minor version number])
 AC_DEFINE_UNQUOTED([VERSION_PATCHLEVEL], $patchlevel_version, [LTTng-Tools patchlevel version number])
 
-version_name="Lafontaine"
-version_description="A modern Saison beer from Montréal's Oshlag microbrewery, Lafontaine is a refreshing, zesty, rice beer with hints of fruit and spices."
+version_name="(Ta) Meilleure"
+version_description="Ta Meilleure is a Northeast IPA beer brewed by Lagabière. Translating to \"Your best one\", this beer gives out strong aromas of passion fruit, lemon, and peaches. Tastewise, expect a lot of fruit, a creamy texture, and a smooth lingering hop bitterness."
 version_description_c=$(echo $version_description | $SED 's/"/\\"/g')
 
 AC_DEFINE_UNQUOTED([VERSION_NAME], ["$version_name"], "")
@@ -245,13 +276,12 @@ AC_ARG_WITH([babeltrace-bin],
 	[BABELTRACE_BIN=''])
 AC_SUBST([BABELTRACE_BIN])
 
-# lttv-gui
-AC_ARG_WITH([lttv-gui-bin],
-	AS_HELP_STRING([--with-lttv-gui-bin],
-   [Location of the lttv GUI viewer executable (including the filename)]),
-   [LTTV_GUI_BIN="$withval"],
-   [LTTV_GUI_BIN=''])
-AC_SUBST([LTTV_GUI_BIN])
+AC_ARG_WITH([babeltrace2-bin],
+	AS_HELP_STRING([--with-babeltrace2-bin],
+	[Location of the babeltrace2 viewer executable (including the filename)]),
+	[BABELTRACE2_BIN="$withval"],
+	[BABELTRACE2_BIN=''])
+AC_SUBST([BABELTRACE2_BIN])
 
 AC_ARG_WITH([consumerd32-bin],
 	AS_HELP_STRING([--with-consumerd32-bin],
@@ -319,7 +349,7 @@ AC_DEFINE_UNQUOTED([CONFIG_CONSUMERD64_BIN], "$CONSUMERD64_BIN", [Location of th
 AC_DEFINE_UNQUOTED([CONFIG_CONSUMERD32_LIBDIR], "$CONSUMERD32_LIBDIR", [Search for consumerd 32-bit libraries in this location.])
 AC_DEFINE_UNQUOTED([CONFIG_CONSUMERD64_LIBDIR], "$CONSUMERD64_LIBDIR", [Search for consumerd 64-bit libraries in this location.])
 AC_DEFINE_UNQUOTED([CONFIG_BABELTRACE_BIN], "$BABELTRACE_BIN", [Location of the babeltrace viewer executable.])
-AC_DEFINE_UNQUOTED([CONFIG_LTTV_GUI_BIN], "$LTTV_GUI_BIN", [Location of the lttv GUI viewer executable.])
+AC_DEFINE_UNQUOTED([CONFIG_BABELTRACE2_BIN], "$BABELTRACE2_BIN", [Location of the babeltrace2 viewer executable.])
 AC_DEFINE_UNQUOTED([CONFIG_SESSIOND_BIN], "$SESSIOND_BIN", [Location of the sessiond executable.])
 AC_DEFINE_UNQUOTED([CONFIG_LTTNG_SYSTEM_RUNDIR], ["$LTTNG_SYSTEM_RUNDIR"], [LTTng system runtime directory])
 
@@ -389,6 +419,7 @@ _AC_DEFINE_AND_SUBST([DEFAULT_ROTATE_PENDING_TIMER], [500000])
 # Command short descriptions
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ADD_CONTEXT], [Add context fields to a channel])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_CREATE], [Create a tracing session])
+_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_CLEAR], [Clear a tracing session])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_DESTROY], [Tear down tracing sessions])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_DISABLE_CHANNEL], [Disable tracing channels])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_DISABLE_EVENT], [Disable event rules])
@@ -443,48 +474,6 @@ PKG_CHECK_MODULES([POPT], [popt],
 AC_SUBST(POPT_LIBS)
 
 PKG_CHECK_MODULES([libxml2], [libxml-2.0 >= 2.7.6])
-
-# First, check for uuid in system libs
-AH_TEMPLATE([LTTNG_HAVE_LIBUUID], [Define if you have libuuid support])
-AC_CHECK_FUNCS([uuid_generate],
-  [
-    AC_DEFINE([LTTNG_HAVE_LIBUUID], [1])
-    UUID_LIBS=""
-  ],
-  [
-    # Then, check if the pkg-config module is available, otherwise explicitly check
-    # for libuuid, or uuid support in the C-library.
-    PKG_CHECK_MODULES([UUID], [uuid],
-      [
-        AC_DEFINE([LTTNG_HAVE_LIBUUID], [1])
-        dnl PKG_CHECK_MODULES defines UUID_LIBS
-      ],
-      [
-        AC_MSG_WARN([pkg-config was unable to find a valid .pc for libuuid. Set PKG_CONFIG_PATH to specify the pkgconfig configuration file location])
-        AC_MSG_WARN([Finding libuuid without pkg-config.])
-        AC_CHECK_LIB([uuid], [uuid_generate],
-          [
-            AC_DEFINE([LTTNG_HAVE_LIBUUID], [1])
-            UUID_LIBS="-luuid"
-          ],
-          [
-            # libuuid not found, check for uuid_create in libc.
-            AC_CHECK_LIB([c], [uuid_create],
-              [
-                AC_DEFINE([LTTNG_HAVE_LIBUUID], [1])
-                UUID_LIBS="-lc"
-              ],
-              [
-                AC_MSG_FAILURE([Cannot find libuuid uuid_generate nor libc uuid_create. Either set PKG_CONFIG_PATH to the configuration file location or use LDFLAGS=-Ldir to specify the library location])
-              ]
-            )
-          ]
-        )
-      ]
-    )
-  ]
-)
-AC_SUBST(UUID_LIBS)
 
 AC_CHECK_FUNC([clock_gettime], [AC_DEFINE_UNQUOTED([LTTNG_HAVE_CLOCK_GETTIME], 1, [Has clock_gettime() support.])])
 
@@ -556,18 +545,18 @@ AC_ARG_WITH([lttng-ust],
   [with_lttng_ust=yes]
 )
 
-AS_IF([test "x$with_lttng_ust" = "xyes"],
-  [
-    AC_CHECK_LIB([lttng-ust-ctl], [lttng_ust_enum_get_from_desc],
-      [
-        AC_DEFINE([HAVE_LIBLTTNG_UST_CTL], [1])
-      ],
-      [
-        AC_MSG_FAILURE([Cannot find LTTng-UST >= 2.11.x. Use [LDFLAGS]=-Ldir and [CPPFLAGS]=-Idir to specify its location, or specify --without-lttng-ust to build lttng-tools without LTTng-UST support.])
-      ]
-    )
-  ]
-)
+AS_IF([test "x$with_lttng_ust" = "xyes"], [
+  AC_DEFINE([HAVE_LIBLTTNG_UST_CTL], [1])
+
+  # Check for liblttng-ust
+  PKG_CHECK_MODULES([UST], [lttng-ust >= $major_version.$minor_version])
+
+  # Check for liblttng-ust-ctl
+  PKG_CHECK_MODULES([UST_CTL], [lttng-ust-ctl >= $major_version.$minor_version])
+
+  AM_CPPFLAGS="$AM_CPPFLAGS $UST_CFLAGS"
+])
+
 AM_CONDITIONAL([HAVE_LIBLTTNG_UST_CTL], [test "x$with_lttng_ust" = "xyes"])
 
 
@@ -908,6 +897,7 @@ build_lib_kernel_consumer=no
 build_lib_kernel_ctl=no
 build_lib_lttng_ctl=no
 build_lib_relayd=no
+build_lib_fd_tracker=no
 build_lib_sessiond_comm=no
 build_lib_testpoint=no
 build_lib_ust_consumer=no
@@ -947,6 +937,7 @@ AS_IF([test x$enable_bin_lttng_relayd != xno],
        build_lib_index=yes
        build_lib_health=yes
        build_lib_testpoint=yes
+       build_lib_fd_tracker=yes
       ]
 )
 AS_IF([test x$enable_bin_lttng_sessiond != xno],
@@ -1072,14 +1063,25 @@ AM_CONDITIONAL([BUILD_LIB_KERNEL_CONSUMER], [test x$build_lib_kernel_consumer = 
 AM_CONDITIONAL([BUILD_LIB_KERNEL_CTL], [test x$build_lib_kernel_ctl = xyes])
 AM_CONDITIONAL([BUILD_LIB_LTTNG_CTL], [test x$build_lib_lttng_ctl = xyes])
 AM_CONDITIONAL([BUILD_LIB_RELAYD], [test x$build_lib_relayd = xyes])
+AM_CONDITIONAL([BUILD_LIB_FD_TRACKER], [test x$build_lib_fd_tracker = xyes])
 AM_CONDITIONAL([BUILD_LIB_SESSIOND_COMM], [test x$build_lib_sessiond_comm = xyes])
 AM_CONDITIONAL([BUILD_LIB_TESTPOINT], [test x$build_lib_testpoint = xyes])
 AM_CONDITIONAL([BUILD_LIB_UST_CONSUMER], [test x$build_lib_ust_consumer = xyes])
 
-AM_CFLAGS="-Wall -fno-strict-aliasing $PTHREAD_CFLAGS"
+AM_CFLAGS="${WARN_CFLAGS} -fno-strict-aliasing $PTHREAD_CFLAGS"
 AC_SUBST(AM_CFLAGS)
 
-AM_CPPFLAGS="-I\$(top_srcdir)/include -I\$(top_builddir)/include -I\$(top_srcdir)/src -include config.h $AM_CPPFLAGS"
+# This is set even though it is empty, so Makefiles can do "AM_LDFLAGS += ...".
+AM_LDFLAGS=""
+AC_SUBST(AM_LDFLAGS)
+
+# The order in which the include folders are searched is important.
+# The top_builddir should always be searched first in the event that a build
+# time generated file is included. An example of this is the "version.i" file.
+# In a scenario where lttng-tools is built from a distribution tarball and in a
+# out-of-tree manner, the generated "version.i" has priority on the one from
+# the source (distribution tarball) and must be found first.
+AM_CPPFLAGS="-I\$(top_builddir)/include -I\$(top_srcdir)/include -I\$(top_srcdir)/src -include config.h $AM_CPPFLAGS"
 AC_SUBST(AM_CPPFLAGS)
 
 lttngincludedir="${includedir}/lttng"
@@ -1126,6 +1128,7 @@ AC_CONFIG_FILES([
 	src/common/health/Makefile
 	src/common/config/Makefile
 	src/common/string-utils/Makefile
+	src/common/fd-tracker/Makefile
 	src/lib/Makefile
 	src/lib/lttng-ctl/Makefile
 	src/lib/lttng-ctl/filter/Makefile
@@ -1159,6 +1162,10 @@ AC_CONFIG_FILES([
 	tests/regression/tools/rotation/Makefile
 	tests/regression/tools/base-path/Makefile
 	tests/regression/tools/metadata/Makefile
+	tests/regression/tools/tracker/Makefile
+	tests/regression/tools/working-directory/Makefile
+	tests/regression/tools/relayd-grouping/Makefile
+	tests/regression/tools/clear/Makefile
 	tests/regression/ust/Makefile
 	tests/regression/ust/nprocesses/Makefile
 	tests/regression/ust/high-throughput/Makefile
@@ -1185,6 +1192,7 @@ AC_CONFIG_FILES([
 	tests/regression/ust/type-declarations/Makefile
 	tests/regression/ust/rotation-destroy-flush/Makefile
 	tests/regression/ust/blocking/Makefile
+	tests/regression/ust/namespaces/Makefile
 	tests/stress/Makefile
 	tests/unit/Makefile
 	tests/unit/ini_config/Makefile
@@ -1192,7 +1200,10 @@ AC_CONFIG_FILES([
 	tests/utils/Makefile
 	tests/utils/tap/Makefile
 	tests/utils/testapp/Makefile
+	tests/utils/testapp/gen-ns-events/Makefile
+	tests/utils/testapp/gen-kernel-test-events/Makefile
 	tests/utils/testapp/gen-ust-events/Makefile
+	tests/utils/testapp/gen-ust-events-ns/Makefile
 	tests/utils/testapp/gen-syscall-events-callstack/Makefile
 	tests/utils/testapp/gen-ust-nevents/Makefile
 	tests/utils/testapp/gen-ust-nevents-str/Makefile

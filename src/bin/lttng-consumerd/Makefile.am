@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 lttnglibexec_PROGRAMS = lttng-consumerd
 
 lttng_consumerd_SOURCES = lttng-consumerd.c \
@@ -16,5 +18,5 @@ lttng_consumerd_LDADD = \
 lttng_consumerd_LDFLAGS = -rdynamic
 
 if HAVE_LIBLTTNG_UST_CTL
-lttng_consumerd_LDADD += -llttng-ust-ctl
+lttng_consumerd_LDADD += $(UST_CTL_LIBS)
 endif

@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2012 - David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2012 David Goulet <dgoulet@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -61,7 +51,7 @@ static const struct uri_proto proto_uri[] = {
  * Return pointer to the character in s matching one of the characters in
  * accept. If nothing is found, return pointer to the end of string (eos).
  */
-static const inline char *strpbrk_or_eos(const char *s, const char *accept)
+static inline const char *strpbrk_or_eos(const char *s, const char *accept)
 {
 	char *p = strpbrk(s, accept);
 	if (p == NULL) {
@@ -136,7 +126,7 @@ static int set_ip_address(const char *addr, int af, char *dst, size_t size)
 			 * We choose to use the system name resolution API first
 			 * to honor its network configuration. If this fails, we
 			 * resolve to the appropriate loopback address. This is
-			 * done to accomodate systems which may want to start
+			 * done to accommodates systems which may want to start
 			 * tracing before their network configured.
 			 */
 			const char *loopback_addr = af == AF_INET ?
@@ -264,22 +254,6 @@ LTTNG_HIDDEN
 void uri_free(struct lttng_uri *uri)
 {
 	free(uri);
-}
-
-/*
- * Return an allocated URI.
- */
-LTTNG_HIDDEN
-struct lttng_uri *uri_create(void)
-{
-	struct lttng_uri *uri;
-
-	uri = zmalloc(sizeof(struct lttng_uri));
-	if (uri == NULL) {
-		PERROR("zmalloc uri");
-	}
-
-	return uri;
 }
 
 /*

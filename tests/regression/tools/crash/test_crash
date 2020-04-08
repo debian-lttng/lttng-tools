@@ -1,19 +1,9 @@
 #!/bin/bash
 #
-# Copyright (C) - 2015 Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+# Copyright (C) 2015 Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
 #
-# This library is free software; you can redistribute it and/or modify it under
-# the terms of the GNU Lesser General Public License as published by the Free
-# Software Foundation; version 2.1 of the License.
+# SPDX-License-Identifier: LGPL-2.1-only
 #
-# This library is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
-# details.
-#
-# You should have received a copy of the GNU Lesser General Public License
-# along with this library; if not, write to the Free Software Foundation, Inc.,
-# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 
 TEST_DESC="LTTng-crash & shm testing"
 
@@ -50,7 +40,7 @@ function start_test_app()
 	local tmp_file=$(mktemp -u)
 
 	# Start application with a temporary file.
-	$TESTAPP_BIN $NR_ITER $NR_USEC_WAIT $tmp_file &
+	$TESTAPP_BIN -i $NR_ITER -w $NR_USEC_WAIT --sync-after-first-event $tmp_file &
 	ret=$?
 	LAST_APP_PID="${!}"
 	APPS_PID="${APPS_PID} ${!}"
@@ -238,7 +228,7 @@ function test_lttng_crash()
 	start_lttng_tracing_ok $session_name
 
 	# Generate 10 events
-	$TESTAPP_BIN 10 0
+	$TESTAPP_BIN -i 10 -w 0
 	stop_lttng_tracing_ok
 
 	crash_recup_count=$($LTTNG_CRASH $shm_path | wc -l)
@@ -276,7 +266,7 @@ function test_lttng_crash_extraction()
 
 	start_lttng_tracing_ok $session_name
 	# Generate 10 events
-	$TESTAPP_BIN 10 0
+	$TESTAPP_BIN -i 10 -w 0
 	stop_lttng_tracing_ok
 
 	$LTTNG_CRASH -x $extraction_path $shm_path
@@ -372,7 +362,7 @@ function test_lttng_crash_extraction_sigkill()
 	start_lttng_tracing_ok $session_name
 
 	# Generate 10 events
-	$TESTAPP_BIN 10 0
+	$TESTAPP_BIN -i 10 -w 0
 
 	sigstop_lttng_sessiond
 	sigstop_lttng_consumerd

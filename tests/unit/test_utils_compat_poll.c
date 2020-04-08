@@ -5,14 +5,8 @@
  *
  * Copyright (C) 2019 Yannick Lamarre <ylamarre@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by as
- * published by the Free Software Foundation; only version 2 of the License.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
  */
 
 #include <assert.h>
@@ -61,6 +55,7 @@ int lttng_opt_mi;
 #define CLOE_VALUE FD_CLOEXEC
 #endif
 
+static
 void test_epoll_compat(void)
 {
 	/*
@@ -71,7 +66,7 @@ void test_epoll_compat(void)
 }
 #endif
 
-void test_alloc(void)
+static void test_alloc(void)
 {
 	struct lttng_poll_event poll_events;
 
@@ -92,7 +87,7 @@ void test_alloc(void)
 }
 
 /* Tests stuff related to what would be handled with epoll_ctl. */
-void test_add_del(void)
+static void test_add_del(void)
 {
 	struct lttng_poll_event poll_events;
 
@@ -130,7 +125,7 @@ void test_add_del(void)
 	lttng_poll_clean(&poll_events);
 }
 
-void test_mod_wait(void)
+static void test_mod_wait(void)
 {
 	struct lttng_poll_event poll_events;
 	struct lttng_poll_event cpoll_events;
@@ -186,7 +181,7 @@ void test_mod_wait(void)
 	}
 }
 
-void test_func_def(void)
+static void test_func_def(void)
 {
 #ifdef LTTNG_POLL_GETFD
 #define PASS_GETFD 1

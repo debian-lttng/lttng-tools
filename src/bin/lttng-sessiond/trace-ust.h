@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
- * Copyright (C) 2016 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2016 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _LTT_TRACE_UST_H
@@ -22,9 +12,10 @@
 #include <limits.h>
 #include <urcu/list.h>
 
-#include <lttng/lttng.h>
-#include <common/hashtable/hashtable.h>
 #include <common/defaults.h>
+#include <common/hashtable/hashtable.h>
+#include <common/tracker.h>
+#include <lttng/lttng.h>
 
 #include "consumer.h"
 #include "lttng-ust-ctl.h"
@@ -91,11 +82,11 @@ struct ltt_ust_domain_global {
 	struct cds_list_head registry_buffer_uid_list;
 };
 
-struct ust_pid_tracker_node {
+struct ust_id_tracker_node {
 	struct lttng_ht_node_ulong node;
 };
 
-struct ust_pid_tracker {
+struct ust_id_tracker {
 	struct lttng_ht *ht;
 };
 
@@ -138,10 +129,18 @@ struct ltt_ust_session {
 	char root_shm_path[PATH_MAX];
 	char shm_path[PATH_MAX];
 
-	struct ust_pid_tracker pid_tracker;
-
 	/* Current trace chunk of the ltt_session. */
 	struct lttng_trace_chunk *current_trace_chunk;
+
+	/* Trackers used for actual lookup on app registration. */
+	struct ust_id_tracker vpid_tracker;
+	struct ust_id_tracker vuid_tracker;
+	struct ust_id_tracker vgid_tracker;
+
+	/* Tracker list of keys requested by users. */
+	struct process_attr_tracker *tracker_vpid;
+	struct process_attr_tracker *tracker_vuid;
+	struct process_attr_tracker *tracker_vgid;
 };
 
 /*
@@ -219,13 +218,24 @@ void trace_ust_destroy_event(struct ltt_ust_event *event);
 void trace_ust_destroy_context(struct ltt_ust_context *ctx);
 void trace_ust_free_session(struct ltt_ust_session *session);
 
-int trace_ust_track_pid(struct ltt_ust_session *session, int pid);
-int trace_ust_untrack_pid(struct ltt_ust_session *session, int pid);
-
-int trace_ust_pid_tracker_lookup(struct ltt_ust_session *session, int pid);
-
-ssize_t trace_ust_list_tracker_pids(struct ltt_ust_session *session,
-		int32_t **_pids);
+int trace_ust_id_tracker_lookup(enum lttng_process_attr process_attr,
+		struct ltt_ust_session *session,
+		int id);
+enum lttng_error_code trace_ust_process_attr_tracker_set_tracking_policy(
+		struct ltt_ust_session *session,
+		enum lttng_process_attr process_attr,
+		enum lttng_tracking_policy policy);
+enum lttng_error_code trace_ust_process_attr_tracker_inclusion_set_add_value(
+		struct ltt_ust_session *session,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value);
+enum lttng_error_code trace_ust_process_attr_tracker_inclusion_set_remove_value(
+		struct ltt_ust_session *session,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value);
+const struct process_attr_tracker *trace_ust_get_process_attr_tracker(
+		struct ltt_ust_session *session,
+		enum lttng_process_attr process_attr);
 
 #else /* HAVE_LIBLTTNG_UST_CTL */
 
@@ -318,27 +328,44 @@ struct agent *trace_ust_find_agent(struct ltt_ust_session *session,
 {
 	return NULL;
 }
-static inline
-int trace_ust_track_pid(struct ltt_ust_session *session, int pid)
+static inline int trace_ust_id_tracker_lookup(
+		enum lttng_process_attr process_attr,
+		struct ltt_ust_session *session,
+		int id)
 {
 	return 0;
 }
-static inline
-int trace_ust_untrack_pid(struct ltt_ust_session *session, int pid)
+static inline enum lttng_error_code
+trace_ust_process_attr_tracker_set_tracking_policy(
+		struct ltt_ust_session *session,
+		enum lttng_process_attr process_attr,
+		enum lttng_tracking_policy policy)
 {
-	return 0;
+	return LTTNG_OK;
 }
-static inline
-int trace_ust_pid_tracker_lookup(struct ltt_ust_session *session, int pid)
+static inline enum lttng_error_code
+trace_ust_process_attr_tracker_inclusion_set_add_value(
+		struct ltt_ust_session *session,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value)
 {
-	return 0;
+	return LTTNG_OK;
 }
-static inline
-ssize_t trace_ust_list_tracker_pids(struct ltt_ust_session *session,
-		int32_t **_pids)
+static inline enum lttng_error_code
+trace_ust_process_attr_tracker_inclusion_set_remove_value(
+		struct ltt_ust_session *session,
+		enum lttng_process_attr process_attr,
+		const struct process_attr_value *value)
 {
-	return -1;
+	return LTTNG_OK;
 }
+static inline const struct process_attr_tracker *
+trace_ust_get_process_attr_tracker(struct ltt_ust_session *session,
+		enum lttng_process_attr process_attr)
+{
+	return NULL;
+}
+
 #endif /* HAVE_LIBLTTNG_UST_CTL */
 
 #endif /* _LTT_TRACE_UST_H */

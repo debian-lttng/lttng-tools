@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
- * Copyright (C) 2016 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2016 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -86,6 +76,25 @@ enum context_type {
 	CONTEXT_MIGRATABLE   = 19,
 	CONTEXT_CALLSTACK_KERNEL = 20,
 	CONTEXT_CALLSTACK_USER = 21,
+	CONTEXT_CGROUP_NS    = 22,
+	CONTEXT_IPC_NS       = 23,
+	CONTEXT_MNT_NS       = 24,
+	CONTEXT_NET_NS       = 25,
+	CONTEXT_PID_NS       = 26,
+	CONTEXT_USER_NS      = 27,
+	CONTEXT_UTS_NS       = 28,
+	CONTEXT_UID          = 29,
+	CONTEXT_EUID         = 30,
+	CONTEXT_SUID         = 31,
+	CONTEXT_GID          = 32,
+	CONTEXT_EGID         = 33,
+	CONTEXT_SGID         = 34,
+	CONTEXT_VUID         = 35,
+	CONTEXT_VEUID        = 36,
+	CONTEXT_VSUID        = 37,
+	CONTEXT_VGID         = 38,
+	CONTEXT_VEGID        = 39,
+	CONTEXT_VSGID        = 40,
 };
 
 /*
@@ -175,19 +184,19 @@ static struct poptOption long_options[] = {
  */
 #define PERF_HW(optstr, name, type, hide)				\
 	{								\
-		optstr, type, hide,					\
+		(char *) optstr, type, hide,				\
 		.u.perf = { PERF_TYPE_HARDWARE, PERF_COUNT_HW_##name, },\
 	}
 
 #define PERF_SW(optstr, name, type, hide)				\
 	{								\
-		optstr, type, hide,					\
+		(char *) optstr, type, hide,				\
 		.u.perf = { PERF_TYPE_SOFTWARE, PERF_COUNT_SW_##name, },\
 	}
 
 #define _PERF_HW_CACHE(optstr, name, type, op, result, hide)		\
 	{								\
-		optstr, type, hide,					\
+		(char *) optstr, type, hide,				\
 		.u.perf = {						\
 			PERF_TYPE_HW_CACHE,				\
 			(uint64_t) PERF_COUNT_HW_CACHE_##name		\
@@ -226,26 +235,49 @@ const struct ctx_opts {
 		} app_ctx;
 	} u;
 } ctx_opts[] = {
-	{ "pid", CONTEXT_PID },
-	{ "procname", CONTEXT_PROCNAME },
-	{ "prio", CONTEXT_PRIO },
-	{ "nice", CONTEXT_NICE },
-	{ "vpid", CONTEXT_VPID },
-	{ "tid", CONTEXT_TID },
-	{ "pthread_id", CONTEXT_PTHREAD_ID },
-	{ "vtid", CONTEXT_VTID },
-	{ "ppid", CONTEXT_PPID },
-	{ "vppid", CONTEXT_VPPID },
-	{ "hostname", CONTEXT_HOSTNAME },
-	{ "ip", CONTEXT_IP },
-	{ "interruptible", CONTEXT_INTERRUPTIBLE },
-	{ "preemptible", CONTEXT_PREEMPTIBLE },
-	{ "need_reschedule", CONTEXT_NEED_RESCHEDULE },
-	{ "migratable", CONTEXT_MIGRATABLE },
-	{ "callstack-kernel", CONTEXT_CALLSTACK_KERNEL },
+	/*
+	 * These (char *) casts (as well as those in the PERF_* macros) are
+	 * safe because we never free these instances of `struct ctx_opts`.
+	 */
+	{ (char *) "pid", CONTEXT_PID },
+	{ (char *) "procname", CONTEXT_PROCNAME },
+	{ (char *) "prio", CONTEXT_PRIO },
+	{ (char *) "nice", CONTEXT_NICE },
+	{ (char *) "vpid", CONTEXT_VPID },
+	{ (char *) "tid", CONTEXT_TID },
+	{ (char *) "pthread_id", CONTEXT_PTHREAD_ID },
+	{ (char *) "vtid", CONTEXT_VTID },
+	{ (char *) "ppid", CONTEXT_PPID },
+	{ (char *) "vppid", CONTEXT_VPPID },
+	{ (char *) "hostname", CONTEXT_HOSTNAME },
+	{ (char *) "ip", CONTEXT_IP },
+	{ (char *) "interruptible", CONTEXT_INTERRUPTIBLE },
+	{ (char *) "preemptible", CONTEXT_PREEMPTIBLE },
+	{ (char *) "need_reschedule", CONTEXT_NEED_RESCHEDULE },
+	{ (char *) "migratable", CONTEXT_MIGRATABLE },
+	{ (char *) "callstack-kernel", CONTEXT_CALLSTACK_KERNEL },
 #if HAVE_MODULES_USERSPACE_CALLSTACK_CONTEXT
-	{ "callstack-user", CONTEXT_CALLSTACK_USER },
+	{ (char *) "callstack-user", CONTEXT_CALLSTACK_USER },
 #endif
+	{ (char *) "cgroup_ns", CONTEXT_CGROUP_NS },
+	{ (char *) "ipc_ns", CONTEXT_IPC_NS },
+	{ (char *) "mnt_ns", CONTEXT_MNT_NS },
+	{ (char *) "net_ns", CONTEXT_NET_NS },
+	{ (char *) "pid_ns", CONTEXT_PID_NS },
+	{ (char *) "user_ns", CONTEXT_USER_NS },
+	{ (char *) "uts_ns", CONTEXT_UTS_NS },
+	{ (char *) "uid", CONTEXT_UID },
+	{ (char *) "euid", CONTEXT_EUID },
+	{ (char *) "suid", CONTEXT_SUID },
+	{ (char *) "gid", CONTEXT_GID },
+	{ (char *) "egid", CONTEXT_EGID },
+	{ (char *) "sgid", CONTEXT_SGID },
+	{ (char *) "vuid", CONTEXT_VUID },
+	{ (char *) "veuid", CONTEXT_VEUID },
+	{ (char *) "vsuid", CONTEXT_VSUID },
+	{ (char *) "vgid", CONTEXT_VGID },
+	{ (char *) "vegid", CONTEXT_VEGID },
+	{ (char *) "vsgid", CONTEXT_VSGID },
 
 	/* Perf options */
 
@@ -1115,8 +1147,8 @@ int cmd_add_context(int argc, const char **argv)
 		goto end;
 	}
 
-	ret = print_missing_or_multiple_domains(opt_kernel + opt_userspace +
-			opt_jul + opt_log4j);
+	ret = print_missing_or_multiple_domains(
+			opt_kernel + opt_userspace + opt_jul + opt_log4j, true);
 	if (ret) {
 		ret = CMD_ERROR;
 		goto end;

@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2017 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License, version 2 only, as
- * published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <common/compat/getenv.h>
@@ -57,6 +47,7 @@ void __attribute__((destructor)) pause_pipe_fini(void)
  * thread to create a named pipe/FIFO which a test application can use to either
  * pause or resume the consumption of data.
  */
+int __testpoint_consumerd_thread_data(void);
 int __testpoint_consumerd_thread_data(void)
 {
 	int ret = 0;
@@ -116,6 +107,7 @@ end:
 	return ret;
 }
 
+int __testpoint_consumerd_thread_data_poll(void);
 int __testpoint_consumerd_thread_data_poll(void)
 {
 	int ret = 0;

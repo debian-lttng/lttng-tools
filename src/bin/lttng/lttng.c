@@ -1,18 +1,8 @@
 /*
- * Copyright (c)  2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -43,7 +33,7 @@ NULL
 ;
 
 /* Variables */
-static char *progname;
+static const char *progname;
 int opt_no_sessiond;
 char *opt_sessiond_path;
 
@@ -76,6 +66,7 @@ static struct option long_options[] = {
 static struct cmd_struct commands[] =  {
 	{ "add-context", cmd_add_context},
 	{ "create", cmd_create},
+	{ "clear", cmd_clear},
 	{ "destroy", cmd_destroy},
 	{ "disable-channel", cmd_disable_channels},
 	{ "disable-event", cmd_disable_events},
@@ -104,9 +95,10 @@ static struct cmd_struct commands[] =  {
 
 static void version(FILE *ofp)
 {
-	fprintf(ofp, "%s (LTTng Trace Control) " VERSION" - " VERSION_NAME "%s\n",
+	fprintf(ofp, "%s (LTTng Trace Control) " VERSION" - " VERSION_NAME "%s%s\n",
 			progname,
-			GIT_VERSION[0] == '\0' ? "" : " - " GIT_VERSION);
+			GIT_VERSION[0] == '\0' ? "" : " - " GIT_VERSION,
+			EXTRA_VERSION_NAME[0] == '\0' ? "" : " - " EXTRA_VERSION_NAME);
 }
 
 /*
@@ -279,6 +271,7 @@ static void show_basic_help(void)
 	puts("");
 	puts("Tracing sessions:");
 	puts("  create            " CONFIG_CMD_DESCR_CREATE);
+	puts("  clear             " CONFIG_CMD_DESCR_CLEAR);
 	puts("  destroy           " CONFIG_CMD_DESCR_DESTROY);
 	puts("  load              " CONFIG_CMD_DESCR_LOAD);
 	puts("  regenerate        " CONFIG_CMD_DESCR_REGENERATE);

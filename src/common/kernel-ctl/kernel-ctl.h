@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2011 - Julien Desfossez <julien.desfossez@polymtl.ca>
- *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2011 Julien Desfossez <julien.desfossez@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _LTTNG_KERNEL_CTL_H
@@ -65,6 +55,10 @@ int kernctl_track_pid(int fd, int pid);
 int kernctl_untrack_pid(int fd, int pid);
 int kernctl_list_tracker_pids(int fd);
 
+int kernctl_track_id(int fd, enum lttng_process_attr process_attr, int id);
+int kernctl_untrack_id(int fd, enum lttng_process_attr process_attr, int id);
+int kernctl_list_tracker_ids(int fd, enum lttng_process_attr process_attr);
+
 int kernctl_session_regenerate_metadata(int fd);
 int kernctl_session_regenerate_statedump(int fd);
 int kernctl_session_set_name(int fd, const char *name);
@@ -97,6 +91,7 @@ int kernctl_put_subbuf(int fd);
 
 int kernctl_buffer_flush(int fd);
 int kernctl_buffer_flush_empty(int fd);
+int kernctl_buffer_clear(int fd);
 int kernctl_get_metadata_version(int fd, uint64_t *version);
 int kernctl_metadata_cache_dump(int fd);
 

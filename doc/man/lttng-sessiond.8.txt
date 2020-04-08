@@ -42,7 +42,7 @@ to interact with multiple tracers (kernel and user space) within the
 same container, a _tracing session_. Traces can be gathered from the
 Linux kernel and/or from instrumented applications (see
 man:lttng-ust(3)). You can aggregate and read the events of LTTng
-traces using man:babeltrace(1).
+traces using man:babeltrace2(1).
 
 To trace the Linux kernel, the session daemon needs to be running as
 `root`. LTTng uses a _tracing group_ to allow specific users to interact
@@ -99,18 +99,18 @@ option:-b, option:--background::
     Use the option:--daemonize option instead to close the file
     descriptors.
 
+option:-f 'PATH', option:--config='PATH'::
+    Load session daemon configuration from path 'PATH'.
+
 option:-d, option:--daemonize::
     Start as Unix daemon, and close file descriptors (console). Use the
     option:--background option instead to keep the file descriptors
     open.
 
-option:-f, option:--config='PATH'::
-    Load session daemon configuration from path 'PATH'.
-
-option:-g, option:--group='GROUP'::
+option:-g 'GROUP', option:--group='GROUP'::
     Use 'GROUP' as Unix tracing group (default: `tracing`).
 
-option:-l, option:--load='PATH'::
+option:-l 'PATH', option:--load='PATH'::
     Automatically load tracing session configurations from 'PATH',
     either a directory or a file, instead of loading them from the
     default search directories.
@@ -347,4 +347,4 @@ man:lttng(1),
 man:lttng-relayd(8),
 man:lttng-crash(1),
 man:lttng-ust(3),
-man:babeltrace(1)
+man:babeltrace2(1)

@@ -1,26 +1,16 @@
 /*
- * Copyright (C) 2011 - Julien Desfossez <julien.desfossez@polymtl.ca>
- *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2011 Julien Desfossez <julien.desfossez@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef _LTT_KERNEL_IOCTL_H
 #define _LTT_KERNEL_IOCTL_H
 
 #define LTTNG_MODULES_ABI_MAJOR_VERSION		2
-#define LTTNG_MODULES_ABI_MINOR_VERSION		3
+#define LTTNG_MODULES_ABI_MINOR_VERSION		5
 
 /* Get a snapshot of the current ring buffer producer and consumer positions */
 #define RING_BUFFER_SNAPSHOT                _IO(0xF6, 0x00)
@@ -64,6 +54,8 @@
  * so it can be read again.
  */
 #define RING_BUFFER_METADATA_CACHE_DUMP    	_IO(0xF6, 0x10)
+/* Clear ring buffer content */
+#define RING_BUFFER_CLEAR                       _IO(0xF6, 0x11)
 
 /* returns the timestamp begin of the current sub-buffer */
 #define LTTNG_RING_BUFFER_GET_TIMESTAMP_BEGIN     _IOR(0xF6, 0x20, uint64_t)
@@ -168,5 +160,13 @@
 /* Event FD ioctl */
 #define LTTNG_KERNEL_FILTER			_IO(0xF6, 0x90)
 #define LTTNG_KERNEL_ADD_CALLSITE	_IO(0xF6, 0x91)
+
+/* Session FD ioctl (continued) */
+#define LTTNG_KERNEL_SESSION_LIST_TRACKER_IDS	\
+	_IOR(0xF6, 0xA0, struct lttng_kernel_tracker_args)
+#define LTTNG_KERNEL_SESSION_TRACK_ID		\
+	_IOR(0xF6, 0xA1, struct lttng_kernel_tracker_args)
+#define LTTNG_KERNEL_SESSION_UNTRACK_ID		\
+	_IOR(0xF6, 0xA2, struct lttng_kernel_tracker_args)
 
 #endif /* _LTT_KERNEL_IOCTL_H */

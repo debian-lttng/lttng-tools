@@ -1,20 +1,10 @@
 /*
- * Copyright (C) 2011 - Julien Desfossez <julien.desfossez@polymtl.ca>
- *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
- * Copyright (C) 2017 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
+ * Copyright (C) 2011 Julien Desfossez <julien.desfossez@polymtl.ca>
+ * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2017 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define _LGPL_SOURCE
@@ -2013,6 +2003,31 @@ error_push_metadata_fatal:
 end_rotate_channel_nosignal:
 		goto end_nosignal;
 	}
+	case LTTNG_CONSUMER_CLEAR_CHANNEL:
+	{
+		struct lttng_consumer_channel *channel;
+		uint64_t key = msg.u.clear_channel.key;
+
+		channel = consumer_find_channel(key);
+		if (!channel) {
+			DBG("Channel %" PRIu64 " not found", key);
+			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
+		} else {
+			ret = lttng_consumer_clear_channel(channel);
+			if (ret) {
+				ERR("Clear channel failed key %" PRIu64, key);
+				ret_code = ret;
+			}
+
+			health_code_update();
+		}
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			/* Somehow, the session daemon is not responding anymore. */
+			goto end_nosignal;
+		}
+		break;
+	}
 	case LTTNG_CONSUMER_INIT:
 	{
 		ret_code = lttng_consumer_init_command(ctx,
@@ -2039,8 +2054,7 @@ end_rotate_channel_nosignal:
 				*msg.u.create_trace_chunk.override_name ?
 					msg.u.create_trace_chunk.override_name :
 					NULL;
-		LTTNG_OPTIONAL(struct lttng_directory_handle) chunk_directory_handle =
-				LTTNG_OPTIONAL_INIT;
+		struct lttng_directory_handle *chunk_directory_handle = NULL;
 
 		/*
 		 * The session daemon will only provide a chunk directory file
@@ -2057,25 +2071,26 @@ end_rotate_channel_nosignal:
 				goto end_nosignal;
 			}
 
+			/*
+			 * Receive trace chunk domain dirfd.
+			 */
 			ret = lttcomm_recv_fds_unix_sock(sock, &chunk_dirfd, 1);
 			if (ret != sizeof(chunk_dirfd)) {
-				ERR("Failed to receive trace chunk directory file descriptor");
+				ERR("Failed to receive trace chunk domain directory file descriptor");
 				goto error_fatal;
 			}
 
-			DBG("Received trace chunk directory fd (%d)",
+			DBG("Received trace chunk domain directory fd (%d)",
 					chunk_dirfd);
-			ret = lttng_directory_handle_init_from_dirfd(
-					&chunk_directory_handle.value,
+			chunk_directory_handle = lttng_directory_handle_create_from_dirfd(
 					chunk_dirfd);
-			if (ret) {
-				ERR("Failed to initialize chunk directory handle from directory file descriptor");
+			if (!chunk_directory_handle) {
+				ERR("Failed to initialize chunk domain directory handle from directory file descriptor");
 				if (close(chunk_dirfd)) {
 					PERROR("Failed to close chunk directory file descriptor");
 				}
 				goto error_fatal;
 			}
-			chunk_directory_handle.is_set = true;
 		}
 
 		ret_code = lttng_consumer_create_trace_chunk(
@@ -2088,14 +2103,8 @@ end_rotate_channel_nosignal:
 				msg.u.create_trace_chunk.credentials.is_set ?
 						&credentials :
 						NULL,
-				chunk_directory_handle.is_set ?
-						&chunk_directory_handle.value :
-						NULL);
-
-		if (chunk_directory_handle.is_set) {
-			lttng_directory_handle_fini(
-					&chunk_directory_handle.value);
-		}
+				chunk_directory_handle);
+		lttng_directory_handle_put(chunk_directory_handle);
 		goto end_msg_sessiond;
 	}
 	case LTTNG_CONSUMER_CLOSE_TRACE_CHUNK:
@@ -2294,6 +2303,14 @@ void lttng_ustconsumer_flush_buffer(struct lttng_consumer_stream *stream,
 	assert(stream->ustream);
 
 	ustctl_flush_buffer(stream->ustream, producer);
+}
+
+void lttng_ustconsumer_clear_buffer(struct lttng_consumer_stream *stream)
+{
+	assert(stream);
+	assert(stream->ustream);
+
+	ustctl_clear_buffer(stream->ustream);
 }
 
 int lttng_ustconsumer_get_current_timestamp(

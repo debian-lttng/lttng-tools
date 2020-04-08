@@ -1,19 +1,9 @@
 /*
- * Copyright (C) 2011 - David Goulet <dgoulet@efficios.com>
- *               2014 - Jan Glauber <jan.glauber@gmail.com>
+ * Copyright (C) 2011 David Goulet <dgoulet@efficios.com>
+ * Copyright (C) 2014 Jan Glauber <jan.glauber@gmail.com>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2 only,
- * as published by the Free Software Foundation.
+ * SPDX-License-Identifier: GPL-2.0-only
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 /**
@@ -41,58 +31,58 @@
 
 /* LTTng kernel tracer mandatory core modules list */
 struct kern_modules_param kern_modules_control_core[] = {
-	{ "lttng-ring-buffer-client-discard" },
-	{ "lttng-ring-buffer-client-overwrite" },
-	{ "lttng-ring-buffer-metadata-client" },
-	{ "lttng-ring-buffer-client-mmap-discard" },
-	{ "lttng-ring-buffer-client-mmap-overwrite" },
-	{ "lttng-ring-buffer-metadata-mmap-client" },
+	{ (char *) "lttng-ring-buffer-client-discard" },
+	{ (char *) "lttng-ring-buffer-client-overwrite" },
+	{ (char *) "lttng-ring-buffer-metadata-client" },
+	{ (char *) "lttng-ring-buffer-client-mmap-discard" },
+	{ (char *) "lttng-ring-buffer-client-mmap-overwrite" },
+	{ (char *) "lttng-ring-buffer-metadata-mmap-client" },
 };
 
 /* LTTng kernel tracer probe modules list */
 struct kern_modules_param kern_modules_probes_default[] = {
-	{ "lttng-probe-asoc" },
-	{ "lttng-probe-block" },
-	{ "lttng-probe-btrfs" },
-	{ "lttng-probe-compaction" },
-	{ "lttng-probe-ext3" },
-	{ "lttng-probe-ext4" },
-	{ "lttng-probe-gpio" },
-	{ "lttng-probe-i2c" },
-	{ "lttng-probe-irq" },
-	{ "lttng-probe-jbd" },
-	{ "lttng-probe-jbd2" },
-	{ "lttng-probe-kmem" },
-	{ "lttng-probe-kvm" },
-	{ "lttng-probe-kvm-x86" },
-	{ "lttng-probe-kvm-x86-mmu" },
-	{ "lttng-probe-lock" },
-	{ "lttng-probe-module" },
-	{ "lttng-probe-napi" },
-	{ "lttng-probe-net" },
-	{ "lttng-probe-power" },
-	{ "lttng-probe-preemptirq" },
-	{ "lttng-probe-printk" },
-	{ "lttng-probe-random" },
-	{ "lttng-probe-rcu" },
-	{ "lttng-probe-regmap" },
-	{ "lttng-probe-regulator" },
-	{ "lttng-probe-rpm" },
-	{ "lttng-probe-sched" },
-	{ "lttng-probe-scsi" },
-	{ "lttng-probe-signal" },
-	{ "lttng-probe-skb" },
-	{ "lttng-probe-sock" },
-	{ "lttng-probe-statedump" },
-	{ "lttng-probe-sunrpc" },
-	{ "lttng-probe-timer" },
-	{ "lttng-probe-udp" },
-	{ "lttng-probe-vmscan" },
-	{ "lttng-probe-v4l2" },
-	{ "lttng-probe-workqueue" },
-	{ "lttng-probe-writeback" },
-	{ "lttng-probe-x86-irq-vectors" },
-	{ "lttng-probe-x86-exceptions" },
+	{ (char *) "lttng-probe-asoc" },
+	{ (char *) "lttng-probe-block" },
+	{ (char *) "lttng-probe-btrfs" },
+	{ (char *) "lttng-probe-compaction" },
+	{ (char *) "lttng-probe-ext3" },
+	{ (char *) "lttng-probe-ext4" },
+	{ (char *) "lttng-probe-gpio" },
+	{ (char *) "lttng-probe-i2c" },
+	{ (char *) "lttng-probe-irq" },
+	{ (char *) "lttng-probe-jbd" },
+	{ (char *) "lttng-probe-jbd2" },
+	{ (char *) "lttng-probe-kmem" },
+	{ (char *) "lttng-probe-kvm" },
+	{ (char *) "lttng-probe-kvm-x86" },
+	{ (char *) "lttng-probe-kvm-x86-mmu" },
+	{ (char *) "lttng-probe-lock" },
+	{ (char *) "lttng-probe-module" },
+	{ (char *) "lttng-probe-napi" },
+	{ (char *) "lttng-probe-net" },
+	{ (char *) "lttng-probe-power" },
+	{ (char *) "lttng-probe-preemptirq" },
+	{ (char *) "lttng-probe-printk" },
+	{ (char *) "lttng-probe-random" },
+	{ (char *) "lttng-probe-rcu" },
+	{ (char *) "lttng-probe-regmap" },
+	{ (char *) "lttng-probe-regulator" },
+	{ (char *) "lttng-probe-rpm" },
+	{ (char *) "lttng-probe-sched" },
+	{ (char *) "lttng-probe-scsi" },
+	{ (char *) "lttng-probe-signal" },
+	{ (char *) "lttng-probe-skb" },
+	{ (char *) "lttng-probe-sock" },
+	{ (char *) "lttng-probe-statedump" },
+	{ (char *) "lttng-probe-sunrpc" },
+	{ (char *) "lttng-probe-timer" },
+	{ (char *) "lttng-probe-udp" },
+	{ (char *) "lttng-probe-vmscan" },
+	{ (char *) "lttng-probe-v4l2" },
+	{ (char *) "lttng-probe-workqueue" },
+	{ (char *) "lttng-probe-writeback" },
+	{ (char *) "lttng-probe-x86-irq-vectors" },
+	{ (char *) "lttng-probe-x86-exceptions" },
 };
 
 /* dynamic probe modules list */

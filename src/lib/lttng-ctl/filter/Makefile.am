@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 AM_CPPFLAGS += -I$(srcdir) -I$(builddir)
 
 noinst_PROGRAMS = filter-grammar-test
@@ -23,7 +25,7 @@ libfilter_la_SOURCES = \
 libfilter_la_CFLAGS = -include filter-symbols.h $(AM_CFLAGS)
 libfilter_la_LIBADD = $(top_builddir)/src/common/string-utils/libstring-utils.la
 
-AM_YFLAGS = -t -d -v
+AM_YFLAGS = -t -d -v -Wno-yacc
 
 # start with empty files to clean
 CLEANFILES =
