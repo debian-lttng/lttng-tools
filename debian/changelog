@@ -1,3 +1,14 @@
+ltt-control (2.12.0-1) unstable; urgency=medium
+
+  * [d9525c8] New upstream version 2.12.0
+  * [a887c23] Drop patch applied upstream
+  * [9b3870f] Adjust builddeps
+  * [0286159] Update symbols for 2.12.0
+  * [ef13631] Drop upstart support
+  * [4a7fec3] Update d/copyright
+
+ -- Michael Jeanson <mjeanson@debian.org>  Wed, 08 Apr 2020 15:31:36 -0400
+
 ltt-control (2.11.2-1) unstable; urgency=medium
 
   * [3ba9f39] New upstream version 2.11.2
