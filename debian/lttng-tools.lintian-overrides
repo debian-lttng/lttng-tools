@@ -1,2 +1,0 @@
-# Keep upstart configuration for source backports to ubuntu trusty
-lttng-tools binary: package-installs-deprecated-upstart-configuration *
