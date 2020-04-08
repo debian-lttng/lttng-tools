@@ -1,10 +1,10 @@
 ---
 ignore:
   pattern:
-  - /debian/
-  - /config/
+  - /config
   - Makefile
   - Makefile.in
+  - Makefile.am
   - MANIFEST
   - ChangeLog
   - CodingStyle

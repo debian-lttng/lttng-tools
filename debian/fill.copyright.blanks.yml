@@ -1,0 +1,6 @@
+---
+debian:
+  copyright: 2011-2012, Alexandre Montplaisir <alexandre.montplaisir@gmail.com>
+  copyright: 2011-2020, Michael Jeanson <mjeanson@ubuntu.com>
+  copyright: 2012-2016, Jon Bernard <jbernard@debian.org>
+  license: GPL-2+

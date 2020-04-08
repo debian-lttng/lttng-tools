@@ -172,9 +172,7 @@ Files: src/bin/lttng-relayd/sessiond-trace-chunks.c
 Copyright: 2019, - Jérémie Galarneau <jeremie.galarneau@efficios.com>
 License: GPL-2
 
-Files: src/bin/lttng-relayd/stream-fd.c
-  src/bin/lttng-relayd/stream-fd.h
-  src/bin/lttng-relayd/tracefile-array.c
+Files: src/bin/lttng-relayd/tracefile-array.c
   src/bin/lttng-relayd/tracefile-array.h
 Copyright: 2015, - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 License: GPL-2
@@ -435,14 +433,6 @@ License: GPL-2
 
 Files: src/common/compat/tid.h
 Copyright: 2012, - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
-License: Expat
-
-Files: src/common/compat/uuid.c
-Copyright: 2018, - Jérémie Galarneau <jeremie.galarneau@efficios.com>
-License: LGPL-2.1
-
-Files: src/common/compat/uuid.h
-Copyright: 2011, Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 License: Expat
 
 Files: src/common/config/*
@@ -787,7 +777,6 @@ Copyright: - 2014, Mathieu Desnoyers <mathieu.desnoyers@efficios.com> / - 2012, 
 License: GPL-2
 
 Files: tests/regression/tools/health/health_check.c
-  tests/regression/tools/health/health_exit.c
   tests/regression/tools/health/health_fail.c
   tests/regression/tools/health/health_stall.c
 Copyright: 2014, - Mathieu Desnoyers <mathieu.desnoyers@efficios.com> / 2012, - Christian Babeux <christian.babeux@efficios.com>
