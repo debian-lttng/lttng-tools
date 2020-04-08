@@ -125,6 +125,10 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_channel_set_blocking_timeout@Base 2.10.0
  lttng_channel_set_default_attr@Base 2.3.0
  lttng_channel_set_monitor_timer_interval@Base 2.10.0
+ lttng_clear_handle_destroy@Base 2.12.0
+ lttng_clear_handle_get_result@Base 2.12.0
+ lttng_clear_handle_wait_for_completion@Base 2.12.0
+ lttng_clear_session@Base 2.12.0
  lttng_condition_buffer_usage_get_channel_name@Base 2.10.0
  lttng_condition_buffer_usage_get_domain_type@Base 2.10.0
  lttng_condition_buffer_usage_get_session_name@Base 2.10.0
@@ -237,6 +241,37 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_opt_mi@Base 2.6.0
  lttng_opt_quiet@Base 2.3.0
  lttng_opt_verbose@Base 2.3.0
+ lttng_process_attr_group_id_tracker_handle_add_gid@Base 2.12.0
+ lttng_process_attr_group_id_tracker_handle_add_group_name@Base 2.12.0
+ lttng_process_attr_group_id_tracker_handle_remove_gid@Base 2.12.0
+ lttng_process_attr_group_id_tracker_handle_remove_group_name@Base 2.12.0
+ lttng_process_attr_process_id_tracker_handle_add_pid@Base 2.12.0
+ lttng_process_attr_process_id_tracker_handle_remove_pid@Base 2.12.0
+ lttng_process_attr_tracker_handle_destroy@Base 2.12.0
+ lttng_process_attr_tracker_handle_get_inclusion_set@Base 2.12.0
+ lttng_process_attr_tracker_handle_get_tracking_policy@Base 2.12.0
+ lttng_process_attr_tracker_handle_set_tracking_policy@Base 2.12.0
+ lttng_process_attr_user_id_tracker_handle_add_uid@Base 2.12.0
+ lttng_process_attr_user_id_tracker_handle_add_user_name@Base 2.12.0
+ lttng_process_attr_user_id_tracker_handle_remove_uid@Base 2.12.0
+ lttng_process_attr_user_id_tracker_handle_remove_user_name@Base 2.12.0
+ lttng_process_attr_values_get_count@Base 2.12.0
+ lttng_process_attr_values_get_gid_at_index@Base 2.12.0
+ lttng_process_attr_values_get_group_name_at_index@Base 2.12.0
+ lttng_process_attr_values_get_pid_at_index@Base 2.12.0
+ lttng_process_attr_values_get_type_at_index@Base 2.12.0
+ lttng_process_attr_values_get_uid_at_index@Base 2.12.0
+ lttng_process_attr_values_get_user_name_at_index@Base 2.12.0
+ lttng_process_attr_virtual_group_id_tracker_handle_add_gid@Base 2.12.0
+ lttng_process_attr_virtual_group_id_tracker_handle_add_group_name@Base 2.12.0
+ lttng_process_attr_virtual_group_id_tracker_handle_remove_gid@Base 2.12.0
+ lttng_process_attr_virtual_group_id_tracker_handle_remove_group_name@Base 2.12.0
+ lttng_process_attr_virtual_process_id_tracker_handle_add_pid@Base 2.12.0
+ lttng_process_attr_virtual_process_id_tracker_handle_remove_pid@Base 2.12.0
+ lttng_process_attr_virtual_user_id_tracker_handle_add_uid@Base 2.12.0
+ lttng_process_attr_virtual_user_id_tracker_handle_add_user_name@Base 2.12.0
+ lttng_process_attr_virtual_user_id_tracker_handle_remove_uid@Base 2.12.0
+ lttng_process_attr_virtual_user_id_tracker_handle_remove_user_name@Base 2.12.0
  lttng_regenerate_metadata@Base 2.9.0
  lttng_regenerate_statedump@Base 2.9.0
  lttng_register_consumer@Base 2.3.0
@@ -282,6 +317,7 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_session_descriptor_snapshot_local_create@Base 2.11.0
  lttng_session_descriptor_snapshot_network_create@Base 2.11.0
  lttng_session_get_creation_time@Base 2.11.0
+ lttng_session_get_tracker_handle@Base 2.12.0
  lttng_session_list_rotation_schedules@Base 2.11.0
  lttng_session_remove_rotation_schedule@Base 2.11.0
  lttng_set_consumer_url@Base 2.3.0
@@ -478,3 +514,4 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  mi_lttng_loglevel_type_range@Base 2.6.0
  mi_lttng_loglevel_type_single@Base 2.6.0
  mi_lttng_loglevel_type_unknown@Base 2.6.0
+ spawn_viewer@Base 2.12.0
