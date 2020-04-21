@@ -1,3 +1,9 @@
+ltt-control (2.12.0-1~ubuntu16.04.1) xenial; urgency=medium
+
+  * Source backport to xenial
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 21 Apr 2020 11:36:27 -0400
+
 ltt-control (2.12.0-1) unstable; urgency=medium
 
   * [d9525c8] New upstream version 2.12.0
