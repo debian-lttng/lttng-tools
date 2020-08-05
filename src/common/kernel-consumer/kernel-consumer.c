@@ -19,6 +19,7 @@
 #include <inttypes.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <stdint.h>
 
 #include <bin/lttng-consumerd/health-consumerd.h>
 #include <common/common.h>
@@ -34,6 +35,9 @@
 #include <common/index/index.h>
 #include <common/consumer/consumer-timer.h>
 #include <common/optional.h>
+#include <common/buffer-view.h>
+#include <common/consumer/consumer.h>
+#include <common/consumer/metadata-bucket.h>
 
 #include "kernel-consumer.h"
 
@@ -110,6 +114,25 @@ int lttng_kconsumer_get_consumed_snapshot(struct lttng_consumer_stream *stream,
 		PERROR("kernctl_snapshot_get_consumed");
 	}
 
+	return ret;
+}
+
+static
+int get_current_subbuf_addr(struct lttng_consumer_stream *stream,
+		const char **addr)
+{
+	int ret;
+	unsigned long mmap_offset;
+	const char *mmap_base = stream->mmap_base;
+
+	ret = kernctl_get_mmap_read_offset(stream->wait_fd, &mmap_offset);
+	if (ret < 0) {
+		PERROR("Failed to get mmap read offset");
+		goto error;
+	}
+
+	*addr = mmap_base + mmap_offset;
+error:
 	return ret;
 }
 
@@ -228,9 +251,10 @@ static int lttng_kconsumer_snapshot_channel(
 		while ((long) (consumed_pos - produced_pos) < 0) {
 			ssize_t read_len;
 			unsigned long len, padded_len;
+			const char *subbuf_addr;
+			struct lttng_buffer_view subbuf_view;
 
 			health_code_update();
-
 			DBG("Kernel consumer taking snapshot at pos %lu", consumed_pos);
 
 			ret = kernctl_get_subbuf(stream->wait_fd, &consumed_pos);
@@ -257,8 +281,16 @@ static int lttng_kconsumer_snapshot_channel(
 				goto error_put_subbuf;
 			}
 
-			read_len = lttng_consumer_on_read_subbuffer_mmap(ctx, stream, len,
-					padded_len - len, NULL);
+			ret = get_current_subbuf_addr(stream, &subbuf_addr);
+			if (ret) {
+				goto error_put_subbuf;
+			}
+
+			subbuf_view = lttng_buffer_view_init(
+					subbuf_addr, 0, padded_len);
+			read_len = lttng_consumer_on_read_subbuffer_mmap(
+					stream, &subbuf_view,
+					padded_len - len);
 			/*
 			 * We write the padded len in local tracefiles but the data len
 			 * when using a relay. Display the error but continue processing
@@ -369,7 +401,7 @@ static int lttng_kconsumer_snapshot_metadata(
 	do {
 		health_code_update();
 
-		ret_read = lttng_kconsumer_read_subbuffer(metadata_stream, ctx);
+		ret_read = lttng_consumer_read_subbuffer(metadata_stream, ctx, true);
 		if (ret_read < 0) {
 			if (ret_read != -EAGAIN) {
 				ERR("Kernel snapshot reading metadata subbuffer (ret: %zd)",
@@ -483,6 +515,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				msg.u.channel.tracefile_count, 0,
 				msg.u.channel.monitor,
 				msg.u.channel.live_timer_interval,
+				msg.u.channel.is_live,
 				NULL, NULL);
 		if (new_channel == NULL) {
 			lttng_consumer_send_error(ctx, LTTCOMM_CONSUMERD_OUTFD_ERROR);
@@ -624,7 +657,9 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		health_code_update();
 
 		pthread_mutex_lock(&channel->lock);
-		new_stream = consumer_allocate_stream(channel->key,
+		new_stream = consumer_stream_create(
+				channel,
+				channel->key,
 				fd,
 				channel->name,
 				channel->relayd_id,
@@ -646,7 +681,6 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			goto error_add_stream_nosignal;
 		}
 
-		new_stream->chan = channel;
 		new_stream->wait_fd = fd;
 		ret = kernctl_get_max_subbuf_size(new_stream->wait_fd,
 				&new_stream->max_sb_size);
@@ -658,23 +692,6 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		consumer_stream_update_channel_attributes(new_stream,
 				channel);
-		switch (channel->output) {
-		case CONSUMER_CHANNEL_SPLICE:
-			new_stream->output = LTTNG_EVENT_SPLICE;
-			ret = utils_create_pipe(new_stream->splice_pipe);
-			if (ret < 0) {
-				pthread_mutex_unlock(&channel->lock);
-				goto error_add_stream_nosignal;
-			}
-			break;
-		case CONSUMER_CHANNEL_MMAP:
-			new_stream->output = LTTNG_EVENT_MMAP;
-			break;
-		default:
-			ERR("Stream output unknown %d", channel->output);
-			pthread_mutex_unlock(&channel->lock);
-			goto error_add_stream_nosignal;
-		}
 
 		/*
 		 * We've just assigned the channel to the stream so increment the
@@ -1294,6 +1311,24 @@ error_rotate_channel:
 				msg.u.trace_chunk_exists.chunk_id);
 		goto end_msg_sessiond;
 	}
+	case LTTNG_CONSUMER_OPEN_CHANNEL_PACKETS:
+	{
+		const uint64_t key = msg.u.open_channel_packets.key;
+		struct lttng_consumer_channel *channel =
+				consumer_find_channel(key);
+
+		if (channel) {
+			pthread_mutex_lock(&channel->lock);
+			ret_code = lttng_consumer_open_channel_packets(channel);
+			pthread_mutex_unlock(&channel->lock);
+		} else {
+			WARN("Channel %" PRIu64 " not found", key);
+			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
+		}
+
+		health_code_update();
+		goto end_msg_sessiond;
+	}
 	default:
 		goto end_nosignal;
 	}
@@ -1327,122 +1362,59 @@ end:
 }
 
 /*
- * Populate index values of a kernel stream. Values are set in big endian order.
- *
- * Return 0 on success or else a negative value.
- */
-static int get_index_values(struct ctf_packet_index *index, int infd)
-{
-	int ret;
-	uint64_t packet_size, content_size, timestamp_begin, timestamp_end,
-			events_discarded, stream_id, stream_instance_id,
-			packet_seq_num;
-
-	ret = kernctl_get_timestamp_begin(infd, &timestamp_begin);
-	if (ret < 0) {
-		PERROR("kernctl_get_timestamp_begin");
-		goto error;
-	}
-
-	ret = kernctl_get_timestamp_end(infd, &timestamp_end);
-	if (ret < 0) {
-		PERROR("kernctl_get_timestamp_end");
-		goto error;
-	}
-
-	ret = kernctl_get_events_discarded(infd, &events_discarded);
-	if (ret < 0) {
-		PERROR("kernctl_get_events_discarded");
-		goto error;
-	}
-
-	ret = kernctl_get_content_size(infd, &content_size);
-	if (ret < 0) {
-		PERROR("kernctl_get_content_size");
-		goto error;
-	}
-
-	ret = kernctl_get_packet_size(infd, &packet_size);
-	if (ret < 0) {
-		PERROR("kernctl_get_packet_size");
-		goto error;
-	}
-
-	ret = kernctl_get_stream_id(infd, &stream_id);
-	if (ret < 0) {
-		PERROR("kernctl_get_stream_id");
-		goto error;
-	}
-
-	ret = kernctl_get_instance_id(infd, &stream_instance_id);
-	if (ret < 0) {
-		if (ret == -ENOTTY) {
-			/* Command not implemented by lttng-modules. */
-			stream_instance_id = -1ULL;
-		} else {
-			PERROR("kernctl_get_instance_id");
-			goto error;
-		}
-	}
-
-	ret = kernctl_get_sequence_number(infd, &packet_seq_num);
-	if (ret < 0) {
-		if (ret == -ENOTTY) {
-			/* Command not implemented by lttng-modules. */
-			packet_seq_num = -1ULL;
-			ret = 0;
-		} else {
-			PERROR("kernctl_get_sequence_number");
-			goto error;
-		}
-	}
-	index->packet_seq_num = htobe64(index->packet_seq_num);
-
-	*index = (typeof(*index)) {
-		.offset = index->offset,
-		.packet_size = htobe64(packet_size),
-		.content_size = htobe64(content_size),
-		.timestamp_begin = htobe64(timestamp_begin),
-		.timestamp_end = htobe64(timestamp_end),
-		.events_discarded = htobe64(events_discarded),
-		.stream_id = htobe64(stream_id),
-		.stream_instance_id = htobe64(stream_instance_id),
-		.packet_seq_num = htobe64(packet_seq_num),
-	};
-
-error:
-	return ret;
-}
-/*
  * Sync metadata meaning request them to the session daemon and snapshot to the
  * metadata thread can consumer them.
  *
  * Metadata stream lock MUST be acquired.
- *
- * Return 0 if new metadatda is available, EAGAIN if the metadata stream
- * is empty or a negative value on error.
  */
-int lttng_kconsumer_sync_metadata(struct lttng_consumer_stream *metadata)
+enum sync_metadata_status lttng_kconsumer_sync_metadata(
+		struct lttng_consumer_stream *metadata)
 {
 	int ret;
+	enum sync_metadata_status status;
 
 	assert(metadata);
 
 	ret = kernctl_buffer_flush(metadata->wait_fd);
 	if (ret < 0) {
 		ERR("Failed to flush kernel stream");
+		status = SYNC_METADATA_STATUS_ERROR;
 		goto end;
 	}
 
 	ret = kernctl_snapshot(metadata->wait_fd);
 	if (ret < 0) {
-		if (ret != -EAGAIN) {
+		if (errno == EAGAIN) {
+			/* No new metadata, exit. */
+			DBG("Sync metadata, no new kernel metadata");
+			status = SYNC_METADATA_STATUS_NO_DATA;
+		} else {
 			ERR("Sync metadata, taking kernel snapshot failed.");
-			goto end;
+			status = SYNC_METADATA_STATUS_ERROR;
 		}
-		DBG("Sync metadata, no new kernel metadata");
-		/* No new metadata, exit. */
-		ret = ENODATA;
+	} else {
+		status = SYNC_METADATA_STATUS_NEW_DATA;
+	}
+
+end:
+	return status;
+}
+
+static
+int extract_common_subbuffer_info(struct lttng_consumer_stream *stream,
+		struct stream_subbuffer *subbuf)
+{
+	int ret;
+
+	ret = kernctl_get_subbuf_size(
+			stream->wait_fd, &subbuf->info.data.subbuf_size);
+	if (ret) {
+		goto end;
+	}
+
+	ret = kernctl_get_padded_subbuf_size(
+			stream->wait_fd, &subbuf->info.data.padded_subbuf_size);
+	if (ret) {
 		goto end;
 	}
 
@@ -1451,363 +1423,279 @@ end:
 }
 
 static
-int update_stream_stats(struct lttng_consumer_stream *stream)
+int extract_metadata_subbuffer_info(struct lttng_consumer_stream *stream,
+		struct stream_subbuffer *subbuf)
 {
 	int ret;
-	uint64_t seq, discarded;
 
-	ret = kernctl_get_sequence_number(stream->wait_fd, &seq);
-	if (ret < 0) {
-		if (ret == -ENOTTY) {
-			/* Command not implemented by lttng-modules. */
-			seq = -1ULL;
-			stream->sequence_number_unavailable = true;
-		} else {
-			PERROR("kernctl_get_sequence_number");
-			goto end;
-		}
-	}
-
-	/*
-	 * Start the sequence when we extract the first packet in case we don't
-	 * start at 0 (for example if a consumer is not connected to the
-	 * session immediately after the beginning).
-	 */
-	if (stream->last_sequence_number == -1ULL) {
-		stream->last_sequence_number = seq;
-	} else if (seq > stream->last_sequence_number) {
-		stream->chan->lost_packets += seq -
-				stream->last_sequence_number - 1;
-	} else {
-		/* seq <= last_sequence_number */
-		ERR("Sequence number inconsistent : prev = %" PRIu64
-				", current = %" PRIu64,
-				stream->last_sequence_number, seq);
-		ret = -1;
+	ret = extract_common_subbuffer_info(stream, subbuf);
+	if (ret) {
 		goto end;
 	}
-	stream->last_sequence_number = seq;
 
-	ret = kernctl_get_events_discarded(stream->wait_fd, &discarded);
-	if (ret < 0) {
-		PERROR("kernctl_get_events_discarded");
+	ret = kernctl_get_metadata_version(
+			stream->wait_fd, &subbuf->info.metadata.version);
+	if (ret) {
 		goto end;
 	}
-	if (discarded < stream->last_discarded_events) {
-		/*
-		 * Overflow has occurred. We assume only one wrap-around
-		 * has occurred.
-		 */
-		stream->chan->discarded_events += (1ULL << (CAA_BITS_PER_LONG - 1)) -
-			stream->last_discarded_events + discarded;
-	} else {
-		stream->chan->discarded_events += discarded -
-			stream->last_discarded_events;
-	}
-	stream->last_discarded_events = discarded;
-	ret = 0;
 
 end:
 	return ret;
 }
 
-/*
- * Check if the local version of the metadata stream matches with the version
- * of the metadata stream in the kernel. If it was updated, set the reset flag
- * on the stream.
- */
 static
-int metadata_stream_check_version(int infd, struct lttng_consumer_stream *stream)
+int extract_data_subbuffer_info(struct lttng_consumer_stream *stream,
+		struct stream_subbuffer *subbuf)
 {
 	int ret;
-	uint64_t cur_version;
 
-	ret = kernctl_get_metadata_version(infd, &cur_version);
+	ret = extract_common_subbuffer_info(stream, subbuf);
+	if (ret) {
+		goto end;
+	}
+
+	ret = kernctl_get_packet_size(
+			stream->wait_fd, &subbuf->info.data.packet_size);
 	if (ret < 0) {
-		if (ret == -ENOTTY) {
-			/*
-			 * LTTng-modules does not implement this
-			 * command.
-			 */
-			ret = 0;
+		PERROR("Failed to get sub-buffer packet size");
+		goto end;
+	}
+
+	ret = kernctl_get_content_size(
+			stream->wait_fd, &subbuf->info.data.content_size);
+	if (ret < 0) {
+		PERROR("Failed to get sub-buffer content size");
+		goto end;
+	}
+
+	ret = kernctl_get_timestamp_begin(
+			stream->wait_fd, &subbuf->info.data.timestamp_begin);
+	if (ret < 0) {
+		PERROR("Failed to get sub-buffer begin timestamp");
+		goto end;
+	}
+
+	ret = kernctl_get_timestamp_end(
+			stream->wait_fd, &subbuf->info.data.timestamp_end);
+	if (ret < 0) {
+		PERROR("Failed to get sub-buffer end timestamp");
+		goto end;
+	}
+
+	ret = kernctl_get_events_discarded(
+			stream->wait_fd, &subbuf->info.data.events_discarded);
+	if (ret) {
+		PERROR("Failed to get sub-buffer events discarded count");
+		goto end;
+	}
+
+	ret = kernctl_get_sequence_number(stream->wait_fd,
+			&subbuf->info.data.sequence_number.value);
+	if (ret) {
+		/* May not be supported by older LTTng-modules. */
+		if (ret != -ENOTTY) {
+			PERROR("Failed to get sub-buffer sequence number");
 			goto end;
 		}
-		ERR("Failed to get the metadata version");
+	} else {
+		subbuf->info.data.sequence_number.is_set = true;
+	}
+
+	ret = kernctl_get_stream_id(
+			stream->wait_fd, &subbuf->info.data.stream_id);
+	if (ret < 0) {
+		PERROR("Failed to get stream id");
 		goto end;
 	}
 
-	if (stream->metadata_version == cur_version) {
-		ret = 0;
-		goto end;
+	ret = kernctl_get_instance_id(stream->wait_fd,
+			&subbuf->info.data.stream_instance_id.value);
+	if (ret) {
+		/* May not be supported by older LTTng-modules. */
+		if (ret != -ENOTTY) {
+			PERROR("Failed to get stream instance id");
+			goto end;
+		}
+	} else {
+		subbuf->info.data.stream_instance_id.is_set = true;
 	}
-
-	DBG("New metadata version detected");
-	stream->metadata_version = cur_version;
-	stream->reset_metadata_flag = 1;
-	ret = 0;
-
 end:
 	return ret;
 }
 
-/*
- * Consume data on a file descriptor and write it on a trace file.
- * The stream and channel locks must be held by the caller.
- */
-ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
-		struct lttng_consumer_local_data *ctx)
+static
+int get_subbuffer_common(struct lttng_consumer_stream *stream,
+		struct stream_subbuffer *subbuffer)
 {
-	unsigned long len, subbuf_size, padding;
-	int err, write_index = 1, rotation_ret;
-	ssize_t ret = 0;
-	int infd = stream->wait_fd;
-	struct ctf_packet_index index = {};
+	int ret;
 
-	DBG("In read_subbuffer (infd : %d)", infd);
-
-	/*
-	 * If the stream was flagged to be ready for rotation before we extract the
-	 * next packet, rotate it now.
-	 */
-	if (stream->rotate_ready) {
-		DBG("Rotate stream before extracting data");
-		rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
-		if (rotation_ret < 0) {
-			ERR("Stream rotation error");
-			ret = -1;
-			goto error;
-		}
+	ret = kernctl_get_next_subbuf(stream->wait_fd);
+	if (ret) {
+		goto end;
 	}
 
-	/* Get the next subbuffer */
-	err = kernctl_get_next_subbuf(infd);
-	if (err != 0) {
-		/*
-		 * This is a debug message even for single-threaded consumer,
-		 * because poll() have more relaxed criterions than get subbuf,
-		 * so get_subbuf may fail for short race windows where poll()
-		 * would issue wakeups.
-		 */
-		DBG("Reserving sub buffer failed (everything is normal, "
-				"it is due to concurrency)");
-		ret = err;
-		goto error;
+	ret = stream->read_subbuffer_ops.extract_subbuffer_info(
+			stream, subbuffer);
+end:
+	return ret;
+}
+
+static
+int get_next_subbuffer_splice(struct lttng_consumer_stream *stream,
+		struct stream_subbuffer *subbuffer)
+{
+	int ret;
+
+	ret = get_subbuffer_common(stream, subbuffer);
+	if (ret) {
+		goto end;
 	}
 
-	/* Get the full subbuffer size including padding */
-	err = kernctl_get_padded_subbuf_size(infd, &len);
-	if (err != 0) {
-		PERROR("Getting sub-buffer len failed.");
-		err = kernctl_put_subbuf(infd);
-		if (err != 0) {
-			if (err == -EFAULT) {
-				PERROR("Error in unreserving sub buffer\n");
-			} else if (err == -EIO) {
-				/* Should never happen with newer LTTng versions */
-				PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
-			}
-			ret = err;
-			goto error;
-		}
-		ret = err;
-		goto error;
+	subbuffer->buffer.fd = stream->wait_fd;
+end:
+	return ret;
+}
+
+static
+int get_next_subbuffer_mmap(struct lttng_consumer_stream *stream,
+		struct stream_subbuffer *subbuffer)
+{
+	int ret;
+	const char *addr;
+
+	ret = get_subbuffer_common(stream, subbuffer);
+	if (ret) {
+		goto end;
 	}
 
-	if (!stream->metadata_flag) {
-		ret = get_index_values(&index, infd);
-		if (ret < 0) {
-			err = kernctl_put_subbuf(infd);
-			if (err != 0) {
-				if (err == -EFAULT) {
-					PERROR("Error in unreserving sub buffer\n");
-				} else if (err == -EIO) {
-					/* Should never happen with newer LTTng versions */
-					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
-				}
-				ret = err;
-				goto error;
-			}
-			goto error;
-		}
-		ret = update_stream_stats(stream);
-		if (ret < 0) {
-			err = kernctl_put_subbuf(infd);
-			if (err != 0) {
-				if (err == -EFAULT) {
-					PERROR("Error in unreserving sub buffer\n");
-				} else if (err == -EIO) {
-					/* Should never happen with newer LTTng versions */
-					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
-				}
-				ret = err;
-				goto error;
-			}
-			goto error;
-		}
-	} else {
-		write_index = 0;
-		ret = metadata_stream_check_version(infd, stream);
-		if (ret < 0) {
-			err = kernctl_put_subbuf(infd);
-			if (err != 0) {
-				if (err == -EFAULT) {
-					PERROR("Error in unreserving sub buffer\n");
-				} else if (err == -EIO) {
-					/* Should never happen with newer LTTng versions */
-					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
-				}
-				ret = err;
-				goto error;
-			}
-			goto error;
-		}
+	ret = get_current_subbuf_addr(stream, &addr);
+	if (ret) {
+		goto end;
 	}
 
-	switch (stream->chan->output) {
-	case CONSUMER_CHANNEL_SPLICE:
-		/*
-		 * XXX: The lttng-modules splice "actor" does not handle copying
-		 * partial pages hence only using the subbuffer size without the
-		 * padding makes the splice fail.
-		 */
-		subbuf_size = len;
-		padding = 0;
+	subbuffer->buffer.buffer = lttng_buffer_view_init(
+			addr, 0, subbuffer->info.data.padded_subbuf_size);
+end:
+	return ret;
+}
 
-		/* splice the subbuffer to the tracefile */
-		ret = lttng_consumer_on_read_subbuffer_splice(ctx, stream, subbuf_size,
-				padding, &index);
-		/*
-		 * XXX: Splice does not support network streaming so the return value
-		 * is simply checked against subbuf_size and not like the mmap() op.
-		 */
-		if (ret != subbuf_size) {
-			/*
-			 * display the error but continue processing to try
-			 * to release the subbuffer
-			 */
-			ERR("Error splicing to tracefile (ret: %zd != len: %lu)",
-					ret, subbuf_size);
-			write_index = 0;
-		}
-		break;
-	case CONSUMER_CHANNEL_MMAP:
-		/* Get subbuffer size without padding */
-		err = kernctl_get_subbuf_size(infd, &subbuf_size);
-		if (err != 0) {
-			PERROR("Getting sub-buffer len failed.");
-			err = kernctl_put_subbuf(infd);
-			if (err != 0) {
-				if (err == -EFAULT) {
-					PERROR("Error in unreserving sub buffer\n");
-				} else if (err == -EIO) {
-					/* Should never happen with newer LTTng versions */
-					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
-				}
-				ret = err;
-				goto error;
-			}
-			ret = err;
-			goto error;
-		}
+static
+int get_next_subbuffer_metadata_check(struct lttng_consumer_stream *stream,
+		struct stream_subbuffer *subbuffer)
+{
+	int ret;
+	const char *addr;
+	bool coherent;
 
-		/* Make sure the tracer is not gone mad on us! */
-		assert(len >= subbuf_size);
-
-		padding = len - subbuf_size;
-
-		/* write the subbuffer to the tracefile */
-		ret = lttng_consumer_on_read_subbuffer_mmap(ctx, stream, subbuf_size,
-				padding, &index);
-		/*
-		 * The mmap operation should write subbuf_size amount of data when
-		 * network streaming or the full padding (len) size when we are _not_
-		 * streaming.
-		 */
-		if ((ret != subbuf_size && stream->net_seq_idx != (uint64_t) -1ULL) ||
-				(ret != len && stream->net_seq_idx == (uint64_t) -1ULL)) {
-			/*
-			 * Display the error but continue processing to try to release the
-			 * subbuffer. This is a DBG statement since this is possible to
-			 * happen without being a critical error.
-			 */
-			DBG("Error writing to tracefile "
-					"(ret: %zd != len: %lu != subbuf_size: %lu)",
-					ret, len, subbuf_size);
-			write_index = 0;
-		}
-		break;
-	default:
-		ERR("Unknown output method");
-		ret = -EPERM;
+	ret = kernctl_get_next_subbuf_metadata_check(stream->wait_fd,
+			&coherent);
+	if (ret) {
+		goto end;
 	}
 
-	err = kernctl_put_next_subbuf(infd);
-	if (err != 0) {
-		if (err == -EFAULT) {
-			PERROR("Error in unreserving sub buffer\n");
-		} else if (err == -EIO) {
+	ret = stream->read_subbuffer_ops.extract_subbuffer_info(
+			stream, subbuffer);
+	if (ret) {
+		goto end;
+	}
+
+	LTTNG_OPTIONAL_SET(&subbuffer->info.metadata.coherent, coherent);
+
+	ret = get_current_subbuf_addr(stream, &addr);
+	if (ret) {
+		goto end;
+	}
+
+	subbuffer->buffer.buffer = lttng_buffer_view_init(
+			addr, 0, subbuffer->info.data.padded_subbuf_size);
+	DBG("Got metadata packet with padded_subbuf_size = %lu, coherent = %s",
+			subbuffer->info.metadata.padded_subbuf_size,
+			coherent ? "true" : "false");
+end:
+	return ret;
+}
+
+static
+int put_next_subbuffer(struct lttng_consumer_stream *stream,
+		struct stream_subbuffer *subbuffer)
+{
+	const int ret = kernctl_put_next_subbuf(stream->wait_fd);
+
+	if (ret) {
+		if (ret == -EFAULT) {
+			PERROR("Error in unreserving sub buffer");
+		} else if (ret == -EIO) {
 			/* Should never happen with newer LTTng versions */
-			PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
+			PERROR("Reader has been pushed by the writer, last sub-buffer corrupted");
 		}
-		ret = err;
-		goto error;
 	}
 
-	/* Write index if needed. */
-	if (!write_index) {
-		goto rotate;
-	}
+	return ret;
+}
 
-	if (stream->chan->live_timer_interval && !stream->metadata_flag) {
-		/*
-		 * In live, block until all the metadata is sent.
-		 */
-		pthread_mutex_lock(&stream->metadata_timer_lock);
-		assert(!stream->missed_metadata_flush);
-		stream->waiting_on_metadata = true;
-		pthread_mutex_unlock(&stream->metadata_timer_lock);
+static
+bool is_get_next_check_metadata_available(int tracer_fd)
+{
+	return kernctl_get_next_subbuf_metadata_check(tracer_fd, NULL) !=
+			-ENOTTY;
+}
 
-		err = consumer_stream_sync_metadata(ctx, stream->session_id);
+static
+int lttng_kconsumer_set_stream_ops(
+		struct lttng_consumer_stream *stream)
+{
+	int ret = 0;
 
-		pthread_mutex_lock(&stream->metadata_timer_lock);
-		stream->waiting_on_metadata = false;
-		if (stream->missed_metadata_flush) {
-			stream->missed_metadata_flush = false;
-			pthread_mutex_unlock(&stream->metadata_timer_lock);
-			(void) consumer_flush_kernel_index(stream);
+	if (stream->metadata_flag && stream->chan->is_live) {
+		DBG("Attempting to enable metadata bucketization for live consumers");
+		if (is_get_next_check_metadata_available(stream->wait_fd)) {
+			DBG("Kernel tracer supports get_next_subbuffer_metadata_check, metadata will be accumulated until a coherent state is reached");
+			stream->read_subbuffer_ops.get_next_subbuffer =
+					get_next_subbuffer_metadata_check;
+			ret = consumer_stream_enable_metadata_bucketization(
+					stream);
+			if (ret) {
+				goto end;
+			}
 		} else {
-			pthread_mutex_unlock(&stream->metadata_timer_lock);
-		}
-		if (err < 0) {
-			goto error;
+			/*
+			 * The kernel tracer version is too old to indicate
+			 * when the metadata stream has reached a "coherent"
+			 * (parseable) point.
+			 *
+			 * This means that a live viewer may see an incoherent
+			 * sequence of metadata and fail to parse it.
+			 */
+			WARN("Kernel tracer does not support get_next_subbuffer_metadata_check which may cause live clients to fail to parse the metadata stream");
+			metadata_bucket_destroy(stream->metadata_bucket);
+			stream->metadata_bucket = NULL;
 		}
 	}
 
-	err = consumer_stream_write_index(stream, &index);
-	if (err < 0) {
-		goto error;
-	}
-
-rotate:
-	/*
-	 * After extracting the packet, we check if the stream is now ready to be
-	 * rotated and perform the action immediately.
-	 */
-	rotation_ret = lttng_consumer_stream_is_rotate_ready(stream);
-	if (rotation_ret == 1) {
-		rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
-		if (rotation_ret < 0) {
-			ERR("Stream rotation error");
-			ret = -1;
-			goto error;
+	if (!stream->read_subbuffer_ops.get_next_subbuffer) {
+		if (stream->chan->output == CONSUMER_CHANNEL_MMAP) {
+			stream->read_subbuffer_ops.get_next_subbuffer =
+					get_next_subbuffer_mmap;
+		} else {
+			stream->read_subbuffer_ops.get_next_subbuffer =
+					get_next_subbuffer_splice;
 		}
-	} else if (rotation_ret < 0) {
-		ERR("Checking if stream is ready to rotate");
-		ret = -1;
-		goto error;
 	}
 
-error:
+	if (stream->metadata_flag) {
+		stream->read_subbuffer_ops.extract_subbuffer_info =
+				extract_metadata_subbuffer_info;
+	} else {
+		stream->read_subbuffer_ops.extract_subbuffer_info =
+				extract_data_subbuffer_info;
+		if (stream->chan->is_live) {
+			stream->read_subbuffer_ops.send_live_beacon =
+					consumer_flush_kernel_index;
+		}
+	}
+
+	stream->read_subbuffer_ops.put_next_subbuffer = put_next_subbuffer;
+end:
 	return ret;
 }
 
@@ -1847,6 +1735,11 @@ int lttng_kconsumer_on_recv_stream(struct lttng_consumer_stream *stream)
 			ret = -1;
 			goto error_close_fd;
 		}
+	}
+
+	ret = lttng_kconsumer_set_stream_ops(stream);
+	if (ret) {
+		goto error_close_fd;
 	}
 
 	/* we return 0 to let the library handle the FD internally */
