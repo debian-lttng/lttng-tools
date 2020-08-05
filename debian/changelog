@@ -1,3 +1,9 @@
+ltt-control (2.12.2-1) unstable; urgency=medium
+
+  * [9ad4f03] New upstream version 2.12.2
+
+ -- Michael Jeanson <mjeanson@debian.org>  Wed, 05 Aug 2020 14:07:52 -0400
+
 ltt-control (2.12.1-1) unstable; urgency=medium
 
   * [15ca0d6] New upstream version 2.12.1
