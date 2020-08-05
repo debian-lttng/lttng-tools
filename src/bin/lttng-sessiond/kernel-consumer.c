@@ -156,6 +156,7 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 			channel->channel->attr.tracefile_count,
 			monitor,
 			channel->channel->attr.live_timer_interval,
+			ksession->is_live_session,
 			channel_attr_extended->monitor_timer_interval,
 			ksession->current_trace_chunk);
 
@@ -228,12 +229,17 @@ int kernel_consumer_add_metadata(struct consumer_socket *sock,
 			ksession->uid,
 			ksession->gid,
 			consumer->net_seq_index,
-			DEFAULT_METADATA_NAME,
+			ksession->metadata->conf->name,
 			1,
-			DEFAULT_KERNEL_CHANNEL_OUTPUT,
+			ksession->metadata->conf->attr.output,
 			CONSUMER_CHANNEL_TYPE_METADATA,
-			0, 0,
-			monitor, 0, 0, ksession->current_trace_chunk);
+			ksession->metadata->conf->attr.tracefile_size,
+			ksession->metadata->conf->attr.tracefile_count,
+			monitor,
+			ksession->metadata->conf->attr.live_timer_interval,
+			ksession->is_live_session,
+			0,
+			ksession->current_trace_chunk);
 
 	health_code_update();
 

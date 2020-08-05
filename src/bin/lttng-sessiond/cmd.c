@@ -816,8 +816,7 @@ end:
 	return nb_event;
 
 error:
-	/* Negate the error code to differentiate the size from an error */
-	return -ret;
+	return ret;
 }
 
 /*
@@ -2789,6 +2788,16 @@ int cmd_start_trace(struct ltt_session *session)
 			ret = LTTNG_ERR_UST_START_FAIL;
 			goto error;
 		}
+	}
+
+	/*
+	 * Open a packet in every stream of the session to ensure that viewers
+	 * can correctly identify the boundaries of the periods during which
+	 * tracing was active for this session.
+	 */
+	ret = session_open_packets(session);
+	if (ret != LTTNG_OK) {
+		goto error;
 	}
 
 	/*
