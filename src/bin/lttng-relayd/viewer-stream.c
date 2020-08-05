@@ -34,14 +34,15 @@ static void viewer_stream_destroy_rcu(struct rcu_head *head)
 	viewer_stream_destroy(vstream);
 }
 
+/* Relay stream's lock must be held by the caller. */
 struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
-		struct lttng_trace_chunk *viewer_trace_chunk,
+		struct lttng_trace_chunk *trace_chunk,
 		enum lttng_viewer_seek seek_t)
 {
 	struct relay_viewer_stream *vstream = NULL;
-	const bool acquired_reference = lttng_trace_chunk_get(
-			viewer_trace_chunk);
+	const bool acquired_reference = lttng_trace_chunk_get(trace_chunk);
 
+	ASSERT_LOCKED(stream->lock);
 	if (!acquired_reference) {
 		goto error;
 	}
@@ -52,8 +53,8 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 		goto error;
 	}
 
-	vstream->stream_file.trace_chunk = viewer_trace_chunk;
-	viewer_trace_chunk = NULL;
+	vstream->stream_file.trace_chunk = trace_chunk;
+	trace_chunk = NULL;
 	vstream->path_name = lttng_strndup(stream->path_name, LTTNG_VIEWER_PATH_MAX);
 	if (vstream->path_name == NULL) {
 		PERROR("relay viewer path_name alloc");
@@ -72,11 +73,9 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 	}
 	vstream->stream = stream;
 
-	pthread_mutex_lock(&stream->lock);
-
 	if (stream->is_metadata && stream->trace->viewer_metadata_stream) {
 		ERR("Cannot attach viewer metadata stream to trace (busy).");
-		goto error_unlock;
+		goto error;
 	}
 
 	switch (seek_t) {
@@ -111,7 +110,7 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 				tracefile_array_get_seq_head(stream->tfa) + 1;
 		break;
 	default:
-		goto error_unlock;
+		goto error;
 	}
 
 	/*
@@ -139,7 +138,7 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 			if (chunk_status == LTTNG_TRACE_CHUNK_STATUS_NO_FILE) {
 				vstream->index_file = NULL;
 			} else {
-				goto error_unlock;
+				goto error;
 			}
 		}
 	}
@@ -158,7 +157,7 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 				vstream->current_tracefile_id, NULL, file_path,
 				sizeof(file_path));
 		if (ret < 0) {
-			goto error_unlock;
+			goto error;
 		}
 
 		status = lttng_trace_chunk_open_fs_handle(
@@ -166,7 +165,7 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 				O_RDONLY, 0, &vstream->stream_file.handle,
 				true);
 		if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-			goto error_unlock;
+			goto error;
 		}
 	}
 
@@ -176,14 +175,13 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 		lseek_ret = fs_handle_seek(
 				vstream->index_file->file, 0, SEEK_END);
 		if (lseek_ret < 0) {
-			goto error_unlock;
+			goto error;
 		}
 	}
 	if (stream->is_metadata) {
 		rcu_assign_pointer(stream->trace->viewer_metadata_stream,
 				vstream);
 	}
-	pthread_mutex_unlock(&stream->lock);
 
 	/* Globally visible after the add unique. */
 	lttng_ht_node_init_u64(&vstream->stream_n, stream->stream_handle);
@@ -192,14 +190,12 @@ struct relay_viewer_stream *viewer_stream_create(struct relay_stream *stream,
 
 	return vstream;
 
-error_unlock:
-	pthread_mutex_unlock(&stream->lock);
 error:
 	if (vstream) {
 		viewer_stream_destroy(vstream);
 	}
-	if (viewer_trace_chunk && acquired_reference) {
-		lttng_trace_chunk_put(viewer_trace_chunk);
+	if (trace_chunk && acquired_reference) {
+		lttng_trace_chunk_put(trace_chunk);
 	}
 	return NULL;
 }

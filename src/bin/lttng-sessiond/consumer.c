@@ -93,7 +93,8 @@ error:
  *
  * Return 0 on success else a negative value on error.
  */
-int consumer_socket_send(struct consumer_socket *socket, void *msg, size_t len)
+int consumer_socket_send(
+		struct consumer_socket *socket, const void *msg, size_t len)
 {
 	int fd;
 	ssize_t size;
@@ -861,7 +862,7 @@ error:
  * The consumer socket lock must be held by the caller.
  */
 int consumer_send_msg(struct consumer_socket *sock,
-		struct lttcomm_consumer_msg *msg)
+		const struct lttcomm_consumer_msg *msg)
 {
 	int ret;
 
@@ -913,6 +914,7 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		unsigned int switch_timer_interval,
 		unsigned int read_timer_interval,
 		unsigned int live_timer_interval,
+		bool is_in_live_session,
 		unsigned int monitor_timer_interval,
 		int output,
 		int type,
@@ -959,6 +961,7 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 	msg->u.ask_channel.switch_timer_interval = switch_timer_interval;
 	msg->u.ask_channel.read_timer_interval = read_timer_interval;
 	msg->u.ask_channel.live_timer_interval = live_timer_interval;
+	msg->u.ask_channel.is_live = is_in_live_session;
 	msg->u.ask_channel.monitor_timer_interval = monitor_timer_interval;
 	msg->u.ask_channel.output = output;
 	msg->u.ask_channel.type = type;
@@ -1014,6 +1017,7 @@ void consumer_init_add_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t tracefile_count,
 		unsigned int monitor,
 		unsigned int live_timer_interval,
+		bool is_in_live_session,
 		unsigned int monitor_timer_interval,
 		struct lttng_trace_chunk *trace_chunk)
 {
@@ -1043,6 +1047,7 @@ void consumer_init_add_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 	msg->u.channel.tracefile_count = tracefile_count;
 	msg->u.channel.monitor = monitor;
 	msg->u.channel.live_timer_interval = live_timer_interval;
+	msg->u.channel.is_live = is_in_live_session;
 	msg->u.channel.monitor_timer_interval = monitor_timer_interval;
 
 	strncpy(msg->u.channel.pathname, pathname,
@@ -1713,6 +1718,32 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 	}
 error:
 	pthread_mutex_unlock(socket->lock);
+	health_code_update();
+	return ret;
+}
+
+int consumer_open_channel_packets(struct consumer_socket *socket, uint64_t key)
+{
+	int ret;
+	const struct lttcomm_consumer_msg msg = {
+		.cmd_type = LTTNG_CONSUMER_OPEN_CHANNEL_PACKETS,
+		.u.open_channel_packets.key = key,
+	};
+
+	assert(socket);
+
+	DBG("Consumer open channel packets: channel key = %" PRIu64, key);
+
+	health_code_update();
+
+	pthread_mutex_lock(socket->lock);
+	ret = consumer_send_msg(socket, &msg);
+	pthread_mutex_unlock(socket->lock);
+	if (ret < 0) {
+		goto error_socket;
+	}
+
+error_socket:
 	health_code_update();
 	return ret;
 }

@@ -144,7 +144,7 @@ libconsumer_la_DEPENDENCIES =  \
 	$(top_builddir)/src/common/compat/libcompat.la \
 	$(top_builddir)/src/common/relayd/librelayd.la $(am__append_1)
 am_libconsumer_la_OBJECTS = consumer.lo consumer-metadata-cache.lo \
-	consumer-timer.lo consumer-stream.lo
+	consumer-timer.lo consumer-stream.lo metadata-bucket.lo
 libconsumer_la_OBJECTS = $(am_libconsumer_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -493,7 +493,8 @@ noinst_HEADERS = consumer-metadata-cache.h consumer-timer.h \
 		 consumer-testpoint.h
 
 libconsumer_la_SOURCES = consumer.c consumer.h consumer-metadata-cache.c \
-                         consumer-timer.c consumer-stream.c consumer-stream.h
+                         consumer-timer.c consumer-stream.c consumer-stream.h \
+                         metadata-bucket.c metadata-bucket.h
 
 libconsumer_la_LIBADD =  \
 	$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
@@ -559,6 +560,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/consumer-stream.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/consumer-timer.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/consumer.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/metadata-bucket.Plo@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<

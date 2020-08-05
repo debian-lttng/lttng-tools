@@ -7,6 +7,7 @@
  *
  */
 
+#include "common/index/ctf-index.h"
 #define _LGPL_SOURCE
 #include <assert.h>
 #include <poll.h>
@@ -60,6 +61,12 @@ struct consumer_channel_msg {
 	enum consumer_channel_action action;
 	struct lttng_consumer_channel *chan;	/* add */
 	uint64_t key;				/* del */
+};
+
+enum open_packet_status {
+	OPEN_PACKET_STATUS_OPENED,
+	OPEN_PACKET_STATUS_NO_SPACE,
+	OPEN_PACKET_STATUS_ERROR,
 };
 
 /* Flag used to temporarily pause data consumption from testpoints. */
@@ -568,95 +575,6 @@ void consumer_stream_update_channel_attributes(
 			channel->tracefile_size;
 }
 
-struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
-		uint64_t stream_key,
-		const char *channel_name,
-		uint64_t relayd_id,
-		uint64_t session_id,
-		struct lttng_trace_chunk *trace_chunk,
-		int cpu,
-		int *alloc_ret,
-		enum consumer_channel_type type,
-		unsigned int monitor)
-{
-	int ret;
-	struct lttng_consumer_stream *stream;
-
-	stream = zmalloc(sizeof(*stream));
-	if (stream == NULL) {
-		PERROR("malloc struct lttng_consumer_stream");
-		ret = -ENOMEM;
-		goto end;
-	}
-
-	if (trace_chunk && !lttng_trace_chunk_get(trace_chunk)) {
-		ERR("Failed to acquire trace chunk reference during the creation of a stream");
-		ret = -1;
-		goto error;
-	}
-
-	rcu_read_lock();
-	stream->key = stream_key;
-	stream->trace_chunk = trace_chunk;
-	stream->out_fd = -1;
-	stream->out_fd_offset = 0;
-	stream->output_written = 0;
-	stream->net_seq_idx = relayd_id;
-	stream->session_id = session_id;
-	stream->monitor = monitor;
-	stream->endpoint_status = CONSUMER_ENDPOINT_ACTIVE;
-	stream->index_file = NULL;
-	stream->last_sequence_number = -1ULL;
-	stream->rotate_position = -1ULL;
-	pthread_mutex_init(&stream->lock, NULL);
-	pthread_mutex_init(&stream->metadata_timer_lock, NULL);
-
-	/* If channel is the metadata, flag this stream as metadata. */
-	if (type == CONSUMER_CHANNEL_TYPE_METADATA) {
-		stream->metadata_flag = 1;
-		/* Metadata is flat out. */
-		strncpy(stream->name, DEFAULT_METADATA_NAME, sizeof(stream->name));
-		/* Live rendez-vous point. */
-		pthread_cond_init(&stream->metadata_rdv, NULL);
-		pthread_mutex_init(&stream->metadata_rdv_lock, NULL);
-	} else {
-		/* Format stream name to <channel_name>_<cpu_number> */
-		ret = snprintf(stream->name, sizeof(stream->name), "%s_%d",
-				channel_name, cpu);
-		if (ret < 0) {
-			PERROR("snprintf stream name");
-			goto error;
-		}
-	}
-
-	/* Key is always the wait_fd for streams. */
-	lttng_ht_node_init_u64(&stream->node, stream->key);
-
-	/* Init node per channel id key */
-	lttng_ht_node_init_u64(&stream->node_channel_id, channel_key);
-
-	/* Init session id node with the stream session id */
-	lttng_ht_node_init_u64(&stream->node_session_id, stream->session_id);
-
-	DBG3("Allocated stream %s (key %" PRIu64 ", chan_key %" PRIu64
-			" relayd_id %" PRIu64 ", session_id %" PRIu64,
-			stream->name, stream->key, channel_key,
-			stream->net_seq_idx, stream->session_id);
-
-	rcu_read_unlock();
-	return stream;
-
-error:
-	rcu_read_unlock();
-	lttng_trace_chunk_put(stream->trace_chunk);
-	free(stream);
-end:
-	if (alloc_ret) {
-		*alloc_ret = ret;
-	}
-	return NULL;
-}
-
 /*
  * Add a stream to the global list protected by a mutex.
  */
@@ -1063,6 +981,7 @@ struct lttng_consumer_channel *consumer_allocate_channel(uint64_t key,
 		uint64_t session_id_per_pid,
 		unsigned int monitor,
 		unsigned int live_timer_interval,
+		bool is_in_live_session,
 		const char *root_shm_path,
 		const char *shm_path)
 {
@@ -1094,6 +1013,7 @@ struct lttng_consumer_channel *consumer_allocate_channel(uint64_t key,
 	channel->tracefile_count = tracefile_count;
 	channel->monitor = monitor;
 	channel->live_timer_interval = live_timer_interval;
+	channel->is_live = is_in_live_session;
 	pthread_mutex_init(&channel->lock, NULL);
 	pthread_mutex_init(&channel->timer_lock, NULL);
 
@@ -1462,7 +1382,7 @@ void lttng_consumer_sync_trace_file(struct lttng_consumer_stream *stream,
 struct lttng_consumer_local_data *lttng_consumer_create(
 		enum lttng_consumer_type type,
 		ssize_t (*buffer_ready)(struct lttng_consumer_stream *stream,
-			struct lttng_consumer_local_data *ctx),
+			struct lttng_consumer_local_data *ctx, bool locked_by_caller),
 		int (*recv_channel)(struct lttng_consumer_channel *channel),
 		int (*recv_stream)(struct lttng_consumer_stream *stream),
 		int (*update_stream)(uint64_t stream_key, uint32_t state))
@@ -1669,19 +1589,18 @@ end:
  * Returns the number of bytes written
  */
 ssize_t lttng_consumer_on_read_subbuffer_mmap(
-		struct lttng_consumer_local_data *ctx,
-		struct lttng_consumer_stream *stream, unsigned long len,
-		unsigned long padding,
-		struct ctf_packet_index *index)
+		struct lttng_consumer_stream *stream,
+		const struct lttng_buffer_view *buffer,
+		unsigned long padding)
 {
-	unsigned long mmap_offset;
-	void *mmap_base;
 	ssize_t ret = 0;
 	off_t orig_offset = stream->out_fd_offset;
 	/* Default is on the disk */
 	int outfd = stream->out_fd;
 	struct consumer_relayd_sock_pair *relayd = NULL;
 	unsigned int relayd_hang_up = 0;
+	const size_t subbuf_content_size = buffer->size - padding;
+	size_t write_len;
 
 	/* RCU lock for the relayd pointer */
 	rcu_read_lock();
@@ -1697,39 +1616,9 @@ ssize_t lttng_consumer_on_read_subbuffer_mmap(
 		}
 	}
 
-	/* get the offset inside the fd to mmap */
-	switch (consumer_data.type) {
-	case LTTNG_CONSUMER_KERNEL:
-		mmap_base = stream->mmap_base;
-		ret = kernctl_get_mmap_read_offset(stream->wait_fd, &mmap_offset);
-		if (ret < 0) {
-			PERROR("tracer ctl get_mmap_read_offset");
-			goto end;
-		}
-		break;
-	case LTTNG_CONSUMER32_UST:
-	case LTTNG_CONSUMER64_UST:
-		mmap_base = lttng_ustctl_get_mmap_base(stream);
-		if (!mmap_base) {
-			ERR("read mmap get mmap base for stream %s", stream->name);
-			ret = -EPERM;
-			goto end;
-		}
-		ret = lttng_ustctl_get_mmap_read_offset(stream, &mmap_offset);
-		if (ret != 0) {
-			PERROR("tracer ctl get_mmap_read_offset");
-			ret = -EINVAL;
-			goto end;
-		}
-		break;
-	default:
-		ERR("Unknown consumer_data type");
-		assert(0);
-	}
-
 	/* Handle stream on the relayd if the output is on the network */
 	if (relayd) {
-		unsigned long netlen = len;
+		unsigned long netlen = subbuf_content_size;
 
 		/*
 		 * Lock the control socket for the complete duration of the function
@@ -1767,10 +1656,10 @@ ssize_t lttng_consumer_on_read_subbuffer_mmap(
 				goto write_error;
 			}
 		}
-	} else {
-		/* No streaming, we have to set the len with the full padding */
-		len += padding;
 
+		write_len = subbuf_content_size;
+	} else {
+		/* No streaming; we have to write the full padding. */
 		if (stream->metadata_flag && stream->reset_metadata_flag) {
 			ret = utils_truncate_stream_file(stream->out_fd, 0);
 			if (ret < 0) {
@@ -1784,7 +1673,7 @@ ssize_t lttng_consumer_on_read_subbuffer_mmap(
 		 * Check if we need to change the tracefile before writing the packet.
 		 */
 		if (stream->chan->tracefile_size > 0 &&
-				(stream->tracefile_size_current + len) >
+				(stream->tracefile_size_current + buffer->size) >
 				stream->chan->tracefile_size) {
 			ret = consumer_stream_rotate_output_files(stream);
 			if (ret) {
@@ -1793,19 +1682,17 @@ ssize_t lttng_consumer_on_read_subbuffer_mmap(
 			outfd = stream->out_fd;
 			orig_offset = 0;
 		}
-		stream->tracefile_size_current += len;
-		if (index) {
-			index->offset = htobe64(stream->out_fd_offset);
-		}
+		stream->tracefile_size_current += buffer->size;
+		write_len = buffer->size;
 	}
 
 	/*
 	 * This call guarantee that len or less is returned. It's impossible to
 	 * receive a ret value that is bigger than len.
 	 */
-	ret = lttng_write(outfd, mmap_base + mmap_offset, len);
-	DBG("Consumer mmap write() ret %zd (len %lu)", ret, len);
-	if (ret < 0 || ((size_t) ret != len)) {
+	ret = lttng_write(outfd, buffer->data, write_len);
+	DBG("Consumer mmap write() ret %zd (len %zu)", ret, write_len);
+	if (ret < 0 || ((size_t) ret != write_len)) {
 		/*
 		 * Report error to caller if nothing was written else at least send the
 		 * amount written.
@@ -1826,7 +1713,8 @@ ssize_t lttng_consumer_on_read_subbuffer_mmap(
 			DBG("Consumer mmap write detected relayd hang up");
 		} else {
 			/* Unhandled error, print it and stop function right now. */
-			PERROR("Error in write mmap (ret %zd != len %lu)", ret, len);
+			PERROR("Error in write mmap (ret %zd != write_len %zu)", ret,
+					write_len);
 		}
 		goto write_error;
 	}
@@ -1835,9 +1723,9 @@ ssize_t lttng_consumer_on_read_subbuffer_mmap(
 	/* This call is useless on a socket so better save a syscall. */
 	if (!relayd) {
 		/* This won't block, but will start writeout asynchronously */
-		lttng_sync_file_range(outfd, stream->out_fd_offset, len,
+		lttng_sync_file_range(outfd, stream->out_fd_offset, write_len,
 				SYNC_FILE_RANGE_WRITE);
-		stream->out_fd_offset += len;
+		stream->out_fd_offset += write_len;
 		lttng_consumer_sync_trace_file(stream, orig_offset);
 	}
 
@@ -1871,8 +1759,7 @@ end:
 ssize_t lttng_consumer_on_read_subbuffer_splice(
 		struct lttng_consumer_local_data *ctx,
 		struct lttng_consumer_stream *stream, unsigned long len,
-		unsigned long padding,
-		struct ctf_packet_index *index)
+		unsigned long padding)
 {
 	ssize_t ret = 0, written = 0, ret_splice = 0;
 	loff_t offset = 0;
@@ -1976,7 +1863,6 @@ ssize_t lttng_consumer_on_read_subbuffer_splice(
 			orig_offset = 0;
 		}
 		stream->tracefile_size_current += len;
-		index->offset = htobe64(stream->out_fd_offset);
 	}
 
 	while (len > 0) {
@@ -2543,7 +2429,7 @@ restart:
 				do {
 					health_code_update();
 
-					len = ctx->on_buffer_ready(stream, ctx);
+					len = ctx->on_buffer_ready(stream, ctx, false);
 					/*
 					 * We don't check the return value here since if we get
 					 * a negative len, it means an error occurred thus we
@@ -2570,7 +2456,7 @@ restart:
 					do {
 						health_code_update();
 
-						len = ctx->on_buffer_ready(stream, ctx);
+						len = ctx->on_buffer_ready(stream, ctx, false);
 						/*
 						 * We don't check the return value here since if we get
 						 * a negative len, it means an error occurred thus we
@@ -2786,7 +2672,7 @@ void *consumer_thread_data_poll(void *data)
 			if (pollfd[i].revents & POLLPRI) {
 				DBG("Urgent read on fd %d", pollfd[i].fd);
 				high_prio = 1;
-				len = ctx->on_buffer_ready(local_stream[i], ctx);
+				len = ctx->on_buffer_ready(local_stream[i], ctx, false);
 				/* it's ok to have an unavailable sub-buffer */
 				if (len < 0 && len != -EAGAIN && len != -ENODATA) {
 					/* Clean the stream and free it. */
@@ -2817,7 +2703,7 @@ void *consumer_thread_data_poll(void *data)
 					local_stream[i]->hangup_flush_done ||
 					local_stream[i]->has_data) {
 				DBG("Normal read on fd %d", pollfd[i].fd);
-				len = ctx->on_buffer_ready(local_stream[i], ctx);
+				len = ctx->on_buffer_ready(local_stream[i], ctx, false);
 				/* it's ok to have an unavailable sub-buffer */
 				if (len < 0 && len != -EAGAIN && len != -ENODATA) {
 					/* Clean the stream and free it. */
@@ -3430,40 +3316,282 @@ error_testpoint:
 	return NULL;
 }
 
-ssize_t lttng_consumer_read_subbuffer(struct lttng_consumer_stream *stream,
-		struct lttng_consumer_local_data *ctx)
+static
+int consumer_flush_buffer(struct lttng_consumer_stream *stream,
+		int producer_active)
 {
-	ssize_t ret;
-
-	pthread_mutex_lock(&stream->chan->lock);
-	pthread_mutex_lock(&stream->lock);
-	if (stream->metadata_flag) {
-		pthread_mutex_lock(&stream->metadata_rdv_lock);
-	}
+	int ret = 0;
 
 	switch (consumer_data.type) {
 	case LTTNG_CONSUMER_KERNEL:
-		ret = lttng_kconsumer_read_subbuffer(stream, ctx);
+		if (producer_active) {
+			ret = kernctl_buffer_flush(stream->wait_fd);
+			if (ret < 0) {
+				ERR("Failed to flush kernel stream");
+				goto end;
+			}
+		} else {
+			ret = kernctl_buffer_flush_empty(stream->wait_fd);
+			if (ret < 0) {
+				/*
+				 * Doing a buffer flush which does not take into
+				 * account empty packets. This is not perfect,
+				 * but required as a fall-back when
+				 * "flush_empty" is not implemented by
+				 * lttng-modules.
+				 */
+				ret = kernctl_buffer_flush(stream->wait_fd);
+				if (ret < 0) {
+					ERR("Failed to flush kernel stream");
+					goto end;
+				}
+			}
+		}
 		break;
 	case LTTNG_CONSUMER32_UST:
 	case LTTNG_CONSUMER64_UST:
-		ret = lttng_ustconsumer_read_subbuffer(stream, ctx);
+		lttng_ustconsumer_flush_buffer(stream, producer_active);
 		break;
 	default:
 		ERR("Unknown consumer_data type");
-		assert(0);
-		ret = -ENOSYS;
-		break;
+		abort();
 	}
 
-	if (stream->metadata_flag) {
-		pthread_cond_broadcast(&stream->metadata_rdv);
-		pthread_mutex_unlock(&stream->metadata_rdv_lock);
+end:
+	return ret;
+}
+
+static enum open_packet_status open_packet(struct lttng_consumer_stream *stream)
+{
+	int ret;
+	enum open_packet_status status;
+	unsigned long produced_pos_before, produced_pos_after;
+
+	ret = lttng_consumer_sample_snapshot_positions(stream);
+	if (ret < 0) {
+		ERR("Failed to snapshot positions before post-rotation empty packet flush: stream id = %" PRIu64
+				", channel name = %s, session id = %" PRIu64,
+				stream->key, stream->chan->name,
+				stream->chan->session_id);
+		status = OPEN_PACKET_STATUS_ERROR;
+		goto end;
 	}
-	pthread_mutex_unlock(&stream->lock);
-	pthread_mutex_unlock(&stream->chan->lock);
+
+	ret = lttng_consumer_get_produced_snapshot(
+			stream, &produced_pos_before);
+	if (ret < 0) {
+		ERR("Failed to read produced position before post-rotation empty packet flush: stream id = %" PRIu64
+				", channel name = %s, session id = %" PRIu64,
+				stream->key, stream->chan->name,
+				stream->chan->session_id);
+		status = OPEN_PACKET_STATUS_ERROR;
+		goto end;
+	}
+
+	ret = consumer_flush_buffer(stream, 0);
+	if (ret) {
+		ERR("Failed to flush an empty packet at rotation point: stream id = %" PRIu64
+				", channel name = %s, session id = %" PRIu64,
+				stream->key, stream->chan->name,
+				stream->chan->session_id);
+		status = OPEN_PACKET_STATUS_ERROR;
+		goto end;
+	}
+
+	ret = lttng_consumer_sample_snapshot_positions(stream);
+	if (ret < 0) {
+		ERR("Failed to snapshot positions after post-rotation empty packet flush: stream id = %" PRIu64
+				", channel name = %s, session id = %" PRIu64,
+				stream->key, stream->chan->name,
+				stream->chan->session_id);
+		status = OPEN_PACKET_STATUS_ERROR;
+		goto end;
+	}
+
+	ret = lttng_consumer_get_produced_snapshot(stream, &produced_pos_after);
+	if (ret < 0) {
+		ERR("Failed to read produced position after post-rotation empty packet flush: stream id = %" PRIu64
+				", channel name = %s, session id = %" PRIu64,
+				stream->key, stream->chan->name,
+				stream->chan->session_id);
+		status = OPEN_PACKET_STATUS_ERROR;
+		goto end;
+	}
+
+	/*
+	 * Determine if the flush had an effect by comparing the produced
+	 * positons before and after the flush.
+	 */
+	status = produced_pos_before != produced_pos_after ?
+			OPEN_PACKET_STATUS_OPENED :
+			OPEN_PACKET_STATUS_NO_SPACE;
+	if (status == OPEN_PACKET_STATUS_OPENED) {
+		stream->opened_packet_in_current_trace_chunk = true;
+	}
+end:
+	return status;
+}
+
+static bool stream_is_rotating_to_null_chunk(
+		const struct lttng_consumer_stream *stream)
+{
+	bool rotating_to_null_chunk = false;
+
+	if (stream->rotate_position == -1ULL) {
+		/* No rotation ongoing. */
+		goto end;
+	}
+
+	if (stream->trace_chunk == stream->chan->trace_chunk ||
+			!stream->chan->trace_chunk) {
+		rotating_to_null_chunk = true;
+	}
+end:
+	return rotating_to_null_chunk;
+}
+
+ssize_t lttng_consumer_read_subbuffer(struct lttng_consumer_stream *stream,
+		struct lttng_consumer_local_data *ctx,
+		bool locked_by_caller)
+{
+	ssize_t ret, written_bytes = 0;
+	int rotation_ret;
+	struct stream_subbuffer subbuffer = {};
+
+	if (!locked_by_caller) {
+		stream->read_subbuffer_ops.lock(stream);
+	}
+
+	if (stream->read_subbuffer_ops.on_wake_up) {
+		ret = stream->read_subbuffer_ops.on_wake_up(stream);
+		if (ret) {
+			goto end;
+		}
+	}
+
+	/*
+	 * If the stream was flagged to be ready for rotation before we extract
+	 * the next packet, rotate it now.
+	 */
+	if (stream->rotate_ready) {
+		DBG("Rotate stream before consuming data");
+		ret = lttng_consumer_rotate_stream(ctx, stream);
+		if (ret < 0) {
+			ERR("Stream rotation error before consuming data");
+			goto end;
+		}
+	}
+
+	ret = stream->read_subbuffer_ops.get_next_subbuffer(stream, &subbuffer);
+	if (ret) {
+		if (ret == -ENODATA) {
+			/* Not an error. */
+			ret = 0;
+			goto sleep_stream;
+		}
+		goto end;
+	}
+
+	ret = stream->read_subbuffer_ops.pre_consume_subbuffer(
+			stream, &subbuffer);
+	if (ret) {
+		goto error_put_subbuf;
+	}
+
+	written_bytes = stream->read_subbuffer_ops.consume_subbuffer(
+			ctx, stream, &subbuffer);
+	if (written_bytes <= 0) {
+		ERR("Error consuming subbuffer: (%zd)", written_bytes);
+		ret = (int) written_bytes;
+		goto error_put_subbuf;
+	}
+
+	ret = stream->read_subbuffer_ops.put_next_subbuffer(stream, &subbuffer);
+	if (ret) {
+		goto end;
+	}
+
+	if (stream->read_subbuffer_ops.post_consume) {
+		ret = stream->read_subbuffer_ops.post_consume(stream, &subbuffer, ctx);
+		if (ret) {
+			goto end;
+		}
+	}
+
+	/*
+	 * After extracting the packet, we check if the stream is now ready to
+	 * be rotated and perform the action immediately.
+	 *
+	 * Don't overwrite `ret` as callers expect the number of bytes
+	 * consumed to be returned on success.
+	 */
+	rotation_ret = lttng_consumer_stream_is_rotate_ready(stream);
+	if (rotation_ret == 1) {
+		rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
+		if (rotation_ret < 0) {
+			ret = rotation_ret;
+			ERR("Stream rotation error after consuming data");
+			goto end;
+		}
+	} else if (rotation_ret < 0) {
+		ret = rotation_ret;
+		ERR("Failed to check if stream was ready to rotate after consuming data");
+		goto end;
+	}
+
+	/*
+	 * TODO roll into a post_consume op as this doesn't apply to metadata
+	 * streams.
+	 */
+	if (!stream->opened_packet_in_current_trace_chunk &&
+			stream->trace_chunk && !stream->metadata_flag &&
+			!stream_is_rotating_to_null_chunk(stream)) {
+		const enum open_packet_status status = open_packet(stream);
+
+		switch (status) {
+		case OPEN_PACKET_STATUS_OPENED:
+			DBG("Opened a packet after consuming a packet rotation: stream id = %" PRIu64
+					", channel name = %s, session id = %" PRIu64,
+					stream->key, stream->chan->name,
+					stream->chan->session_id);
+			break;
+		case OPEN_PACKET_STATUS_NO_SPACE:
+			/*
+			 * Can't open a packet as there is no space left.
+			 * This means that new events were produced, resulting
+			 * in a packet being opened, which is what we wanted
+			 * anyhow.
+			 */
+			DBG("No space left to open a packet after consuming a packet: stream id = %" PRIu64
+					", channel name = %s, session id = %" PRIu64,
+					stream->key, stream->chan->name,
+					stream->chan->session_id);
+			stream->opened_packet_in_current_trace_chunk = true;
+			break;
+		case OPEN_PACKET_STATUS_ERROR:
+			/* Logged by callee. */
+			ret = -1;
+			goto end;
+		default:
+			abort();
+		}
+	}
+
+sleep_stream:
+	if (stream->read_subbuffer_ops.on_sleep) {
+		stream->read_subbuffer_ops.on_sleep(stream, ctx);
+	}
+
+	ret = written_bytes;
+end:
+	if (!locked_by_caller) {
+		stream->read_subbuffer_ops.unlock(stream);
+	}
 
 	return ret;
+error_put_subbuf:
+	(void) stream->read_subbuffer_ops.put_next_subbuffer(stream, &subbuffer);
+	goto end;
 }
 
 int lttng_consumer_on_recv_stream(struct lttng_consumer_stream *stream)
@@ -3937,44 +4065,30 @@ unsigned long consumer_get_consume_start_pos(unsigned long consumed_pos,
 	return start_pos;
 }
 
-static
-int consumer_flush_buffer(struct lttng_consumer_stream *stream, int producer_active)
+/* Stream lock must be held by the caller. */
+static int sample_stream_positions(struct lttng_consumer_stream *stream,
+			    unsigned long *produced, unsigned long *consumed)
 {
-	int ret = 0;
+	int ret;
 
-	switch (consumer_data.type) {
-	case LTTNG_CONSUMER_KERNEL:
-		if (producer_active) {
-			ret = kernctl_buffer_flush(stream->wait_fd);
-			if (ret < 0) {
-				ERR("Failed to flush kernel stream");
-				goto end;
-			}
-		} else {
-			ret = kernctl_buffer_flush_empty(stream->wait_fd);
-			if (ret < 0) {
-				/*
-				 * Doing a buffer flush which does not take into
-				 * account empty packets. This is not perfect,
-				 * but required as a fall-back when
-				 * "flush_empty" is not implemented by
-				 * lttng-modules.
-				 */
-				ret = kernctl_buffer_flush(stream->wait_fd);
-				if (ret < 0) {
-					ERR("Failed to flush kernel stream");
-					goto end;
-				}
-			}
-		}
-		break;
-	case LTTNG_CONSUMER32_UST:
-	case LTTNG_CONSUMER64_UST:
-		lttng_ustconsumer_flush_buffer(stream, producer_active);
-		break;
-	default:
-		ERR("Unknown consumer_data type");
-		abort();
+	ASSERT_LOCKED(stream->lock);
+
+	ret = lttng_consumer_sample_snapshot_positions(stream);
+	if (ret < 0) {
+		ERR("Failed to sample snapshot positions");
+		goto end;
+	}
+
+	ret = lttng_consumer_get_produced_snapshot(stream, produced);
+	if (ret < 0) {
+		ERR("Failed to sample produced position");
+		goto end;
+	}
+
+	ret = lttng_consumer_get_consumed_snapshot(stream, consumed);
+	if (ret < 0) {
+		ERR("Failed to sample consumed position");
+		goto end;
 	}
 
 end:
@@ -4004,11 +4118,15 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 	const bool is_local_trace = relayd_id == -1ULL;
 	struct consumer_relayd_sock_pair *relayd = NULL;
 	bool rotating_to_new_chunk = true;
+	/* Array of `struct lttng_consumer_stream *` */
+	struct lttng_dynamic_pointer_array streams_packet_to_open;
+	size_t stream_idx;
 
 	DBG("Consumer sample rotate position for channel %" PRIu64, key);
 
 	lttng_dynamic_array_init(&stream_rotation_positions,
 			sizeof(struct relayd_stream_rotation_position), NULL);
+	lttng_dynamic_pointer_array_init(&streams_packet_to_open, NULL);
 
 	rcu_read_lock();
 
@@ -4039,18 +4157,97 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 		}
 
 		/*
-		 * Do not flush an empty packet when rotating from a NULL trace
+		 * Do not flush a packet when rotating from a NULL trace
 		 * chunk. The stream has no means to output data, and the prior
-		 * rotation which rotated to NULL performed that side-effect already.
+		 * rotation which rotated to NULL performed that side-effect
+		 * already. No new data can be produced when a stream has no
+		 * associated trace chunk (e.g. a stop followed by a rotate).
 		 */
 		if (stream->trace_chunk) {
+			bool flush_active;
+
+			if (stream->metadata_flag) {
+				/*
+				 * Don't produce an empty metadata packet,
+				 * simply close the current one.
+				 *
+				 * Metadata is regenerated on every trace chunk
+				 * switch; there is no concern that no data was
+				 * produced.
+				 */
+				flush_active = true;
+			} else {
+				/*
+				 * Only flush an empty packet if the "packet
+				 * open" could not be performed on transition
+				 * to a new trace chunk and no packets were
+				 * consumed within the chunk's lifetime.
+				 */
+				if (stream->opened_packet_in_current_trace_chunk) {
+					flush_active = true;
+				} else {
+					/*
+					 * Stream could have been full at the
+					 * time of rotation, but then have had
+					 * no activity at all.
+					 *
+					 * It is important to flush a packet
+					 * to prevent 0-length files from being
+					 * produced as most viewers choke on
+					 * them.
+					 *
+					 * Unfortunately viewers will not be
+					 * able to know that tracing was active
+					 * for this stream during this trace
+					 * chunk's lifetime.
+					 */
+					ret = sample_stream_positions(stream, &produced_pos, &consumed_pos);
+					if (ret) {
+						goto end_unlock_stream;
+					}
+
+					/*
+					 * Don't flush an empty packet if data
+					 * was produced; it will be consumed
+					 * before the rotation completes.
+					 */
+					flush_active = produced_pos != consumed_pos;
+					if (!flush_active) {
+						enum lttng_trace_chunk_status chunk_status;
+						const char *trace_chunk_name;
+						uint64_t trace_chunk_id;
+
+						chunk_status = lttng_trace_chunk_get_name(
+								stream->trace_chunk,
+								&trace_chunk_name,
+								NULL);
+						if (chunk_status == LTTNG_TRACE_CHUNK_STATUS_NONE) {
+							trace_chunk_name = "none";
+						}
+
+						/*
+						 * Consumer trace chunks are
+						 * never anonymous.
+						 */
+						chunk_status = lttng_trace_chunk_get_id(
+								stream->trace_chunk,
+								&trace_chunk_id);
+						assert(chunk_status ==
+								LTTNG_TRACE_CHUNK_STATUS_OK);
+
+						DBG("Unable to open packet for stream during trace chunk's lifetime. "
+								"Flushing an empty packet to prevent an empty file from being created: "
+								"stream id = %" PRIu64 ", trace chunk name = `%s`, trace chunk id = %" PRIu64,
+								stream->key, trace_chunk_name, trace_chunk_id);
+					}
+				}
+			}
+
 			/*
-			 * For metadata stream, do an active flush, which does not
-			 * produce empty packets. For data streams, empty-flush;
-			 * ensures we have at least one packet in each stream per trace
-			 * chunk, even if no data was produced.
+			 * Close the current packet before sampling the
+			 * ring buffer positions.
 			 */
-			ret = consumer_flush_buffer(stream, stream->metadata_flag ? 1 : 0);
+			ret = consumer_flush_buffer(stream, flush_active);
 			if (ret < 0) {
 				ERR("Failed to flush stream %" PRIu64 " during channel rotation",
 						stream->key);
@@ -4138,36 +4335,135 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 			}
 			stream_count++;
 		}
+
+		stream->opened_packet_in_current_trace_chunk = false;
+
+		if (rotating_to_new_chunk && !stream->metadata_flag) {
+			/*
+			 * Attempt to flush an empty packet as close to the
+			 * rotation point as possible. In the event where a
+			 * stream remains inactive after the rotation point,
+			 * this ensures that the new trace chunk has a
+			 * beginning timestamp set at the begining of the
+			 * trace chunk instead of only creating an empty
+			 * packet when the trace chunk is stopped.
+			 *
+			 * This indicates to the viewers that the stream
+			 * was being recorded, but more importantly it
+			 * allows viewers to determine a useable trace
+			 * intersection.
+			 *
+			 * This presents a problem in the case where the
+			 * ring-buffer is completely full.
+			 *
+			 * Consider the following scenario:
+			 *   - The consumption of data is slow (slow network,
+			 *     for instance),
+			 *   - The ring buffer is full,
+			 *   - A rotation is initiated,
+			 *     - The flush below does nothing (no space left to
+			 *       open a new packet),
+			 *   - The other streams rotate very soon, and new
+			 *     data is produced in the new chunk,
+			 *   - This stream completes its rotation long after the
+			 *     rotation was initiated
+			 *   - The session is stopped before any event can be
+			 *     produced	in this stream's buffers.
+			 *
+			 * The resulting trace chunk will have a single packet
+			 * temporaly at the end of the trace chunk for this
+			 * stream making the stream intersection more narrow
+			 * than it should be.
+			 *
+			 * To work-around this, an empty flush is performed
+			 * after the first consumption of a packet during a
+			 * rotation if open_packet fails. The idea is that
+			 * consuming a packet frees enough space to switch
+			 * packets in this scenario and allows the tracer to
+			 * "stamp" the beginning of the new trace chunk at the
+			 * earliest possible point.
+			 *
+			 * The packet open is performed after the channel
+			 * rotation to ensure that no attempt to open a packet
+			 * is performed in a stream that has no active trace
+			 * chunk.
+			 */
+			ret = lttng_dynamic_pointer_array_add_pointer(
+					&streams_packet_to_open, stream);
+			if (ret) {
+				PERROR("Failed to add a stream pointer to array of streams in which to open a packet");
+				ret = -1;
+				goto end_unlock_stream;
+			}
+		}
+
 		pthread_mutex_unlock(&stream->lock);
 	}
 	stream = NULL;
+
+	if (!is_local_trace) {
+		relayd = consumer_find_relayd(relayd_id);
+		if (!relayd) {
+			ERR("Failed to find relayd %" PRIu64, relayd_id);
+			ret = -1;
+			goto end_unlock_channel;
+		}
+
+		pthread_mutex_lock(&relayd->ctrl_sock_mutex);
+		ret = relayd_rotate_streams(&relayd->control_sock, stream_count,
+				rotating_to_new_chunk ? &next_chunk_id : NULL,
+				(const struct relayd_stream_rotation_position *)
+						stream_rotation_positions.buffer
+								.data);
+		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
+		if (ret < 0) {
+			ERR("Relayd rotate stream failed. Cleaning up relayd %" PRIu64,
+					relayd->net_seq_idx);
+			lttng_consumer_cleanup_relayd(relayd);
+			goto end_unlock_channel;
+		}
+	}
+
+	for (stream_idx = 0;
+			stream_idx < lttng_dynamic_pointer_array_get_count(
+				&streams_packet_to_open);
+			stream_idx++) {
+		enum open_packet_status status;
+
+		stream = lttng_dynamic_pointer_array_get_pointer(
+				&streams_packet_to_open, stream_idx);
+
+		pthread_mutex_lock(&stream->lock);
+		status = open_packet(stream);
+		pthread_mutex_unlock(&stream->lock);
+		switch (status) {
+		case OPEN_PACKET_STATUS_OPENED:
+			DBG("Opened a packet after a rotation: stream id = %" PRIu64
+			    ", channel name = %s, session id = %" PRIu64,
+					stream->key, stream->chan->name,
+					stream->chan->session_id);
+			break;
+		case OPEN_PACKET_STATUS_NO_SPACE:
+			/*
+			 * Can't open a packet as there is no space left
+			 * in the buffer. A new packet will be opened
+			 * once one has been consumed.
+			 */
+			DBG("No space left to open a packet after a rotation: stream id = %" PRIu64
+			    ", channel name = %s, session id = %" PRIu64,
+					stream->key, stream->chan->name,
+					stream->chan->session_id);
+			break;
+		case OPEN_PACKET_STATUS_ERROR:
+			/* Logged by callee. */
+			ret = -1;
+			goto end_unlock_channel;
+		default:
+			abort();
+		}
+	}
+
 	pthread_mutex_unlock(&channel->lock);
-
-	if (is_local_trace) {
-		ret = 0;
-		goto end;
-	}
-
-	relayd = consumer_find_relayd(relayd_id);
-	if (!relayd) {
-		ERR("Failed to find relayd %" PRIu64, relayd_id);
-		ret = -1;
-		goto end;
-	}
-
-	pthread_mutex_lock(&relayd->ctrl_sock_mutex);
-	ret = relayd_rotate_streams(&relayd->control_sock, stream_count,
-			rotating_to_new_chunk ? &next_chunk_id : NULL,
-			(const struct relayd_stream_rotation_position *)
-					stream_rotation_positions.buffer.data);
-	pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
-	if (ret < 0) {
-		ERR("Relayd rotate stream failed. Cleaning up relayd %" PRIu64,
-				relayd->net_seq_idx);
-		lttng_consumer_cleanup_relayd(relayd);
-		goto end;
-	}
-
 	ret = 0;
 	goto end;
 
@@ -4178,6 +4474,7 @@ end_unlock_channel:
 end:
 	rcu_read_unlock();
 	lttng_dynamic_array_reset(&stream_rotation_positions);
+	lttng_dynamic_pointer_array_reset(&streams_packet_to_open);
 	return ret;
 }
 
@@ -4992,4 +5289,71 @@ int lttng_consumer_clear_channel(struct lttng_consumer_channel *channel)
 	}
 end:
 	return ret;
+}
+
+enum lttcomm_return_code lttng_consumer_open_channel_packets(
+		struct lttng_consumer_channel *channel)
+{
+	struct lttng_consumer_stream *stream;
+	enum lttcomm_return_code ret = LTTCOMM_CONSUMERD_SUCCESS;
+
+	if (channel->metadata_stream) {
+		ERR("Open channel packets command attempted on a metadata channel");
+		ret = LTTCOMM_CONSUMERD_INVALID_PARAMETERS;
+		goto end;
+	}
+
+	rcu_read_lock();
+	cds_list_for_each_entry(stream, &channel->streams.head, send_node) {
+		enum open_packet_status status;
+
+		pthread_mutex_lock(&stream->lock);
+		if (cds_lfht_is_node_deleted(&stream->node.node)) {
+			goto next;
+		}
+
+		status = open_packet(stream);
+		switch (status) {
+		case OPEN_PACKET_STATUS_OPENED:
+			DBG("Opened a packet in \"open channel packets\" command: stream id = %" PRIu64
+					", channel name = %s, session id = %" PRIu64,
+					stream->key, stream->chan->name,
+					stream->chan->session_id);
+			stream->opened_packet_in_current_trace_chunk = true;
+			break;
+		case OPEN_PACKET_STATUS_NO_SPACE:
+			DBG("No space left to open a packet in \"open channel packets\" command: stream id = %" PRIu64
+					", channel name = %s, session id = %" PRIu64,
+					stream->key, stream->chan->name,
+					stream->chan->session_id);
+			break;
+		case OPEN_PACKET_STATUS_ERROR:
+			/*
+			 * Only unexpected internal errors can lead to this
+			 * failing. Report an unknown error.
+			 */
+			ERR("Failed to flush empty buffer in \"open channel packets\" command: stream id = %" PRIu64
+					", channel id = %" PRIu64
+					", channel name = %s"
+					", session id = %" PRIu64,
+					stream->key, channel->key,
+					channel->name, channel->session_id);
+			ret = LTTCOMM_CONSUMERD_UNKNOWN_ERROR;
+			goto error_unlock;
+		default:
+			abort();
+		}
+
+	next:
+		pthread_mutex_unlock(&stream->lock);
+	}
+
+end_rcu_unlock:
+	rcu_read_unlock();
+end:
+	return ret;
+
+error_unlock:
+	pthread_mutex_unlock(&stream->lock);
+	goto end_rcu_unlock;
 }

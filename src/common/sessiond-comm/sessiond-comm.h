@@ -179,6 +179,7 @@ enum lttcomm_return_code {
 	LTTCOMM_CONSUMERD_TRACE_CHUNK_EXISTS_REMOTE,/* Trace chunk exists on relay daemon. */
 	LTTCOMM_CONSUMERD_UNKNOWN_TRACE_CHUNK,      /* Unknown trace chunk. */
 	LTTCOMM_CONSUMERD_RELAYD_CLEAR_DISALLOWED,  /* Relayd does not accept clear command. */
+	LTTCOMM_CONSUMERD_UNKNOWN_ERROR,            /* Unknown error. */
 
 	/* MUST be last element */
 	LTTCOMM_NR,						/* Last element */
@@ -534,6 +535,8 @@ struct lttcomm_consumer_msg {
 			uint32_t monitor;
 			/* timer to check the streams usage in live mode (usec). */
 			unsigned int live_timer_interval;
+			/* is part of a live session */
+			uint8_t is_live;
 			/* timer to sample a channel's positions (usec). */
 			unsigned int monitor_timer_interval;
 		} LTTNG_PACKED channel; /* Only used by Kernel. */
@@ -567,6 +570,7 @@ struct lttcomm_consumer_msg {
 			uint32_t switch_timer_interval;		/* usec */
 			uint32_t read_timer_interval;		/* usec */
 			unsigned int live_timer_interval;	/* usec */
+			uint8_t is_live;			/* is part of a live session */
 			uint32_t monitor_timer_interval;	/* usec */
 			int32_t output;				/* splice, mmap */
 			int32_t type;				/* metadata or per_cpu */
@@ -702,6 +706,9 @@ struct lttcomm_consumer_msg {
 		struct {
 			uint64_t key;
 		} LTTNG_PACKED clear_channel;
+		struct {
+			uint64_t key;
+		} LTTNG_PACKED open_channel_packets;
 	} u;
 } LTTNG_PACKED;
 
