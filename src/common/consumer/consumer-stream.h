@@ -11,6 +11,24 @@
 #include "consumer.h"
 
 /*
+ * Create a consumer stream.
+ *
+ * The channel lock MUST be acquired.
+ */
+struct lttng_consumer_stream *consumer_stream_create(
+		struct lttng_consumer_channel *channel,
+		uint64_t channel_key,
+		uint64_t stream_key,
+		const char *channel_name,
+		uint64_t relayd_id,
+		uint64_t session_id,
+		struct lttng_trace_chunk *trace_chunk,
+		int cpu,
+		int *alloc_ret,
+		enum consumer_channel_type type,
+		unsigned int monitor);
+
+/*
  * Close stream's file descriptors and, if needed, close stream also on the
  * relayd side.
  *
@@ -92,5 +110,24 @@ int consumer_stream_rotate_output_files(struct lttng_consumer_stream *stream);
  * This function must be called with the RCU read side lock held.
  */
 bool consumer_stream_is_deleted(struct lttng_consumer_stream *stream);
+
+/*
+ * Enable metadata bucketization. This must only be enabled if the tracer
+ * provides a reliable metadata `coherent` flag.
+ *
+ * This must be called on initialization before any subbuffer is consumed.
+ */
+int consumer_stream_enable_metadata_bucketization(
+		struct lttng_consumer_stream *stream);
+
+/*
+ * Set the version of a metadata stream (i.e. following a metadata
+ * regeneration).
+ *
+ * Changing the version of a metadata stream will cause any bucketized metadata
+ * to be discarded and will mark the metadata stream for future `reset`.
+ */
+void consumer_stream_metadata_set_version(
+		struct lttng_consumer_stream *stream, uint64_t new_version);
 
 #endif /* LTTNG_CONSUMER_STREAM_H */
