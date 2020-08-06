@@ -1,3 +1,9 @@
+ltt-control (2.12.2-1~ubuntu16.04.1) xenial; urgency=medium
+
+  * [9ad4f03] New upstream version 2.12.2
+
+ -- Michael Jeanson <mjeanson@debian.org>  Thu, 06 Aug 2020 18:25:19 -0400
+
 ltt-control (2.12.1-1~ubuntu16.04.1) xenial; urgency=medium
 
   * [15ca0d6] New upstream version 2.12.1
