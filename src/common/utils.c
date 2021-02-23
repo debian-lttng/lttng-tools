@@ -294,7 +294,7 @@ int expand_double_slashes_dot_and_dotdot(char *path)
 		 * Copy the current token which is neither a '.' nor a '..'.
 		 */
 		path[expanded_path_len++] = '/';
-		memcpy(&path[expanded_path_len], curr_char, curr_token_len);
+		memmove(&path[expanded_path_len], curr_char, curr_token_len);
 		expanded_path_len += curr_token_len;
 	}
 
@@ -1274,8 +1274,14 @@ int utils_get_group_id(const char *name, bool warn, gid_t *gid)
 		}
 	}
 	if (ret) {
-		PERROR("Failed to get group file entry for group name \"%s\"",
-				name);
+		if (ret == ESRCH) {
+			DBG("Could not find group file entry for group name '%s'",
+					name);
+		} else {
+			PERROR("Failed to get group file entry for group name '%s'",
+					name);
+		}
+
 		ret = -1;
 		goto error;
 	}
