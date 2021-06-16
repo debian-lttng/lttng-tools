@@ -148,7 +148,7 @@ extern int yydebug;
 
 union YYSTYPE
 {
-#line 320 "filter-parser.y" /* yacc.c:1909  */
+#line 325 "filter-parser.y" /* yacc.c:1909  */
 
 	long long ll;
 	char c;
@@ -167,7 +167,7 @@ typedef union YYSTYPE YYSTYPE;
 
 int yyparse (struct filter_parser_ctx *parser_ctx, yyscan_t scanner);
 /* "%code provides" blocks.  */
-#line 294 "filter-parser.y" /* yacc.c:1909  */
+#line 299 "filter-parser.y" /* yacc.c:1909  */
 
 #include "common/macros.h"
 
