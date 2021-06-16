@@ -403,16 +403,12 @@ static int lttng_kconsumer_snapshot_metadata(
 
 		ret_read = lttng_consumer_read_subbuffer(metadata_stream, ctx, true);
 		if (ret_read < 0) {
-			if (ret_read != -EAGAIN) {
-				ERR("Kernel snapshot reading metadata subbuffer (ret: %zd)",
-						ret_read);
-				ret = ret_read;
-				goto error_snapshot;
-			}
-			/* ret_read is negative at this point so we will exit the loop. */
-			continue;
+			ERR("Kernel snapshot reading metadata subbuffer (ret: %zd)",
+					ret_read);
+			ret = ret_read;
+			goto error_snapshot;
 		}
-	} while (ret_read >= 0);
+	} while (ret_read > 0);
 
 	if (use_relayd) {
 		close_relayd_stream(metadata_stream);
@@ -1531,6 +1527,17 @@ int get_subbuffer_common(struct lttng_consumer_stream *stream,
 
 	ret = kernctl_get_next_subbuf(stream->wait_fd);
 	if (ret) {
+		/*
+		 * The caller only expects -ENODATA when there is no data to
+		 * read, but the kernel tracer returns -EAGAIN when there is
+		 * currently no data for a non-finalized stream, and -ENODATA
+		 * when there is no data for a finalized stream. Those can be
+		 * combined into a -ENODATA return value.
+		 */
+		if (ret == -EAGAIN) {
+			ret = -ENODATA;
+		}
+
 		goto end;
 	}
 
@@ -1612,6 +1619,16 @@ int get_next_subbuffer_metadata_check(struct lttng_consumer_stream *stream,
 			subbuffer->info.metadata.padded_subbuf_size,
 			coherent ? "true" : "false");
 end:
+	/*
+	 * The caller only expects -ENODATA when there is no data to read, but
+	 * the kernel tracer returns -EAGAIN when there is currently no data
+	 * for a non-finalized stream, and -ENODATA when there is no data for a
+	 * finalized stream. Those can be combined into a -ENODATA return value.
+	 */
+	if (ret == -EAGAIN) {
+		ret = -ENODATA;
+	}
+
 	return ret;
 }
 
@@ -1636,8 +1653,23 @@ int put_next_subbuffer(struct lttng_consumer_stream *stream,
 static
 bool is_get_next_check_metadata_available(int tracer_fd)
 {
-	return kernctl_get_next_subbuf_metadata_check(tracer_fd, NULL) !=
-			-ENOTTY;
+	const int ret = kernctl_get_next_subbuf_metadata_check(tracer_fd, NULL);
+	const bool available = ret != -ENOTTY;
+
+	if (ret == 0) {
+		/* get succeeded, make sure to put the subbuffer. */
+		kernctl_put_subbuf(tracer_fd);
+	}
+
+	return available;
+}
+
+static
+int signal_metadata(struct lttng_consumer_stream *stream,
+		struct lttng_consumer_local_data *ctx)
+{
+	ASSERT_LOCKED(stream->metadata_rdv_lock);
+	return pthread_cond_broadcast(&stream->metadata_rdv) ? -errno : 0;
 }
 
 static
@@ -1670,6 +1702,8 @@ int lttng_kconsumer_set_stream_ops(
 			metadata_bucket_destroy(stream->metadata_bucket);
 			stream->metadata_bucket = NULL;
 		}
+
+		stream->read_subbuffer_ops.on_sleep = signal_metadata;
 	}
 
 	if (!stream->read_subbuffer_ops.get_next_subbuffer) {
