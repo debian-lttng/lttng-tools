@@ -655,14 +655,8 @@ int kernel_disable_event(struct ltt_kernel_event *event)
 
 	ret = kernctl_disable(event->fd);
 	if (ret < 0) {
-		switch (-ret) {
-		case EEXIST:
-			ret = LTTNG_ERR_KERN_EVENT_EXIST;
-			break;
-		default:
-			PERROR("disable kernel event");
-			break;
-		}
+		PERROR("Failed to disable kernel event: name = '%s', fd = %d",
+				event->event->name, event->fd);
 		goto error;
 	}
 
@@ -1562,7 +1556,7 @@ enum lttng_error_code kernel_snapshot_record(
 	}
 
 	trace_path = setup_channel_trace_path(ksess->consumer,
-			DEFAULT_KERNEL_TRACE_DIR, &consumer_path_offset);
+			"", &consumer_path_offset);
 	if (!trace_path) {
 		status = LTTNG_ERR_INVALID;
 		goto error;

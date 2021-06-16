@@ -367,7 +367,7 @@ static int set_session_daemon_path(void)
 		in_tgroup = lttng_check_tracing_group();
 	}
 
-	if ((uid == 0) || in_tgroup) {
+	if ((uid == 0) || in_tgroup == 1) {
 		const int ret = lttng_strncpy(sessiond_sock_path,
 				DEFAULT_GLOBAL_CLIENT_UNIX_SOCK,
 				sizeof(sessiond_sock_path));
@@ -2053,7 +2053,7 @@ int lttng_destroy_session_no_wait(const char *session_name)
 	enum lttng_error_code ret_code;
 
 	ret_code = lttng_destroy_session_ext(session_name, NULL);
-	return ret_code == LTTNG_OK ? ret_code : -ret_code;
+	return ret_code == LTTNG_OK ? 0 : -ret_code;
 }
 
 /*
