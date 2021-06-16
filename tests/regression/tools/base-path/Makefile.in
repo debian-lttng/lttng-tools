@@ -430,7 +430,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 noinst_SCRIPTS = test_ust
-EXTRA_DIST = test_ust
+EXTRA_DIST = test_ust load-stream-extra-path.lttng
 all: all-am
 
 .SUFFIXES:

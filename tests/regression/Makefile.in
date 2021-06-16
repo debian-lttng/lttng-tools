@@ -726,7 +726,7 @@ LOG_DRIVER_FLAGS = --merge --post-script $(top_srcdir)/tests/utils/warn_processe
 LOG_DRIVER = env PGREP='$(PGREP)' AM_TAP_AWK='$(AWK)' $(SHELL) \
 	$(top_srcdir)/config/tap-driver.sh
 
-TESTS = tools/filtering/test_invalid_filter \
+TESTS = tools/base-path/test_ust tools/filtering/test_invalid_filter \
 	tools/filtering/test_unsupported_op \
 	tools/filtering/test_valid_filter tools/streaming/test_ust \
 	tools/health/test_thread_ok tools/live/test_ust \
@@ -1030,6 +1030,13 @@ recheck: all
 	        am__force_recheck=am--force-recheck \
 	        TEST_LOGS="$$log_list"; \
 	exit $$?
+tools/base-path/test_ust.log: tools/base-path/test_ust
+	@p='tools/base-path/test_ust'; \
+	b='tools/base-path/test_ust'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
 tools/filtering/test_invalid_filter.log: tools/filtering/test_invalid_filter
 	@p='tools/filtering/test_invalid_filter'; \
 	b='tools/filtering/test_invalid_filter'; \
