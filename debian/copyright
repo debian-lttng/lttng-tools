@@ -398,12 +398,8 @@ Files: src/common/compat/*
 Copyright: 2011, - David Goulet <dgoulet@efficios.com>
 License: GPL-2
 
-Files: src/common/compat/compat-epoll.c
+Files: src/common/compat/poll.c
   src/common/compat/poll.h
-Copyright: 2011, - David Goulet <david.goulet@polymtl.ca>
-License: GPL-2
-
-Files: src/common/compat/compat-poll.c
 Copyright: 2019, - Yannick Lamarre <ylamarre@efficios.com> / 2011, - David Goulet <david.goulet@polymtl.ca>
 License: GPL-2
 
@@ -425,10 +421,6 @@ License: GPL-2
 
 Files: src/common/compat/paths.h
 Copyright: 2015, - Michael Jeanson <mjeanson@efficios.com>
-License: GPL-2
-
-Files: src/common/compat/prctl.h
-Copyright: 2015, - Jérémie Galarneau <jeremie.galarneau@efficios.com>
 License: GPL-2
 
 Files: src/common/compat/tid.h
@@ -639,31 +631,31 @@ Files: src/lib/lttng-ctl/destruction-handle.c
 Copyright: 2019, - Jérémie Galarneau <jeremie.galarneau@efficios.com>
 License: LGPL-2.1
 
-Files: src/lib/lttng-ctl/filter/*
+Files: src/common/filter/*
 Copyright: 2012, - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 License: LGPL-2.1
 
-Files: src/lib/lttng-ctl/filter/filter-lexer.c
+Files: src/common/filter/filter-lexer.c
 Copyright: 2011, Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
   2011, Julien Desfossez <julien.desfossez@polymtl.ca>
   2011, David Goulet <david.goulet@polymtl.ca>
 License: LGPL-2.1
 
-Files: src/lib/lttng-ctl/filter/filter-parser.c
-  src/lib/lttng-ctl/filter/filter-parser.h
+Files: src/common/filter/filter-parser.c
+  src/common/filter/filter-parser.h
 Copyright: 1984, 1989, 1990, 2000-2015, Free Software Foundation, Inc.
 License: GPL-3+
 
-Files: src/lib/lttng-ctl/filter/filter-visitor-ir-normalize-glob-patterns.c
-  src/lib/lttng-ctl/filter/filter-visitor-ir-validate-globbing.c
+Files: src/common/filter/filter-visitor-ir-normalize-glob-patterns.c
+  src/common/filter/filter-visitor-ir-validate-globbing.c
 Copyright: 2017, - Philippe Proulx <pproulx@efficios.com>
 License: LGPL-2.1
 
-Files: src/lib/lttng-ctl/filter/filter-visitor-ir-validate-string.c
+Files: src/common/filter/filter-visitor-ir-validate-string.c
 Copyright: 2014, - Jérémie Galarneau <jeremie.galarneau@efficios.com>
 License: LGPL-2.1
 
-Files: src/lib/lttng-ctl/filter/memstream.h
+Files: src/common/filter/memstream.h
 Copyright: 2012, - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 License: Expat
 
@@ -718,10 +710,6 @@ Files: tests/regression/*
 Copyright: - 2014, 2016 Mathieu Desnoyers <mathieu.desnoyers@efficios.com> / - 2013, Christian Babeux <christian.babeux@efficios.com>
 License: GPL-2
 
-Files: tests/regression/kernel/select_poll_epoll.c
-Copyright: 2013, Christian Babeux <christian.babeux@efficios.com>
-License: GPL-2
-
 Files: tests/regression/kernel/test_all_events
   tests/regression/kernel/test_event_basic
 Copyright: - 2013, Christian Babeux <christian.babeux@efficios.com>
@@ -733,22 +721,6 @@ License: GPL-2
 
 Files: tests/regression/kernel/test_lttng_logger
 Copyright: - 2017, Julien Desfossez <jdesfossez@efficios.com>
-License: GPL-2
-
-Files: tests/regression/kernel/test_select_poll_epoll
-Copyright: - 2016, Julien Desfossez <jdesfossez@efficios.com>
-License: GPL-2
-
-Files: tests/regression/kernel/test_syscall
-Copyright: - 2014, Mathieu Desnoyers <mathieu.desnoyers@efficios.com> / - 2013, Christian Babeux <christian.babeux@efficios.com>
-License: GPL-2
-
-Files: tests/regression/kernel/test_userspace_probe
-Copyright: - 2017, Francis Deslauriers <francis.deslauriers@efficios.com> / - 2017, Erica Bugden <erica.bugden@efficios.com>
-License: LGPL-2.1
-
-Files: tests/regression/kernel/validate_select_poll_epoll.py
-Copyright: -2016, Mathieu Desnoyers <mathieu.desnoyers@efficios.com> / - 2013, Christian Babeux <christian.babeux@efficios.com>
 License: GPL-2
 
 Files: tests/regression/tools/*
@@ -802,10 +774,6 @@ Files: tests/regression/tools/mi/test_mi
 Copyright: - 2014, Jonathan Rajotte <jonathan.r.julien@gmail.com>
 License: LGPL-2.1
 
-Files: tests/regression/tools/mi/validate_xml.c
-Copyright: 2014, Jonathan Rajotte <jonathan.r.julien@gmail.com>
-License: LGPL-2.1
-
 Files: tests/regression/tools/notification/*
 Copyright: 2017, Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
 License: Expat
@@ -817,11 +785,6 @@ License: GPL-2
 Files: tests/regression/tools/notification/rotation.c
 Copyright: 2017, 2018, Jérémie Galarneau <jeremie.galarneau@efficios.com>
 License: Expat
-
-Files: tests/regression/tools/notification/test_notification_kernel
-  tests/regression/tools/notification/test_notification_ust
-Copyright: - 2017, Jonathan Rajotte-Julien <jonathan.rajotte-julien@efficios.com>
-License: LGPL-2.1
 
 Files: tests/regression/tools/notification/test_notification_multi_app
 Copyright: - 2017, Jonathan Rajotte <jonathan.rajotte-julien@efficiso.com>>
@@ -1053,10 +1016,6 @@ License: Expat
 Files: tests/regression/ust/overlap/demo/demo.c
 Copyright: 2011, 2012, Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
   2009, 2010, Pierre-Marc Fournier
-License: LGPL-2.1
-
-Files: tests/regression/ust/python-logging/*
-Copyright: 2015, - Philippe Proulx <pproulx@efficios.com> / 2014, - David Goulet <dgoulet@efficios.com>
 License: LGPL-2.1
 
 Files: tests/regression/ust/python-logging/test_python_logging.in
