@@ -65,6 +65,7 @@ static struct option long_options[] = {
 /* First level command */
 static struct cmd_struct commands[] =  {
 	{ "add-context", cmd_add_context},
+	{ "add-trigger", cmd_add_trigger},
 	{ "create", cmd_create},
 	{ "clear", cmd_clear},
 	{ "destroy", cmd_destroy},
@@ -74,9 +75,11 @@ static struct cmd_struct commands[] =  {
 	{ "enable-event", cmd_enable_events},
 	{ "help", NULL},
 	{ "list", cmd_list},
+	{ "list-triggers", cmd_list_triggers},
 	{ "load", cmd_load},
 	{ "metadata", cmd_metadata},
 	{ "regenerate", cmd_regenerate},
+	{ "remove-trigger", cmd_remove_trigger},
 	{ "rotate", cmd_rotate},
 	{ "enable-rotation", cmd_enable_rotation},
 	{ "disable-rotation", cmd_disable_rotation},
@@ -269,7 +272,7 @@ static void show_basic_help(void)
 	puts("");
 	puts("Available commands:");
 	puts("");
-	puts("Tracing sessions:");
+	puts("Recording sessions:");
 	puts("  create            " CONFIG_CMD_DESCR_CREATE);
 	puts("  clear             " CONFIG_CMD_DESCR_CLEAR);
 	puts("  destroy           " CONFIG_CMD_DESCR_DESTROY);
@@ -283,7 +286,7 @@ static void show_basic_help(void)
 	puts("  disable-channel   " CONFIG_CMD_DESCR_DISABLE_CHANNEL);
 	puts("  enable-channel    " CONFIG_CMD_DESCR_ENABLE_CHANNEL);
 	puts("");
-	puts("Event rules:");
+	puts("Recording event rules:");
 	puts("  disable-event     " CONFIG_CMD_DESCR_DISABLE_EVENT);
 	puts("  enable-event      " CONFIG_CMD_DESCR_ENABLE_EVENT);
 	puts("");
@@ -296,7 +299,7 @@ static void show_basic_help(void)
 	puts("  start             " CONFIG_CMD_DESCR_START);
 	puts("  stop              " CONFIG_CMD_DESCR_STOP);
 	puts("");
-	puts("Tracing session rotation:");
+	puts("Recording session rotation:");
 	puts("  disable-rotation  " CONFIG_CMD_DESCR_DISABLE_ROTATION);
 	puts("  enable-rotation   " CONFIG_CMD_DESCR_ENABLE_ROTATION);
 	puts("  rotate            " CONFIG_CMD_DESCR_ROTATE);
@@ -304,6 +307,11 @@ static void show_basic_help(void)
 	puts("Resource tracking:");
 	puts("  track             " CONFIG_CMD_DESCR_TRACK);
 	puts("  untrack           " CONFIG_CMD_DESCR_UNTRACK);
+	puts("");
+	puts("Triggers:");
+	puts("  add-trigger       " CONFIG_CMD_DESCR_ADD_TRIGGER);
+	puts("  remove-trigger    " CONFIG_CMD_DESCR_REMOVE_TRIGGER);
+	puts("  list-triggers     " CONFIG_CMD_DESCR_LIST_TRIGGERS);
 	puts("");
 	puts("Miscellaneous:");
 	puts("  help              " CONFIG_CMD_DESCR_HELP);

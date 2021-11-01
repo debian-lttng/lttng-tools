@@ -2,12 +2,12 @@
 .\"     Title: lttng-stop
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 18 January 2018
+.\"      Date: 14 June 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.12.3
+.\"    Source: LTTng 2.13.1
 .\"  Language: English
 .\"
-.TH "LTTNG\-STOP" "1" "18 January 2018" "LTTng 2\&.12\&.3" "LTTng Manual"
+.TH "LTTNG\-STOP" "1" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -28,7 +28,7 @@
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
 .SH "NAME"
-lttng-stop \- Stop LTTng tracers
+lttng-stop \- Stop an LTTng recording session
 .SH "SYNOPSIS"
 .sp
 .nf
@@ -36,139 +36,58 @@ lttng-stop \- Stop LTTng tracers
 .fi
 .SH "DESCRIPTION"
 .sp
-The \fBlttng stop\fR command stops the various LTTng tracers for a given active tracing session\&.
+The \fBlttng stop\fR command stops a recording session, that is, it deactivates the LTTng tracers for:
+.PP
+With the \fISESSION\fR argument
+.RS 4
+The recording session named
+\fISESSION\fR\&.
+.RE
+.PP
+Without the \fISESSION\fR argument
+.RS 4
+The current recording session (see
+\fBlttng-concepts\fR(7)
+to learn more about the current recording session)\&.
+.RE
 .sp
-Stopping the LTTng tracers has the effect that all enabled event rules within enabled channels cannot make event sources \fIemit\fR trace events anymore\&.
+See \fBlttng-concepts\fR(7) to learn more about recording sessions\&.
 .sp
-A tracing session with no running tracers is said to be \fIinactive\fR\&. Inactive tracing sessions can be set active using the \fBlttng-start\fR(1) command\&.
+The selected recording session must be active (started; see \fBlttng-start\fR(1))\&. A recording session is inactive on creation (see \fBlttng-create\fR(1))\&.
 .sp
-If \fISESSION\fR is omitted, the LTTng tracers are stopped for the current tracing session (see \fBlttng-create\fR(1) for more information about the current tracing session)\&. Otherwise, they are stopped for the existing tracing session named \fISESSION\fR\&. \fBlttng list\fR outputs all the existing tracing sessions (see \fBlttng-list\fR(1))\&.
+A \fBstop-session\fR trigger action can also stop a recording session (see \fBlttng-add-trigger\fR(1))\&.
 .sp
-By default, the \fBlttng stop\fR command ensures that the tracing session\(cqs trace data is valid before returning to the prompt\&. With the \fB--no-wait\fR option, the command finishes immediately, hence a local trace might not be valid when the command is done\&. In this case, there is no way to know when the trace becomes valid\&.
+Start an inactive recording session with the \fBlttng-start\fR(1) command\&.
 .sp
-If at least one rotation occurred during the chosen tracing session\(cqs lifetime (see \fBlttng-rotate\fR(1) and \fBlttng-enable-rotation\fR(1)), the \fBlttng stop\fR command renames the current trace chunk subdirectory and prints the renamed path\&. Although it is safe to read the content of this renamed subdirectory while the tracing session remains inactive (until the next \fBlttng-start\fR(1)), it is NOT a trace chunk archive: you need to destroy the tracing session with \fBlttng-destroy\fR(1) or make a rotation with \fBlttng-rotate\fR(1) to archive it\&.
+By default, the \fBstop\fR command ensures that the trace data of the selected recording session is valid before it exits\&. Make the command exit immediately with the \fB--no-wait\fR option\&. In this case, however, the traces(s) might not be valid when the command exits, and there\(cqs no way to know when it/they becomes valid\&.
+.sp
+If LTTng archived the current trace chunk (see \fBlttng-rotate\fR(1) and \fBlttng-enable-rotation\fR(1)) of the selected recording session at least once during its lifetime, the \fBstop\fR command renames the current trace chunk subdirectory and prints the renamed path\&. Although it\(cqs safe to read the content of this renamed subdirectory while the recording session remains inactive, it\(cqs NOT a trace chunk archive: you need to destroy the recording session with \fBlttng-destroy\fR(1) or perform a rotation with \fBlttng-rotate\fR(1) to archive it\&.
+.sp
+See the \(lqEXAMPLES\(rq section below for usage examples\&.
 .SH "OPTIONS"
 .sp
-General options are described in \fBlttng\fR(1)\&.
+See \fBlttng\fR(1) for \fIGENERAL OPTIONS\fR\&.
 .PP
 \fB-n\fR, \fB--no-wait\fR
 .RS 4
-Do not ensure that the chosen tracing session\(cqs trace data is valid before returning to the prompt\&.
+Do NOT ensure that the trace data of the selected recording session is valid before exiting\&.
 .RE
 .SS "Program information"
 .PP
 \fB-h\fR, \fB--help\fR
 .RS 4
-Show command help\&.
+Show help\&.
 .sp
-This option, like
-\fBlttng-help\fR(1), attempts to launch
+This option attempts to launch
 \fB/usr/bin/man\fR
-to view the command\(cqs man page\&. The path to the man pager can be overridden by the
+to view this manual page\&. Override the manual pager path with the
 \fBLTTNG_MAN_BIN_PATH\fR
 environment variable\&.
 .RE
 .PP
 \fB--list-options\fR
 .RS 4
-List available command options\&.
-.RE
-.SH "ENVIRONMENT VARIABLES"
-.PP
-\fBLTTNG_ABORT_ON_ERROR\fR
-.RS 4
-Set to 1 to abort the process after the first error is encountered\&.
-.RE
-.PP
-\fBLTTNG_HOME\fR
-.RS 4
-Overrides the
-\fB$HOME\fR
-environment variable\&. Useful when the user running the commands has a non\-writable home directory\&.
-.RE
-.PP
-\fBLTTNG_MAN_BIN_PATH\fR
-.RS 4
-Absolute path to the man pager to use for viewing help information about LTTng commands (using
-\fBlttng-help\fR(1)
-or
-\fBlttng COMMAND --help\fR)\&.
-.RE
-.PP
-\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
-.RS 4
-Path in which the
-\fBsession.xsd\fR
-session configuration XML schema may be found\&.
-.RE
-.PP
-\fBLTTNG_SESSIOND_PATH\fR
-.RS 4
-Full session daemon binary path\&.
-.sp
-The
-\fB--sessiond-path\fR
-option has precedence over this environment variable\&.
-.RE
-.sp
-Note that the \fBlttng-create\fR(1) command can spawn an LTTng session daemon automatically if none is running\&. See \fBlttng-sessiond\fR(8) for the environment variables influencing the execution of the session daemon\&.
-.SH "FILES"
-.PP
-\fB$LTTNG_HOME/.lttngrc\fR
-.RS 4
-User LTTng runtime configuration\&.
-.sp
-This is where the per\-user current tracing session is stored between executions of
-\fBlttng\fR(1)\&. The current tracing session can be set with
-\fBlttng-set-session\fR(1)\&. See
-\fBlttng-create\fR(1)
-for more information about tracing sessions\&.
-.RE
-.PP
-\fB$LTTNG_HOME/lttng-traces\fR
-.RS 4
-Default output directory of LTTng traces\&. This can be overridden with the
-\fB--output\fR
-option of the
-\fBlttng-create\fR(1)
-command\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng\fR
-.RS 4
-User LTTng runtime and configuration directory\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng/sessions\fR
-.RS 4
-Default location of saved user tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.PP
-\fB/usr/local/etc/lttng/sessions\fR
-.RS 4
-System\-wide location of saved tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-.sp
-\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR when not explicitly set\&.
-.sp .5v
+List available command options and quit\&.
 .RE
 .SH "EXIT STATUS"
 .PP
@@ -196,9 +115,159 @@ Fatal error
 .RS 4
 Command warning (something went wrong during the command)
 .RE
-.SH "BUGS"
+.SH "ENVIRONMENT"
+.PP
+\fBLTTNG_ABORT_ON_ERROR\fR
+.RS 4
+Set to
+\fB1\fR
+to abort the process after the first error is encountered\&.
+.RE
+.PP
+\fBLTTNG_HOME\fR
+.RS 4
+Path to the LTTng home directory\&.
 .sp
-If you encounter any issue or usability problem, please report it on the LTTng bug tracker <https://bugs.lttng.org/projects/lttng-tools>\&.
+Defaults to
+\fB$HOME\fR\&.
+.sp
+Useful when the Unix user running the commands has a non\-writable home directory\&.
+.RE
+.PP
+\fBLTTNG_MAN_BIN_PATH\fR
+.RS 4
+Absolute path to the manual pager to use to read the LTTng command\-line help (with
+\fBlttng-help\fR(1)
+or with the
+\fB--help\fR
+option) instead of
+\fB/usr/bin/man\fR\&.
+.RE
+.PP
+\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
+.RS 4
+Path to the directory containing the
+\fBsession.xsd\fR
+recording session configuration XML schema\&.
+.RE
+.PP
+\fBLTTNG_SESSIOND_PATH\fR
+.RS 4
+Absolute path to the LTTng session daemon binary (see
+\fBlttng-sessiond\fR(8)) to spawn from the
+\fBlttng-create\fR(1)
+command\&.
+.sp
+The
+\fB--sessiond-path\fR
+general option overrides this environment variable\&.
+.RE
+.SH "FILES"
+.PP
+\fB$LTTNG_HOME/.lttngrc\fR
+.RS 4
+Unix user\(cqs LTTng runtime configuration\&.
+.sp
+This is where LTTng stores the name of the Unix user\(cqs current recording session between executions of
+\fBlttng\fR(1)\&.
+\fBlttng-create\fR(1)
+and
+\fBlttng-set-session\fR(1)
+set the current recording session\&.
+.RE
+.PP
+\fB$LTTNG_HOME/lttng-traces\fR
+.RS 4
+Default output directory of LTTng traces in local and snapshot modes\&.
+.sp
+Override this path with the
+\fB--output\fR
+option of the
+\fBlttng-create\fR(1)
+command\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng\fR
+.RS 4
+Unix user\(cqs LTTng runtime and configuration directory\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng/sessions\fR
+.RS 4
+Default directory containing the Unix user\(cqs saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.PP
+\fB/usr/local/etc/lttng/sessions\fR
+.RS 4
+Directory containing the system\-wide saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+\fB$LTTNG_HOME\fR defaults to the value of the \fBHOME\fR environment variable\&.
+.sp .5v
+.RE
+.SH "EXAMPLES"
+.PP
+\fBExample\ \&1.\ \&Stop the current recording session\&.\fR
+.RS 4
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng stop
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&2.\ \&Stop a specific recording session\&.\fR
+.RS 4
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng stop my\-session
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&3.\ \&Stop the current recording session without waiting for completion\&.\fR
+.RS 4
+.sp
+See the \fB--no-wait\fR option\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng stop \-\-no\-wait
+.fi
+.if n \{\
+.RE
+.\}
+.RE
 .SH "RESOURCES"
 .sp
 .RS 4
@@ -231,7 +300,7 @@ LTTng documentation <https://lttng.org/docs>
 .sp -1
 .IP \(bu 2.3
 .\}
-Git repositories <http://git.lttng.org>
+LTTng bug tracker <https://bugs.lttng.org>
 .RE
 .sp
 .RS 4
@@ -242,7 +311,7 @@ Git repositories <http://git.lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-GitHub organization <http://github.com/lttng>
+Git repositories <https://git.lttng.org>
 .RE
 .sp
 .RS 4
@@ -253,7 +322,7 @@ GitHub organization <http://github.com/lttng>
 .sp -1
 .IP \(bu 2.3
 .\}
-Continuous integration <http://ci.lttng.org/>
+GitHub organization <https://github.com/lttng>
 .RE
 .sp
 .RS 4
@@ -264,7 +333,18 @@ Continuous integration <http://ci.lttng.org/>
 .sp -1
 .IP \(bu 2.3
 .\}
-Mailing list <http://lists.lttng.org>
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
 for support and development:
 \fBlttng-dev@lists.lttng.org\fR
 .RE
@@ -282,11 +362,11 @@ IRC channel <irc://irc.oftc.net/lttng>:
 on
 \fBirc.oftc.net\fR
 .RE
-.SH "COPYRIGHTS"
+.SH "COPYRIGHT"
 .sp
 This program is part of the LTTng\-tools project\&.
 .sp
-LTTng\-tools is distributed under the GNU General Public License version 2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
 .SH "THANKS"
 .sp
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
@@ -294,4 +374,4 @@ Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.p
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
 .SH "SEE ALSO"
 .sp
-\fBlttng-start\fR(1), \fBlttng\fR(1)
+\fBlttng\fR(1), \fBlttng-add-trigger\fR(1), \fBlttng-create\fR(1), \fBlttng-enable-event\fR(1), \fBlttng-rotate\fR(1), \fBlttng-start\fR(1), \fBlttng-concepts\fR(7)

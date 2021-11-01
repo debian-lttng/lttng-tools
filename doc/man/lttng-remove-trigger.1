@@ -1,0 +1,352 @@
+'\" t
+.\"     Title: lttng-remove-trigger
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
+.\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
+.\"      Date: 17 May 2021
+.\"    Manual: LTTng Manual
+.\"    Source: LTTng 2.13.1
+.\"  Language: English
+.\"
+.TH "LTTNG\-REMOVE\-TRIGG" "1" "17 May 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+lttng-remove-trigger \- Remove an LTTng trigger
+.SH "SYNOPSIS"
+.sp
+.nf
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBremove\-trigger\fR [\fB--owner-uid\fR=\fIUID\fR] \fINAME\fR
+.fi
+.SH "DESCRIPTION"
+.sp
+The \fBlttng remove-trigger\fR command removes the trigger named \fINAME\fR\&.
+.sp
+See \fBlttng-concepts\fR(7) to learn more about LTTng triggers\&.
+.sp
+List the triggers of your Unix user, or of all users if your Unix user is \fBroot\fR, with the \fBlttng-list-triggers\fR(1) command\&.
+.sp
+The \fBremove-trigger\fR command removes a trigger which belong to your Unix user\&. If your Unix user is \fBroot\fR, you can remove the trigger of another user with the \fB--owner-uid\fR option\&.
+.sp
+See the \(lqEXAMPLES\(rq section below for usage examples\&.
+.SH "OPTIONS"
+.SS "Identification"
+.PP
+\fB--owner-uid\fR=\fIUID\fR
+.RS 4
+Remove the trigger named
+\fINAME\fR
+of the Unix user having the user ID
+\fIUID\fR\&.
+.sp
+You may only use this option if your Unix user is
+\fBroot\fR\&.
+.RE
+.SS "Program information"
+.PP
+\fB-h\fR, \fB--help\fR
+.RS 4
+Show help\&.
+.sp
+This option attempts to launch
+\fB/usr/bin/man\fR
+to view this manual page\&. Override the manual pager path with the
+\fBLTTNG_MAN_BIN_PATH\fR
+environment variable\&.
+.RE
+.PP
+\fB--list-options\fR
+.RS 4
+List available command options and quit\&.
+.RE
+.SH "EXIT STATUS"
+.PP
+\fB0\fR
+.RS 4
+Success
+.RE
+.PP
+\fB1\fR
+.RS 4
+Command error
+.RE
+.PP
+\fB2\fR
+.RS 4
+Undefined command
+.RE
+.PP
+\fB3\fR
+.RS 4
+Fatal error
+.RE
+.PP
+\fB4\fR
+.RS 4
+Command warning (something went wrong during the command)
+.RE
+.SH "ENVIRONMENT"
+.PP
+\fBLTTNG_ABORT_ON_ERROR\fR
+.RS 4
+Set to
+\fB1\fR
+to abort the process after the first error is encountered\&.
+.RE
+.PP
+\fBLTTNG_HOME\fR
+.RS 4
+Path to the LTTng home directory\&.
+.sp
+Defaults to
+\fB$HOME\fR\&.
+.sp
+Useful when the Unix user running the commands has a non\-writable home directory\&.
+.RE
+.PP
+\fBLTTNG_MAN_BIN_PATH\fR
+.RS 4
+Absolute path to the manual pager to use to read the LTTng command\-line help (with
+\fBlttng-help\fR(1)
+or with the
+\fB--help\fR
+option) instead of
+\fB/usr/bin/man\fR\&.
+.RE
+.PP
+\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
+.RS 4
+Path to the directory containing the
+\fBsession.xsd\fR
+recording session configuration XML schema\&.
+.RE
+.PP
+\fBLTTNG_SESSIOND_PATH\fR
+.RS 4
+Absolute path to the LTTng session daemon binary (see
+\fBlttng-sessiond\fR(8)) to spawn from the
+\fBlttng-create\fR(1)
+command\&.
+.sp
+The
+\fB--sessiond-path\fR
+general option overrides this environment variable\&.
+.RE
+.SH "FILES"
+.PP
+\fB$LTTNG_HOME/.lttngrc\fR
+.RS 4
+Unix user\(cqs LTTng runtime configuration\&.
+.sp
+This is where LTTng stores the name of the Unix user\(cqs current recording session between executions of
+\fBlttng\fR(1)\&.
+\fBlttng-create\fR(1)
+and
+\fBlttng-set-session\fR(1)
+set the current recording session\&.
+.RE
+.PP
+\fB$LTTNG_HOME/lttng-traces\fR
+.RS 4
+Default output directory of LTTng traces in local and snapshot modes\&.
+.sp
+Override this path with the
+\fB--output\fR
+option of the
+\fBlttng-create\fR(1)
+command\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng\fR
+.RS 4
+Unix user\(cqs LTTng runtime and configuration directory\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng/sessions\fR
+.RS 4
+Default directory containing the Unix user\(cqs saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.PP
+\fB/usr/local/etc/lttng/sessions\fR
+.RS 4
+Directory containing the system\-wide saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+\fB$LTTNG_HOME\fR defaults to the value of the \fBHOME\fR environment variable\&.
+.sp .5v
+.RE
+.SH "EXAMPLES"
+.PP
+\fBExample\ \&1.\ \&Remove a trigger\&.\fR
+.RS 4
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng remove\-trigger my\-trigger
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&2.\ \&Remove a trigger as another Unix user\&.\fR
+.RS 4
+.sp
+The command line below removes a trigger as the \fBmireille\fR Unix user\&.
+.sp
+Your Unix user must be \fBroot\fR to use the \fB--owner-uid\fR option\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng remove\-trigger \-\-owner\-uid=$(id \-\-user mireille) \e
+                       my\-trigger
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.SH "RESOURCES"
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng project website <https://lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng documentation <https://lttng.org/docs>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng bug tracker <https://bugs.lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Git repositories <https://git.lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+GitHub organization <https://github.com/lttng>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
+for support and development:
+\fBlttng-dev@lists.lttng.org\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+IRC channel <irc://irc.oftc.net/lttng>:
+\fB#lttng\fR
+on
+\fBirc.oftc.net\fR
+.RE
+.SH "COPYRIGHT"
+.sp
+This program is part of the LTTng\-tools project\&.
+.sp
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+.SH "THANKS"
+.sp
+Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
+.sp
+Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
+.SH "SEE ALSO"
+.sp
+\fBlttng\fR(1), \fBlttng-add-trigger\fR(1), \fBlttng-list-triggers\fR(1), \fBlttng-concepts\fR(7)

@@ -11,10 +11,10 @@
 #include "lttng-ust-ctl.h"
 #include <common/defaults.h>
 #include <limits.h>
-#include <errno.h>
 #include <ctype.h>
 #include <common/error.h>
 #include <common/utils.h>
+#include <common/compat/errno.h>
 #include <common/compat/getenv.h>
 
 static
@@ -24,6 +24,8 @@ struct sessiond_config sessiond_config_build_defaults = {
 	.verbose_consumer = 			0,
 
 	.agent_tcp_port = 			{ .begin = DEFAULT_AGENT_TCP_PORT_RANGE_BEGIN, .end = DEFAULT_AGENT_TCP_PORT_RANGE_END },
+	.event_notifier_buffer_size_kernel =	DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE,
+	.event_notifier_buffer_size_userspace =	DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE,
 	.app_socket_timeout = 			DEFAULT_APP_SOCKET_RW_TIMEOUT,
 
 	.no_kernel = 				false,

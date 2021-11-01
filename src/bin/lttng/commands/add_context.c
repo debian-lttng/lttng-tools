@@ -19,6 +19,7 @@
 
 #include <urcu/list.h>
 
+#include <lttng/domain-internal.h>
 #include <common/mi-lttng.h>
 
 #include "../command.h"
@@ -95,6 +96,7 @@ enum context_type {
 	CONTEXT_VGID         = 38,
 	CONTEXT_VEGID        = 39,
 	CONTEXT_VSGID        = 40,
+	CONTEXT_TIME_NS      = 41,
 };
 
 /*
@@ -264,6 +266,7 @@ const struct ctx_opts {
 	{ (char *) "mnt_ns", CONTEXT_MNT_NS },
 	{ (char *) "net_ns", CONTEXT_NET_NS },
 	{ (char *) "pid_ns", CONTEXT_PID_NS },
+	{ (char *) "time_ns", CONTEXT_TIME_NS },
 	{ (char *) "user_ns", CONTEXT_USER_NS },
 	{ (char *) "uts_ns", CONTEXT_UTS_NS },
 	{ (char *) "uid", CONTEXT_UID },
@@ -808,11 +811,13 @@ static int add_context(char *session_name)
 		} else {
 			if (opt_channel_name) {
 				MSG("%s context %s added to channel %s",
-						get_domain_str(dom.type), type->opt->symbol,
+						lttng_domain_type_str(dom.type),
+						type->opt->symbol,
 						opt_channel_name);
 			} else {
 				MSG("%s context %s added to all channels",
-						get_domain_str(dom.type), type->opt->symbol);
+						lttng_domain_type_str(dom.type),
+						type->opt->symbol);
 			}
 			success = 1;
 		}

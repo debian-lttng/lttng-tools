@@ -9,10 +9,10 @@
 #include <common/error.h>
 #include <common/macros.h>
 #include <common/error.h>
+#include <common/compat/errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <limits.h>
-#include <errno.h>
 #include <pthread.h>
 #include <locale.h>
 #include <string.h>
@@ -88,7 +88,7 @@ int time_to_iso8601_str(time_t time, char *str, size_t len)
 		goto end;
 	}
 
-        tm_result = localtime_r(&time, &tm_storage);
+	tm_result = localtime_r(&time, &tm_storage);
 	if (!tm_result) {
 		ret = -1;
 		PERROR("Failed to break down timestamp to tm structure");

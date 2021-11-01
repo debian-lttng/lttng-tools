@@ -8,33 +8,41 @@
  */
 
 #define _LGPL_SOURCE
-#include <errno.h>
+#include <assert.h>
+#include <fcntl.h>
+#include <grp.h>
 #include <limits.h>
+#include <pwd.h>
+#include <sched.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/wait.h>
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <sched.h>
-#include <signal.h>
-#include <assert.h>
-#include <signal.h>
 
+#include <common/bytecode/bytecode.h>
 #include <common/lttng-kernel.h>
 #include <common/common.h>
 #include <common/utils.h>
+#include <common/compat/errno.h>
 #include <common/compat/getenv.h>
-#include <common/compat/prctl.h>
+#include <common/compat/string.h>
 #include <common/unix.h>
 #include <common/defaults.h>
 #include <common/lttng-elf.h>
+#include <common/thread.h>
 
 #include <lttng/constant.h>
 
+#include <common/sessiond-comm/sessiond-comm.h>
+#include <common/filter/filter-ast.h>
+
 #include "runas.h"
+
+#define GETPW_BUFFER_FALLBACK_SIZE 4096
 
 struct run_as_data;
 struct run_as_ret;
@@ -57,6 +65,7 @@ enum run_as_cmd {
 	RUN_AS_RENAMEAT,
 	RUN_AS_EXTRACT_ELF_SYMBOL_OFFSET,
 	RUN_AS_EXTRACT_SDT_PROBE_OFFSETS,
+	RUN_AS_GENERATE_FILTER_BYTECODE,
 };
 
 struct run_as_mkdir_data {
@@ -80,7 +89,7 @@ struct run_as_unlink_data {
 struct run_as_rmdir_data {
 	int dirfd;
 	char path[LTTNG_PATH_MAX];
-	int flags; /* enum lttng_directory_handle_rmdir_recursive_flags */
+	int flags; /* enum lttng_directory_handle_rmdir_recursive_flags. */
 } LTTNG_PACKED;
 
 struct run_as_extract_elf_symbol_offset_data {
@@ -92,6 +101,10 @@ struct run_as_extract_sdt_probe_offsets_data {
 	int fd;
 	char probe_name[LTTNG_SYMBOL_NAME_LEN];
 	char provider_name[LTTNG_SYMBOL_NAME_LEN];
+} LTTNG_PACKED;
+
+struct run_as_generate_filter_bytecode_data {
+	char filter_expression[LTTNG_FILTER_MAX_LEN];
 } LTTNG_PACKED;
 
 struct run_as_rename_data {
@@ -114,7 +127,12 @@ struct run_as_extract_elf_symbol_offset_ret {
 
 struct run_as_extract_sdt_probe_offsets_ret {
 	uint32_t num_offset;
-	uint64_t offsets[LTTNG_KERNEL_MAX_UPROBE_NUM];
+	uint64_t offsets[LTTNG_KERNEL_ABI_MAX_UPROBE_NUM];
+} LTTNG_PACKED;
+
+struct run_as_generate_filter_bytecode_ret {
+	/* A lttng_bytecode_filter struct with 'dynamic' payload. */
+	char bytecode[LTTNG_FILTER_MAX_LEN];
 } LTTNG_PACKED;
 
 struct run_as_data {
@@ -127,6 +145,7 @@ struct run_as_data {
 		struct run_as_rename_data rename;
 		struct run_as_extract_elf_symbol_offset_data extract_elf_symbol_offset;
 		struct run_as_extract_sdt_probe_offsets_data extract_sdt_probe_offsets;
+		struct run_as_generate_filter_bytecode_data generate_filter_bytecode;
 	} u;
 	uid_t uid;
 	gid_t gid;
@@ -153,6 +172,7 @@ struct run_as_ret {
 		struct run_as_open_ret open;
 		struct run_as_extract_elf_symbol_offset_ret extract_elf_symbol_offset;
 		struct run_as_extract_sdt_probe_offsets_ret extract_sdt_probe_offsets;
+		struct run_as_generate_filter_bytecode_ret generate_filter_bytecode;
 	} u;
 	int _errno;
 	bool _error;
@@ -302,6 +322,13 @@ static const struct run_as_command_properties command_properties[] = {
 		.in_fds_offset = offsetof(struct run_as_data,
 				u.extract_sdt_probe_offsets.fd),
 		.in_fd_count = 1,
+		.out_fds_offset = -1,
+		.out_fd_count = 0,
+		.use_cwd_fd = false,
+	},
+	[RUN_AS_GENERATE_FILTER_BYTECODE] = {
+		.in_fds_offset = -1,
+		.in_fd_count = 0,
 		.out_fds_offset = -1,
 		.out_fd_count = 0,
 		.use_cwd_fd = false,
@@ -583,7 +610,7 @@ int _extract_sdt_probe_offsets(struct run_as_data *data,
 		goto end;
 	}
 
-	if (num_offset <= 0 || num_offset > LTTNG_KERNEL_MAX_UPROBE_NUM) {
+	if (num_offset <= 0 || num_offset > LTTNG_KERNEL_ABI_MAX_UPROBE_NUM) {
 		DBG("Wrong number of probes.");
 		ret = -1;
 		ret_value->_error = true;
@@ -620,6 +647,48 @@ int _extract_sdt_probe_offsets(struct run_as_data *data,
 #endif
 
 static
+int _generate_filter_bytecode(struct run_as_data *data,
+		struct run_as_ret *ret_value) {
+	int ret = 0;
+	const char *filter_expression = NULL;
+	struct filter_parser_ctx *ctx = NULL;
+
+	ret_value->_error = false;
+
+	filter_expression = data->u.generate_filter_bytecode.filter_expression;
+
+	if (lttng_strnlen(filter_expression, LTTNG_FILTER_MAX_LEN - 1) == LTTNG_FILTER_MAX_LEN - 1) {
+		ret_value->_error = true;
+		ret = -1;
+		goto end;
+	}
+
+	ret = filter_parser_ctx_create_from_filter_expression(filter_expression, &ctx);
+	if (ret < 0) {
+		ret_value->_error = true;
+		ret = -1;
+		goto end;
+	}
+
+	DBG("Size of bytecode generated: %u bytes.",
+			bytecode_get_len(&ctx->bytecode->b));
+
+	/* Copy the lttng_bytecode_filter object to the return structure. */
+	memcpy(ret_value->u.generate_filter_bytecode.bytecode,
+			&ctx->bytecode->b,
+			sizeof(ctx->bytecode->b) +
+					bytecode_get_len(&ctx->bytecode->b));
+
+end:
+	if (ctx) {
+		filter_bytecode_free(ctx);
+		filter_ir_free(ctx);
+		filter_parser_ctx_free(ctx);
+	}
+
+	return ret;
+}
+static
 run_as_fct run_as_enum_to_fct(enum run_as_cmd cmd)
 {
 	switch (cmd) {
@@ -648,6 +717,8 @@ run_as_fct run_as_enum_to_fct(enum run_as_cmd cmd)
 		return _extract_elf_symbol_offset;
 	case RUN_AS_EXTRACT_SDT_PROBE_OFFSETS:
 		return _extract_sdt_probe_offsets;
+	case RUN_AS_GENERATE_FILTER_BYTECODE:
+		return _generate_filter_bytecode;
 	default:
 		ERR("Unknown command %d", (int) cmd);
 		return NULL;
@@ -662,14 +733,14 @@ int do_send_fds(int sock, const int *fds, unsigned int fd_count)
 
 	for (i = 0; i < fd_count; i++) {
 		if (fds[i] < 0) {
-			ERR("Attempt to send invalid file descriptor to master (fd = %i)",
+			DBG("Attempt to send invalid file descriptor (fd = %i)",
 					fds[i]);
 			/* Return 0 as this is not a fatal error. */
 			return 0;
 		}
-        }
+	}
 
-        len = lttcomm_send_fds_unix_sock(sock, fds, fd_count);
+	len = lttcomm_send_fds_unix_sock(sock, fds, fd_count);
 	return len < 0 ? -1 : 0;
 }
 
@@ -695,9 +766,9 @@ int do_recv_fds(int sock, int *fds, unsigned int fd_count)
 			ERR("Invalid file descriptor received from worker (fd = %i)", fds[i]);
 			/* Return 0 as this is not a fatal error. */
 		}
-        }
+	}
 end:
-        return ret;
+	return ret;
 }
 
 static
@@ -718,9 +789,9 @@ int send_fds_to_worker(const struct run_as_worker *worker,
 			ret = -1;
 			goto end;
 		}
-        }
+	}
 
-        ret = do_send_fds(worker->sockpair[0], COMMAND_IN_FDS(data),
+	ret = do_send_fds(worker->sockpair[0], COMMAND_IN_FDS(data),
 			COMMAND_IN_FD_COUNT(data));
 	if (ret < 0) {
 		PERROR("Failed to send file descriptor to run-as worker");
@@ -750,10 +821,14 @@ int send_fds_to_master(struct run_as_worker *worker, enum run_as_cmd cmd,
 	}
 
 	for (i = 0; i < COMMAND_OUT_FD_COUNT(cmd); i++) {
-		int ret_close = close(COMMAND_OUT_FDS(cmd, run_as_ret)[i]);
+		int fd = COMMAND_OUT_FDS(cmd, run_as_ret)[i];
+		if (fd >= 0) {
+			int ret_close = close(fd);
 
-		if (ret_close < 0) {
-			PERROR("Failed to close result file descriptor");
+			if (ret_close < 0) {
+				PERROR("Failed to close result file descriptor (fd = %i)",
+						fd);
+			}
 		}
 	}
 end:
@@ -794,6 +869,10 @@ int recv_fds_from_master(struct run_as_worker *worker, struct run_as_data *data)
 		goto end;
 	}
 
+	if (COMMAND_IN_FD_COUNT(data) == 0) {
+		goto end;
+	}
+
 	ret = do_recv_fds(worker->sockpair[1], COMMAND_IN_FDS(data),
 			COMMAND_IN_FD_COUNT(data));
 	if (ret < 0) {
@@ -823,18 +902,210 @@ end:
 	return ret;
 }
 
+static int get_user_infos_from_uid(
+		uid_t uid, char **username, gid_t *primary_gid)
+{
+	int ret;
+	char *buf = NULL;
+	long raw_get_pw_buf_size;
+	size_t get_pw_buf_size;
+	struct passwd pwd;
+	struct passwd *result = NULL;
+
+	/* Fetch the max size for the temporary buffer. */
+	errno = 0;
+	raw_get_pw_buf_size = sysconf(_SC_GETPW_R_SIZE_MAX);
+	if (raw_get_pw_buf_size < 0) {
+		if (errno != 0) {
+			PERROR("Failed to query _SC_GETPW_R_SIZE_MAX");
+			goto error;
+		}
+
+		/* Limit is indeterminate. */
+		WARN("Failed to query _SC_GETPW_R_SIZE_MAX as it is "
+			"indeterminate; falling back to default buffer size");
+		raw_get_pw_buf_size = GETPW_BUFFER_FALLBACK_SIZE;
+	}
+
+	get_pw_buf_size = (size_t) raw_get_pw_buf_size;
+
+	buf = zmalloc(get_pw_buf_size);
+	if (buf == NULL) {
+		PERROR("Failed to allocate buffer to get password file entries");
+		goto error;
+	}
+
+	ret = getpwuid_r(uid, &pwd, buf, get_pw_buf_size, &result);
+	if (ret < 0) {
+		PERROR("Failed to get user information for user:  uid = %d",
+				(int) uid);
+		goto error;
+	}
+
+	if (result == NULL) {
+		ERR("Failed to find user information in password entries: uid = %d",
+				(int) uid);
+		ret = -1;
+		goto error;
+	}
+
+	*username = strdup(result->pw_name);
+	if (*username == NULL) {
+		PERROR("Failed to copy user name");
+		goto error;
+	}
+
+	*primary_gid = result->pw_gid;
+
+end:
+	free(buf);
+	return ret;
+error:
+	*username = NULL;
+	*primary_gid = -1;
+	ret = -1;
+	goto end;
+}
+
+static int demote_creds(
+		uid_t prev_uid, gid_t prev_gid, uid_t new_uid, gid_t new_gid)
+{
+	int ret = 0;
+	gid_t primary_gid;
+	char *username = NULL;
+
+	/* Change the group id. */
+	if (prev_gid != new_gid) {
+		ret = setegid(new_gid);
+		if (ret < 0) {
+			PERROR("Failed to set effective group id: new_gid = %d",
+					(int) new_gid);
+			goto end;
+		}
+	}
+
+	/* Change the user id. */
+	if (prev_uid != new_uid) {
+		ret = get_user_infos_from_uid(new_uid, &username, &primary_gid);
+		if (ret < 0) {
+			goto end;
+		}
+
+		/*
+		 * Initialize the supplementary group access list.
+		 *
+		 * This is needed to handle cases where the supplementary groups
+		 * of the user the process is demoting-to would give it access
+		 * to a given file/folder, but not it's primary group.
+		 *
+		 * e.g
+		 *   username: User1
+		 *   Primary Group: User1
+		 *   Secondary group: Disk, Network
+		 *
+		 *   mkdir inside the following directory must work since User1
+		 *   is part of the Network group.
+		 *
+		 *   drwxrwx--- 2 root Network 4096 Jul 23 17:17 /tmp/my_folder/
+		 *
+		 *
+		 * The order of the following initgroups and seteuid calls is
+		 * important here;
+		 * Only a root process or one with CAP_SETGID capability can
+		 * call the the initgroups() function. We must initialize the
+		 * supplementary groups before we change the effective
+		 * UID to a less-privileged user.
+		 */
+		ret = initgroups(username, primary_gid);
+		if (ret < 0) {
+			PERROR("Failed to init the supplementary group access list: "
+					"username = `%s`, primary gid = %d", username,
+					(int) primary_gid);
+			goto end;
+		}
+
+		ret = seteuid(new_uid);
+		if (ret < 0) {
+			PERROR("Failed to set effective user id: new_uid = %d",
+					(int) new_uid);
+			goto end;
+		}
+	}
+end:
+	free(username);
+	return ret;
+}
+
+static int promote_creds(
+		uid_t prev_uid, gid_t prev_gid, uid_t new_uid, gid_t new_gid)
+{
+	int ret = 0;
+	gid_t primary_gid;
+	char *username = NULL;
+
+	/* Change the group id. */
+	if (prev_gid != new_gid) {
+		ret = setegid(new_gid);
+		if (ret < 0) {
+			PERROR("Failed to set effective group id: new_gid = %d",
+					(int) new_gid);
+			goto end;
+		}
+	}
+
+	/* Change the user id. */
+	if (prev_uid != new_uid) {
+		ret = get_user_infos_from_uid(new_uid, &username, &primary_gid);
+		if (ret < 0) {
+			goto end;
+		}
+
+		/*
+		 * seteuid call must be done before the initgroups call because
+		 * we need to be privileged (CAP_SETGID) to call initgroups().
+		 */
+		ret = seteuid(new_uid);
+		if (ret < 0) {
+			PERROR("Failed to set effective user id: new_uid = %d",
+					(int) new_uid);
+			goto end;
+		}
+
+		/*
+		 * Initialize the supplementary group access list.
+		 *
+		 * There is a possibility the groups we set in the following
+		 * initgroups() call are not exactly the same as the ones we
+		 * had when we originally demoted. This can happen if the
+		 * /etc/group file is modified after the runas process is
+		 * forked. This is very unlikely.
+		 */
+		ret = initgroups(username, primary_gid);
+		if (ret < 0) {
+			PERROR("Failed to init the supplementary group access "
+					"list: username = `%s`, primary gid = %d",
+					username, (int) primary_gid)
+			goto end;
+		}
+	}
+end:
+	free(username);
+	return ret;
+}
+
 /*
  * Return < 0 on error, 0 if OK, 1 on hangup.
  */
 static
 int handle_one_cmd(struct run_as_worker *worker)
 {
-	int ret = 0;
-        struct run_as_data data = {};
-        ssize_t readlen, writelen;
-        struct run_as_ret sendret = {};
-        run_as_fct cmd;
-	uid_t prev_euid;
+	int ret = 0, promote_ret;
+	struct run_as_data data = {};
+	ssize_t readlen, writelen;
+	struct run_as_ret sendret = {};
+	run_as_fct cmd;
+	uid_t prev_ruid;
+	gid_t prev_rgid;
 
 	/*
 	 * Stage 1: Receive run_as_data struct from the master.
@@ -872,24 +1143,12 @@ int handle_one_cmd(struct run_as_worker *worker)
 		goto end;
 	}
 
-	prev_euid = getuid();
-	if (data.gid != getegid()) {
-		ret = setegid(data.gid);
-		if (ret < 0) {
-			sendret._error = true;
-			sendret._errno = errno;
-			PERROR("setegid");
-			goto write_return;
-		}
-	}
-	if (data.uid != prev_euid) {
-		ret = seteuid(data.uid);
-		if (ret < 0) {
-			sendret._error = true;
-			sendret._errno = errno;
-			PERROR("seteuid");
-			goto write_return;
-		}
+	prev_ruid = getuid();
+	prev_rgid = getgid();
+
+	ret = demote_creds(prev_ruid, prev_rgid, data.uid, data.gid);
+	if (ret < 0) {
+		goto write_return;
 	}
 
 	/*
@@ -909,7 +1168,7 @@ write_return:
 	ret = cleanup_received_fds(&data);
 	if (ret < 0) {
 		ERR("Error cleaning up FD");
-		goto end;
+		goto promote_back;
 	}
 
 	/*
@@ -921,7 +1180,7 @@ write_return:
 	if (writelen < sizeof(sendret)) {
 		PERROR("lttcomm_send_unix_sock error");
 		ret = -1;
-		goto end;
+		goto promote_back;
 	}
 
 	/*
@@ -930,15 +1189,17 @@ write_return:
 	ret = send_fds_to_master(worker, data.cmd, &sendret);
 	if (ret < 0) {
 		DBG("Sending FD to master returned an error");
-		goto end;
 	}
 
-	if (seteuid(prev_euid) < 0) {
-		PERROR("seteuid");
-		ret = -1;
-		goto end;
-	}
 	ret = 0;
+
+promote_back:
+	/* Return to previous uid/gid. */
+	promote_ret = promote_creds(data.uid, data.gid, prev_ruid, prev_rgid);
+	if (promote_ret < 0) {
+		ERR("Failed to promote back to the initial credentials");
+	}
+
 end:
 	return ret;
 }
@@ -958,11 +1219,10 @@ int run_as_worker(struct run_as_worker *worker)
 	memset(worker->procname, 0, proc_orig_len);
 	strncpy(worker->procname, DEFAULT_RUN_AS_WORKER_NAME, proc_orig_len);
 
-	ret = lttng_prctl(PR_SET_NAME,
-			(unsigned long) DEFAULT_RUN_AS_WORKER_NAME, 0, 0, 0);
+	ret = lttng_thread_setname(DEFAULT_RUN_AS_WORKER_NAME);
 	if (ret && ret != -ENOSYS) {
 		/* Don't fail as this is not essential. */
-		PERROR("prctl PR_SET_NAME");
+		DBG("Failed to set pthread name attribute");
 	}
 
 	memset(&sendret, 0, sizeof(sendret));
@@ -1228,6 +1488,9 @@ int run_as_create_worker_no_lock(const char *procname,
 		reset_sighandler();
 
 		set_worker_sighandlers();
+
+		logger_set_thread_name("Run-as worker", true);
+
 		if (clean_up_func) {
 			if (clean_up_func(clean_up_user_data) < 0) {
 				ERR("Run-as post-fork clean-up failed, exiting.");
@@ -1258,7 +1521,7 @@ int run_as_create_worker_no_lock(const char *procname,
 			ret = -1;
 		}
 		worker->sockpair[1] = -1;
-	        free(worker->procname);
+		free(worker->procname);
 		free(worker);
 		LOG(ret ? PRINT_ERR : PRINT_DBG, "run_as worker exiting (ret = %d)", ret);
 		exit(ret ? EXIT_FAILURE : EXIT_SUCCESS);
@@ -1337,7 +1600,7 @@ void run_as_destroy_worker_no_lock(void)
 		if (WIFEXITED(status)) {
 			LOG(WEXITSTATUS(status) == 0 ? PRINT_DBG : PRINT_ERR,
 					DEFAULT_RUN_AS_WORKER_NAME " terminated with status code %d",
-				        WEXITSTATUS(status));
+					WEXITSTATUS(status));
 			break;
 		} else if (WIFSIGNALED(status)) {
 			ERR(DEFAULT_RUN_AS_WORKER_NAME " was killed by signal %d",
@@ -1479,7 +1742,7 @@ error:
 
 LTTNG_HIDDEN
 int run_as_open(const char *path, int flags, mode_t mode, uid_t uid,
-                gid_t gid)
+		gid_t gid)
 {
 	return run_as_openat(AT_FDCWD, path, flags, mode, uid, gid);
 }
@@ -1489,8 +1752,8 @@ int run_as_openat(int dirfd, const char *path, int flags, mode_t mode,
 		uid_t uid, gid_t gid)
 {
 	int ret;
-        struct run_as_data data = {};
-        struct run_as_ret run_as_ret = {};
+	struct run_as_data data = {};
+	struct run_as_ret run_as_ret = {};
 
 	DBG3("openat() fd = %d%s, path = %s, flags = %X, mode = %d, uid %d, gid %d",
 			dirfd, dirfd == AT_FDCWD ? " (AT_FDCWD)" : "",
@@ -1650,7 +1913,7 @@ int run_as_extract_elf_symbol_offset(int fd, const char* function,
 {
 	int ret;
 	struct run_as_data data = {};
-        struct run_as_ret run_as_ret = {};
+	struct run_as_ret run_as_ret = {};
 
 	DBG3("extract_elf_symbol_offset() on fd=%d and function=%s "
 			"with for uid %d and gid %d", fd, function,
@@ -1722,6 +1985,50 @@ int run_as_extract_sdt_probe_offsets(int fd, const char* provider_name,
 
 	memcpy(*offsets, run_as_ret.u.extract_sdt_probe_offsets.offsets,
 			*num_offset * sizeof(uint64_t));
+error:
+	return ret;
+}
+
+LTTNG_HIDDEN
+int run_as_generate_filter_bytecode(const char *filter_expression,
+		const struct lttng_credentials *creds,
+		struct lttng_bytecode **bytecode)
+{
+	int ret;
+	struct run_as_data data = {};
+	struct run_as_ret run_as_ret = {};
+	const struct lttng_bytecode *view_bytecode = NULL;
+	struct lttng_bytecode *local_bytecode = NULL;
+	const uid_t uid = lttng_credentials_get_uid(creds);
+	const gid_t gid = lttng_credentials_get_gid(creds);
+
+	DBG3("generate_filter_bytecode() from expression=\"%s\" for uid %d and gid %d",
+			filter_expression, (int) uid, (int) gid);
+
+	ret = lttng_strncpy(data.u.generate_filter_bytecode.filter_expression, filter_expression,
+			sizeof(data.u.generate_filter_bytecode.filter_expression));
+	if (ret) {
+		goto error;
+	}
+
+	run_as(RUN_AS_GENERATE_FILTER_BYTECODE, &data, &run_as_ret, uid, gid);
+	errno = run_as_ret._errno;
+	if (run_as_ret._error) {
+		ret = -1;
+		goto error;
+	}
+
+	view_bytecode = (const struct lttng_bytecode *) run_as_ret.u.generate_filter_bytecode.bytecode;
+
+	local_bytecode = zmalloc(sizeof(*local_bytecode) + view_bytecode->len);
+	if (!local_bytecode) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	memcpy(local_bytecode, run_as_ret.u.generate_filter_bytecode.bytecode,
+			sizeof(*local_bytecode) + view_bytecode->len);
+	*bytecode = local_bytecode;
 error:
 	return ret;
 }

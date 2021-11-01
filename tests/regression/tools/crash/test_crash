@@ -19,11 +19,11 @@ NR_USEC_WAIT=0
 NR_ITER=-1
 
 # Temp file output
-OUTPUT_DIR=$(mktemp -d)
+OUTPUT_DIR=$(mktemp -d --tmpdir tmp.test_crash_shm.XXXXXX)
 
 LAST_APP_PID=
 
-NUM_TESTS=77
+NUM_TESTS=76
 
 source $TESTDIR/utils/utils.sh
 
@@ -37,7 +37,7 @@ print_test_banner "$TEST_DESC"
 
 function start_test_app()
 {
-	local tmp_file=$(mktemp -u)
+	local tmp_file=$(mktemp --tmpdir -u "tmp.${FUNCNAME[0]}.XXXXXX")
 
 	# Start application with a temporary file.
 	$TESTAPP_BIN -i $NR_ITER -w $NR_USEC_WAIT --sync-after-first-event $tmp_file &
@@ -93,7 +93,7 @@ function test_shm_path_per_pid()
 	diag "Shm: ust per-pid test"
 	local session_name=shm_path_per_pid
 	local channel_name=channel_per_pid
-	local shm_path=$(mktemp -d)
+	local shm_path=$(mktemp -d --tmpdir "tmp.${FUNCNAME[0]}_shm.XXXXXX")
 
 	# Build up
 	start_lttng_sessiond
@@ -136,12 +136,10 @@ function test_shm_path_per_pid()
 
 	start_test_app
 	second_app_pid=$LAST_APP_PID
-	second_pid_path=$(find $shm_session_path/ust/pid -mindepth 1 -maxdepth 1)
-	ok $? "Pid path exist found $second_pid_path"
 
 	file_count=$(find $shm_session_path/ust/pid -mindepth 1 -maxdepth 1 | wc -l)
 	test $file_count -eq "2"
-	ok $? "Expect 2 pid registration folder got $file_count"
+	ok $? "Expect 2 pid registration folders got $file_count"
 
 	# Stop first test application and check for cleanup
 	stop_test_app "$first_app_pid"
@@ -165,7 +163,9 @@ function test_shm_path_per_uid()
 	diag "Shm: ust per-uid test"
 	local session_name=shm_path_per_uid
 	local channel_name=channel_per_uid
-	local shm_path=$(mktemp -d)
+	set -x
+	local shm_path=$(mktemp -d --tmpdir "tmp.${FUNCNAME[0]}_shm_path.XXXXXX")
+	set +x
 
 	# Build up
 	start_lttng_sessiond
@@ -216,8 +216,8 @@ function test_lttng_crash()
 	diag "Lttng-crash: basic recuperation"
 	local session_name=crash_test
 	local channel_name=channel_crash
-	local shm_path=$(mktemp -d)
-	local shm_path_symlink=$(mktemp -d)
+	local shm_path=$(mktemp -d --tmpdir "tmp.${FUNCNAME[0]}_shm_path.XXXXXX")
+	local shm_path_symlink=$(mktemp -d --tmpdir "tmp.${FUNCNAME[0]}_shm_path_symlink.XXXXXX")
 	local event_name="tp:tptest"
 
 	# Create a session in snapshot mode to deactivate any use of consumerd
@@ -253,8 +253,8 @@ function test_lttng_crash_extraction()
 	diag "Lttng-crash: extraction to path"
 	local session_name=crash_test
 	local channel_name=channel_crash
-	local shm_path=$(mktemp -d)
-	local extraction_dir_path=$(mktemp -d)
+	local shm_path=$(mktemp -d --tmpdir "tmp.${FUNCNAME[0]}_shm_path.XXXXXX")
+	local extraction_dir_path=$(mktemp -d --tmpdir "tmp.${FUNCNAME[0]}_extraction_dir_path.XXXXXX")
 	local extraction_path=$extraction_dir_path/extract
 	local event_name="tp:tptest"
 
@@ -287,7 +287,7 @@ function test_shm_path_per_pid_sigint()
 	diag "Shm: ust per-pid test sigint"
 	local session_name=shm_path_per_pid
 	local channel_name=channel_per_pid
-	local shm_path=$(mktemp -d)
+	local shm_path=$(mktemp -d --tmpdir "tmp.${FUNCNAME[0]}_shm_path.XXXXXX")
 	local num_files=0
 
 	# Build up
@@ -318,7 +318,7 @@ function test_shm_path_per_uid_sigint()
 	diag "Shm: ust per-uid test sigint"
 	local session_name=shm_path_per_uid_sigint
 	local channel_name=channel_per_uid_sigint
-	local shm_path=$(mktemp -d)
+	local shm_path=$(mktemp -d --tmpdir "tmp.${FUNCNAME[0]}_shm_path.XXXXXX")
 	local ret=0
 
 	# Build up
@@ -349,8 +349,8 @@ function test_lttng_crash_extraction_sigkill()
 	diag "Lttng-crash: extraction with sigkill"
 	local session_name=crash_test
 	local channel_name=channel_crash
-	local shm_path=$(mktemp -d)
-	local extraction_dir_path=$(mktemp -d)
+	local shm_path=$(mktemp -d --tmpdir "tmp.${FUNCNAME[0]}_shm_path.XXXXXX")
+	local extraction_dir_path=$(mktemp -d --tmpdir "tmp.${FUNCNAME[0]}_extraction_dir_path.XXXXXX")
 	local extraction_path=$extraction_dir_path/extract
 	local event_name="tp:tptest"
 	local ret=0
@@ -392,8 +392,8 @@ function interrupt_cleanup()
 }
 
 TESTS=(
-	test_shm_path_per_uid
 	test_shm_path_per_pid
+	test_shm_path_per_uid
 	test_shm_path_per_pid_sigint
 	test_shm_path_per_uid_sigint
 	test_lttng_crash

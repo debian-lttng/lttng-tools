@@ -1,6 +1,7 @@
 lttng-disable-channel(1)
 ========================
-:revdate: 28 November 2016
+:revdate: 14 June 2021
+
 
 NAME
 ----
@@ -17,46 +18,83 @@ SYNOPSIS
 DESCRIPTION
 -----------
 The `lttng disable-channel` command disables one or more channels
-previously enabled by the man:lttng-enable-channel(1) command.
+previously enabled with the man:lttng-enable-channel(1) command
+which belong to:
 
-A channel is always contained in a tracing session
-(see man:lttng-create(1) for creating a tracing session). The
-session in which a channel is disabled using `lttng disable-channel` can
-be specified using the option:--session option. If the option:--session
-option is omitted, the current tracing session is targeted.
+With the option:--session='SESSION' option::
+    The recording session named 'SESSION'.
 
-Note that re-enabling a disabled channel once its tracing session
-has been active at least once is currently not supported.
+Without the option:--session option::
+    The current recording session (see man:lttng-concepts(7) to learn
+    more about the current recording session).
+
+See man:lttng-concepts(7) to learn more about channels.
+
+The `disable-channel` command disables one channel per 'CHANNEL'
+argument.
+
+As of LTTng{nbsp}{lttng_version}, you may :not: enable a disabled
+channel once its recording session has been started (see
+man:lttng-start(1)) at least once.
+
+See the ``<<examples,EXAMPLES>>'' section below for usage examples.
 
 
-include::common-cmd-options-head.txt[]
+include::common-lttng-cmd-options-head.txt[]
 
 
-Domain
-~~~~~~
+Tracing domain
+~~~~~~~~~~~~~~
 One of:
 
 option:-k, option:--kernel::
-    Disable channel in the Linux kernel domain.
+    Disable one or more Linux kernel channels.
 
 option:-u, option:--userspace::
-    Disable channel in the user space domain.
+    Disable one or more user space channels.
 
 
-Target
-~~~~~~
+Recording target
+~~~~~~~~~~~~~~~~
 option:-s 'SESSION', option:--session='SESSION'::
-    Disable channels in the tracing session named 'SESSION'
-    instead of the current tracing session.
+    Disable one or more channels of the recording session named
+    'SESSION' instead of the current recording session.
 
 
-include::common-cmd-help-options.txt[]
+include::common-lttng-cmd-help-options.txt[]
 
 
-include::common-cmd-footer.txt[]
+include::common-lttng-cmd-after-options.txt[]
+
+
+[[examples]]
+EXAMPLES
+--------
+.Disable one Linux kernel channel of the current recording session.
+====
+[role="term"]
+----
+$ lttng disable-channel --kernel my-channel
+----
+====
+
+.Disable two user space channels of a specific recording session.
+====
+See the option:--session option.
+
+[role="term"]
+----
+$ lttng disable-channel --kernel --session=my-session \
+                        little,box
+----
+====
+
+
+include::common-footer.txt[]
 
 
 SEE ALSO
 --------
-man:lttng-disable-channel(1),
-man:lttng(1)
+man:lttng(1),
+man:lttng-enable-channel(1),
+man:lttng-concepts(7)

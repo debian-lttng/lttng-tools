@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-SUBDIRS = . tap testapp
+SUBDIRS = . tap testapp xml-utils
 
 EXTRA_DIST = utils.sh test_utils.py babelstats.pl warn_processes.sh \
              parse-callstack.py
-dist_noinst_SCRIPTS = utils.sh test_utils.py babelstats.pl
+dist_noinst_SCRIPTS = utils.sh test_utils.py babelstats.pl tap-driver.sh
 noinst_LTLIBRARIES = libtestutils.la
 
 libtestutils_la_SOURCES = utils.c utils.h

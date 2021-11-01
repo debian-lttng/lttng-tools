@@ -35,13 +35,8 @@ struct lttng_condition_buffer_usage {
 
 struct lttng_condition_buffer_usage_comm {
 	uint8_t threshold_set_in_bytes;
-	/*
-	 * Expressed in bytes if "threshold_set_in_bytes" is not 0.
-	 * Otherwise, it is expressed a ratio in the interval [0.0, 1.0]
-	 * that is mapped to the range on a 32-bit unsigned integer.
-	 * The ratio is obtained by (threshold / UINT32_MAX).
-	 */
-	uint32_t threshold;
+	uint64_t threshold_bytes;
+	double threshold_ratio;
 	/* Both lengths include the trailing \0. */
 	uint32_t session_name_len;
 	uint32_t channel_name_len;
@@ -68,23 +63,23 @@ struct lttng_evaluation *lttng_evaluation_buffer_usage_create(
 		uint64_t capacity);
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_buffer_usage_low_create_from_buffer(
-		const struct lttng_buffer_view *view,
+ssize_t lttng_condition_buffer_usage_low_create_from_payload(
+		struct lttng_payload_view *view,
 		struct lttng_condition **condition);
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_buffer_usage_high_create_from_buffer(
-		const struct lttng_buffer_view *view,
+ssize_t lttng_condition_buffer_usage_high_create_from_payload(
+		struct lttng_payload_view *view,
 		struct lttng_condition **condition);
 
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_buffer_usage_low_create_from_buffer(
-		const struct lttng_buffer_view *view,
+ssize_t lttng_evaluation_buffer_usage_low_create_from_payload(
+		struct lttng_payload_view *view,
 		struct lttng_evaluation **evaluation);
 
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_buffer_usage_high_create_from_buffer(
-		const struct lttng_buffer_view *view,
+ssize_t lttng_evaluation_buffer_usage_high_create_from_payload(
+		struct lttng_payload_view *view,
 		struct lttng_evaluation **evaluation);
 
 #endif /* LTTNG_CONDITION_BUFFER_USAGE_INTERNAL_H */

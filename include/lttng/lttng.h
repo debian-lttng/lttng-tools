@@ -17,23 +17,47 @@
 
 /* Include every LTTng ABI/API available. */
 #include <lttng/action/action.h>
+#include <lttng/action/list.h>
 #include <lttng/action/notify.h>
+#include <lttng/action/path.h>
+#include <lttng/action/rate-policy.h>
+#include <lttng/action/rotate-session.h>
+#include <lttng/action/snapshot-session.h>
+#include <lttng/action/start-session.h>
+#include <lttng/action/stop-session.h>
 #include <lttng/channel.h>
 #include <lttng/clear-handle.h>
 #include <lttng/clear.h>
 #include <lttng/condition/buffer-usage.h>
 #include <lttng/condition/condition.h>
 #include <lttng/condition/evaluation.h>
+#include <lttng/condition/event-rule-matches.h>
 #include <lttng/condition/session-consumed-size.h>
 #include <lttng/condition/session-rotation.h>
+#include <lttng/constant.h>
 #include <lttng/destruction-handle.h>
 #include <lttng/domain.h>
 #include <lttng/endpoint.h>
+#include <lttng/error-query.h>
+#include <lttng/event-expr.h>
+#include <lttng/event-field-value.h>
+#include <lttng/event-rule/event-rule.h>
+#include <lttng/event-rule/log4j-logging.h>
+#include <lttng/event-rule/jul-logging.h>
+#include <lttng/event-rule/kernel-kprobe.h>
+#include <lttng/event-rule/kernel-syscall.h>
+#include <lttng/event-rule/python-logging.h>
+#include <lttng/event-rule/kernel-tracepoint.h>
+#include <lttng/event-rule/kernel-uprobe.h>
+#include <lttng/event-rule/user-tracepoint.h>
 #include <lttng/event.h>
 #include <lttng/handle.h>
 #include <lttng/health.h>
+#include <lttng/kernel-probe.h>
 #include <lttng/load.h>
 #include <lttng/location.h>
+#include <lttng/log-level-rule.h>
+#include <lttng/lttng-error.h>
 #include <lttng/notification/channel.h>
 #include <lttng/notification/notification.h>
 #include <lttng/rotation.h>
@@ -169,7 +193,7 @@ extern int lttng_data_pending(const char *session_name);
 /*
  * Deprecated, replaced by lttng_regenerate_metadata.
  */
-LTTNG_DEPRECATED()
+LTTNG_DEPRECATED("Use lttng_regenerate_metadata")
 extern int lttng_metadata_regenerate(const char *session_name);
 
 /*

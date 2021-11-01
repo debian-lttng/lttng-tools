@@ -2,12 +2,12 @@
 .\"     Title: lttng-relayd
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 2 April 2020
+.\"      Date: 14 June 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.12.3
+.\"    Source: LTTng 2.13.1
 .\"  Language: English
 .\"
-.TH "LTTNG\-RELAYD" "8" "2 April 2020" "LTTng 2\&.12\&.3" "LTTng Manual"
+.TH "LTTNG\-RELAYD" "8" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -28,29 +28,132 @@
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
 .SH "NAME"
-lttng-relayd \- LTTng 2 relay daemon
+lttng-relayd \- LTTng relay daemon
 .SH "SYNOPSIS"
 .sp
 .nf
 \fBlttng\-relayd\fR [\fB--background\fR | \fB--daemonize\fR] [\fB--config\fR=\fIPATH\fR]
              [\fB--control-port\fR=\fIURL\fR] [\fB--data-port\fR=\fIURL\fR] [\fB--fd-pool-size\fR=\fICOUNT\fR]
-             [\fB--live-port\fR=\fIURL\fR] [\fB--output\fR=\fIPATH\fR]
-             [\fB-v\fR | \fB-vv\fR | \fB-vvv\fR] [\fB--working-directory\fR=\fIPATH\fR]
-             [\fB--group-output-by-session\fR] [\fB--disallow-clear\fR]
+             [\fB--live-port\fR=\fIURL\fR] [\fB--output\fR=\fIDIR\fR] [\fB--group\fR=\fIGROUP\fR]
+             [\fB--verbose\fR]\&... [\fB--working-directory\fR=\fIDIR\fR]
+             [\fB--group-output-by-host\fR | \fB--group-output-by-session\fR] [\fB--disallow-clear\fR]
 .fi
 .SH "DESCRIPTION"
 .sp
-The \fILinux Trace Toolkit: next generation\fR <https://lttng.org/> is an open source software package used for correlated tracing of the Linux kernel, user applications, and user libraries\&.
+The \fILinux Trace Toolkit: next generation\fR <https://lttng.org/> is an open\-source software package used for correlated tracing of the Linux kernel, user applications, and user libraries\&.
 .sp
 LTTng consists of Linux kernel modules (for Linux kernel tracing) and dynamically loaded libraries (for user application and library tracing)\&.
 .sp
-The \fILTTng relay daemon\fR is responsible for receiving trace data from possibly remote LTTng session/consumer daemons and for writing it to the local file system\&. The relay daemon also accepts \fILTTng live\fR connections from compatible viewers; this is the official approach to viewing LTTng events as they are emitted\&.
+An LTTng relay daemon, \fBlttng-relayd\fR, is a program which receives trace data from (possibly remote) LTTng session/consumer daemons and which writes it to the local file system\&. The relay daemon also accepts LTTng live connections from compatible readers (for example, \fBbabeltrace2\fR(1)); this is the recommended approach to read trace data while the remote recording session is active\&.
 .sp
-The relay daemon listens by default on all network interfaces to gather trace data, but only on localhost for LTTng live connections\&.
+By default, a relay daemon listens on all network interfaces to receive trace data, but only on \fBlocalhost\fR for LTTng live connections\&. Override the listening URLs with the \fB--control-port\fR, \fB--data-port\fR, and \fB--live-port\fR options (see the \(lqURL format\(rq section below)\&. For example, use the \fB--live-port\fR=\fBtcp://0.0.0.0:5344\fR option to make a relay daemon listen to LTTng live connections on all network interfaces\&.
 .sp
-The relay daemon does not require any particular permissions, as long as it can write to the output directory and listen on the configured ports\&. If a user is within a secured network and/or has proper firewall settings, \fBlttng-relayd\fR can listen to LTTng live connections from \fIall\fR network interfaces by specifying \fB--live-port=tcp://0.0.0.0:5344\fR\&.
+Once LTTng has completely sent a trace to a relay daemon\ \&\fIRD\fR, any LTTng trace reader can read the trace located on the local file system of\ \&\fIRD\fR\&.
 .sp
-Once a trace has been streamed completely, the trace can be processed by any tool that can process an LTTng trace located on the local file system\&.
+By default, \fBlttng-relayd\fR doesn\(cqt start as a daemon\&. Make it a daemon with the \fB--daemonize\fR or \fB--background\fR option\&. With those options, \fBlttng-relayd\fR ensures the daemon is listening to incoming connections before it exits\&.
+.SS "Daemon configuration"
+.sp
+When you run \fBlttng-relayd\fR, it configures itself from, in this order:
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 1.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  1." 4.2
+.\}
+The INI configuration file
+\fB/usr/local/etc/lttng/lttng.conf\fR, if any\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 2.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  2." 4.2
+.\}
+The INI configuration file
+\fB$LTTNG_HOME/.lttng/lttng.conf\fR, if any\&.
+.sp
+\fB$LTTNG_HOME\fR
+defaults to
+\fB$HOME\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 3.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  3." 4.2
+.\}
+With the
+\fB--config\fR=\fIPATH\fR
+option: the INI configuration file
+\fIPATH\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 4.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  4." 4.2
+.\}
+The command\-line options\&.
+.RE
+.sp
+Each step can override a previous configuration property\&.
+.sp
+In INI configuration files, the session daemon only reads the properties under the \fBrelayd\fR INI section\&. Each INI property is:
+.PP
+Key
+.RS 4
+The long name of a command\-line option to set (see the \(lqOPTIONS\(rq section below)\&.
+.RE
+.PP
+Value
+.RS 4
+.PP
+The selected command\-line option accepts an argument
+.RS 4
+Option argument (string)\&.
+.RE
+.PP
+The selected command\-line option is a switch
+.RS 4
+.PP
+\fBtrue\fR, \fByes\fR, \fBon\fR
+.RS 4
+Enable the option\&.
+.RE
+.PP
+\fBfalse\fR, \fBno\fR, \fBoff\fR
+.RS 4
+Disable the option\&.
+.RE
+.RE
+.RE
+.sp
+INI configuration file example:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+[relayd]
+daemonize=yes
+live\-port=tcp://0\&.0\&.0\&.0:4567
+disallow\-clear=yes
+.fi
+.if n \{\
+.RE
+.\}
 .SS "Output directory"
 .sp
 The relay daemon uses different output path patterns depending on:
@@ -64,6 +167,8 @@ The relay daemon uses different output path patterns depending on:
 .IP \(bu 2.3
 .\}
 Its configuration\&.
+.sp
+See the \(lqDaemon configuration\(rq section above\&.
 .RE
 .sp
 .RS 4
@@ -74,7 +179,7 @@ Its configuration\&.
 .sp -1
 .IP \(bu 2.3
 .\}
-The connected peer\(cqs tracing session configuration\&.
+The recording session configuration of the connected peer\&.
 .RE
 .sp
 .RS 4
@@ -85,8 +190,8 @@ The connected peer\(cqs tracing session configuration\&.
 .sp -1
 .IP \(bu 2.3
 .\}
-The connected peer\(cqs LTTng session daemon (see
-\fBlttng-sessiond\fR(8)) version\&.
+The LTTng session daemon (see
+\fBlttng-sessiond\fR(8)) version of the connected peer\&.
 .RE
 .sp
 Consider the following variables:
@@ -95,60 +200,49 @@ Consider the following variables:
 .RS 4
 Base output directory:
 \fB$LTTNG_HOME/lttng-traces\fR
-or the argument of the
+(\fB$LTTNG_HOME\fR
+defaults to
+\fB$HOME\fR) or the argument of the
 \fB--output\fR
 option\&.
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-\fB$LTTNG_HOME\fR
-defaults to
-\fB$HOME\fR
-when not explicitly set\&.
-.sp .5v
-.RE
 .RE
 .PP
 \fIHOSTNAME\fR
 .RS 4
-Peer\(cqs hostname\&.
+Hostname of the connected peer\&.
 .RE
 .PP
 \fISESSION\fR
 .RS 4
-Tracing session name\&.
+Recording session name\&.
 .RE
 .PP
 \fIDATETIME\fR
 .RS 4
-Unique tracing session date/time\&.
+Unique recording session date/time\&.
 .RE
 .PP
-\fITRACEPATH\fR
+\fITRACEDIR\fR
 .RS 4
-Custom trace path (\fITRACEPATH\fR
-part of the
-\fBlttng-create\fR(1)
-command\(cqs
+Custom trace directory path (\fITRACEDIR\fR
+part of the argument of the
 \fB--set-url\fR
-option\(cqs argument, if any)\&.
+option of the
+\fBlttng-create\fR(1)
+command, if any)\&.
+.RE
+.PP
+\fISESSIONDV\fR
+.RS 4
+The version of the LTTng session daemon of the connected peer\&.
 .RE
 .sp
 The relay daemon output path patterns are:
 .PP
-Hostname grouping (without \fB--group-output-by-session\fR)
+With the \fB--group-output-by-host\fR option (hostname grouping)
 .RS 4
 .PP
-Without a custom trace path
+Without a custom trace directory
 .RS 4
 .sp
 .if n \{\
@@ -162,14 +256,14 @@ Without a custom trace path
 .\}
 .RE
 .PP
-With a custom trace path
+With a custom trace directory
 .RS 4
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
-\fIBASE\fR/\fIHOSTNAME\fR/\fITRACEPATH\fR
+\fIBASE\fR/\fIHOSTNAME\fR/\fITRACEDIR\fR
 .fi
 .if n \{\
 .RE
@@ -177,13 +271,13 @@ With a custom trace path
 .RE
 .RE
 .PP
-Tracing session grouping (with \fB--group-output-by-session\fR)
+With the \fB--group-output-by-session\fR option (recording session grouping)
 .RS 4
 .PP
-Without a custom trace path
+Without a custom trace directory
 .RS 4
 .PP
-The peer\(cqs LTTng session daemon version is at least 2\&.4
+\fISESSIONDV\fR is at least\ \&2\&.4
 .RS 4
 .sp
 .if n \{\
@@ -213,17 +307,17 @@ Defaults to the hostname grouping pattern:
 .RE
 .RE
 .PP
-With a custom trace path
+With a custom trace directory
 .RS 4
 .PP
-The peer\(cqs LTTng session daemon version is at least 2\&.4
+\fISESSIONDV\fR is at least 2\&.4
 .RS 4
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
-\fIBASE\fR/\fISESSION\fR/\fIHOSTNAME\fR\-\fIDATETIME\fR/\fITRACEPATH\fR
+\fIBASE\fR/\fISESSION\fR/\fIHOSTNAME\fR\-\fIDATETIME\fR/\fITRACEDIR\fR
 .fi
 .if n \{\
 .RE
@@ -238,7 +332,7 @@ Defaults to the hostname grouping pattern:
 .RS 4
 .\}
 .nf
-\fIBASE\fR/\fIHOSTNAME\fR/\fITRACEPATH\fR
+\fIBASE\fR/\fIHOSTNAME\fR/\fITRACEDIR\fR
 .fi
 .if n \{\
 .RE
@@ -248,9 +342,9 @@ Defaults to the hostname grouping pattern:
 .RE
 .SS "URL format"
 .sp
-The \fB--control-port\fR, \fB--data-port\fR, and \fB--live-port\fR options specify URLs\&.
+The argument of the \fB--control-port\fR=\fIURL\fR, \fB--data-port\fR=\fIURL\fR, and \fB--live-port\fR=\fIURL\fR options is an URL\&.
 .sp
-The format of those URLs is:
+The format of \fIURL\fR is:
 .sp
 .if n \{\
 .RS 4
@@ -266,12 +360,11 @@ with:
 .PP
 (\fIHOST\fR | \fIIPADDR\fR)
 .RS 4
-Binding hostname or IP address (IPv6 address
-\fBmust\fR
-be enclosed in brackets (\fB[\fR
-and
-\fB]\fR); see
-RFC 2732 <https://www.ietf.org/rfc/rfc2732.txt>)\&.
+Binding hostname or IP address\&.
+.sp
+IPv6 address must be enclosed in square brackets (\fB[\fR
+and\ \&\fB]\fR); see
+RFC\ \&2732 <https://www.ietf.org/rfc/rfc2732.txt>\&.
 .RE
 .PP
 \fIPORT\fR
@@ -279,24 +372,39 @@ RFC 2732 <https://www.ietf.org/rfc/rfc2732.txt>)\&.
 TCP port\&.
 .RE
 .SH "OPTIONS"
-.SS "Daemon"
+.SS "General daemon configuration"
 .PP
 \fB-b\fR, \fB--background\fR
 .RS 4
-Start as Unix daemon, but keep file descriptors (console) open\&. Use the
+Start as a Unix daemon, but keep file descriptors (console) open\&.
+.sp
+With this option,
+\fBlttng-relayd\fR
+ensures the daemon is listening to incoming connections before it exits\&.
+.sp
+Use the
 \fB--daemonize\fR
 option instead to close the file descriptors\&.
 .RE
 .PP
 \fB-f\fR \fIPATH\fR, \fB--config\fR=\fIPATH\fR
 .RS 4
-Load relay daemon configuration from path
-\fIPATH\fR\&.
+Configure the daemon using the INI configuration file
+\fIPATH\fR
+in addition to the default configuration files and the command\-line options\&.
+.sp
+See the \(lqDaemon configuration\(rq section above\&.
 .RE
 .PP
 \fB-d\fR, \fB--daemonize\fR
 .RS 4
-Start as Unix daemon, and close file descriptors (console)\&. Use the
+Start as a Unix daemon and close file descriptors (console)\&.
+.sp
+With this option,
+\fBlttng-relayd\fR
+ensures the daemon is listening to incoming connections before it exits\&.
+.sp
+Use the
 \fB--background\fR
 option instead to keep the file descriptors open\&.
 .RE
@@ -314,10 +422,11 @@ environment variable\&.
 \fB--fd-pool-size\fR=\fISIZE\fR
 .RS 4
 Set the size of the file descriptor pool to
-\fISIZE\fR\&.
+\fISIZE\fR
+file descriptors\&.
 .sp
 \fISIZE\fR
-is the maximum number of file descriptors that may be kept opened simultaneously by the relay daemon\&.
+is the maximum number of file descriptors that the relay daemon may keep open simultaneously\&.
 .sp
 Default: the soft
 \fBRLIMIT_NOFILE\fR
@@ -327,16 +436,27 @@ resource limit of the process (see
 .PP
 \fB-g\fR \fIGROUP\fR, \fB--group\fR=\fIGROUP\fR
 .RS 4
-Use
+Set the Unix tracing group to
 \fIGROUP\fR
-as Unix tracing group (default:
-\fBtracing\fR)\&.
+instead of
+\fBtracing\fR\&.
+.sp
+This option is only meaningful when the
+\fBroot\fR
+Unix user starts
+\fBlttng-relayd\fR\&.
+.sp
+Members of the Unix tracing group may connect to the health check socket of the relay daemon\&.
+.sp
+See also the
+\fBLTTNG_RELAYD_HEALTH\fR
+environment variable\&.
 .RE
 .PP
-\fB-w\fR \fIPATH\fR, \fB--working-directory\fR=\fIPATH\fR
+\fB-w\fR \fIDIR\fR, \fB--working-directory\fR=\fIDIR\fR
 .RS 4
 Set the working directory of the processes the relay daemon creates to
-\fIPATH\fR\&.
+\fIDIR\fR\&.
 .sp
 See also the
 \fBLTTNG_RELAYD_WORKING_DIRECTORY\fR
@@ -347,212 +467,80 @@ environment variable\&.
 .RS 4
 Increase verbosity\&.
 .sp
-Three levels of verbosity are available, which are triggered by appending additional
-\fBv\fR
-letters to the option (that is,
-\fB-vv\fR
-and
-\fB-vvv\fR)\&.
+Specify this option up to three times to get more levels of verbosity\&.
 .RE
 .SS "Output"
 .sp
-See the \fIOutput directory\fR section above for more information\&.
+See the \(lqOutput directory\(rq section above to learn more\&.
 .PP
 \fB-p\fR, \fB--group-output-by-host\fR
 .RS 4
-Group the written trace directories by hostname (default)\&.
+Group the written trace directories by hostname\&.
+.sp
+As of LTTng\ \&2\&.13\&.1, this is the default output grouping strategy, but this may change in the future\&.
 .RE
 .PP
 \fB-s\fR, \fB--group-output-by-session\fR
 .RS 4
-Group the written trace directories by tracing session name instead of by hostname\&.
+Group the written trace directories by recording session name instead of by hostname\&.
 .RE
 .PP
-\fB-o\fR \fIPATH\fR, \fB--output\fR=\fIPATH\fR
+\fB-o\fR \fIDIR\fR, \fB--output\fR=\fIDIR\fR
 .RS 4
 Set the base output directory of the written trace directories to
-\fIPATH\fR\&.
+\fIDIR\fR\&.
 .RE
 .SS "Ports"
 .sp
-See the \fIURL format\fR section above for more information about the syntax of the following \fIURL\fR argument\&.
+See the \(lqURL format\(rq section above to learn more about the syntax of the \fIURL\fR argument of the following options\&.
 .PP
 \fB-C\fR \fIURL\fR, \fB--control-port\fR=\fIURL\fR
 .RS 4
 Listen to control data on URL
-\fIURL\fR
-(default:
-\fBtcp://0.0.0.0:5342\fR)\&.
+\fIURL\fR\&.
+.sp
+Default:
+\fBtcp://0.0.0.0:5342\fR\&.
 .RE
 .PP
 \fB-D\fR \fIURL\fR, \fB--data-port\fR=\fIURL\fR
 .RS 4
 Listen to trace data on URL
-\fIURL\fR
-(default:
-\fBtcp://0.0.0.0:5343\fR)\&.
+\fIURL\fR\&.
+.sp
+Default:
+\fBtcp://0.0.0.0:5343\fR\&.
 .RE
 .PP
 \fB-L\fR \fIURL\fR, \fB--live-port\fR=\fIURL\fR
 .RS 4
 Listen to LTTng live connections on URL
-\fIURL\fR
-(default:
-\fBtcp://localhost:5344\fR)\&.
+\fIURL\fR\&.
+.sp
+Default:
+\fBtcp://localhost:5344\fR\&.
 .RE
 .SS "Program information"
 .PP
 \fB-h\fR, \fB--help\fR
 .RS 4
 Show help\&.
+.sp
+This option attempts to launch
+\fB/usr/bin/man\fR
+to view this manual page\&. Override the manual pager path with the
+\fBLTTNG_MAN_BIN_PATH\fR
+environment variable\&.
+.RE
+.PP
+\fB--list-options\fR
+.RS 4
+List available command options and quit\&.
 .RE
 .PP
 \fB-V\fR, \fB--version\fR
 .RS 4
-Show version\&.
-.RE
-.SH "ENVIRONMENT VARIABLES"
-.PP
-\fBLTTNG_ABORT_ON_ERROR\fR
-.RS 4
-Set to 1 to abort the process after the first error is encountered\&.
-.RE
-.PP
-\fBLTTNG_NETWORK_SOCKET_TIMEOUT\fR
-.RS 4
-Socket connection, receive and send timeout (milliseconds)\&. A value of 0 or \-1 uses the timeout of the operating system (default)\&.
-.RE
-.PP
-\fBLTTNG_RELAYD_DISALLOW_CLEAR\fR
-.RS 4
-Set to 1 to disallow clearing operations (see
-\fBlttng-clear\fR(1))\&.
-.sp
-The
-\fB--disallow-clear\fR
-option overrides this variable\&.
-.RE
-.PP
-\fBLTTNG_RELAYD_HEALTH\fR
-.RS 4
-Path to relay daemon health\(cqs socket\&.
-.RE
-.PP
-\fBLTTNG_RELAYD_TCP_KEEP_ALIVE\fR
-.RS 4
-Set to 1 to enable TCP keep\-alive\&.
-.sp
-The TCP keep\-alive mechanism allows the detection of dead peers (\fBlttng-sessiond\fR(8)) in cases of unclean termination (for example, a hard reset) of a peer\&.
-.sp
-Supported on Linux and Solaris only\&. The default behaviour of the TCP keep\-alive mechanism is OS\-specific\&.
-.sp
-Search for
-\fBtcp_keepalive\fR
-in
-\fBtcp\fR(7)
-for more information\&.
-.RE
-.PP
-\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_ABORT_THRESHOLD\fR
-.RS 4
-The time threshold in seconds to abort a TCP connection after the keep\-alive probing mechanism has failed\&.
-.sp
-Set to 0 or \-1 to use the value chosen by the operating system (default)\&.
-.sp
-Supported on Solaris 11 only\&.
-.sp
-Search for
-\fBtcp_keepalive_abort_threshold\fR
-in
-\fBtcp\fR(7)
-for more information\&.
-.RE
-.PP
-\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_IDLE_TIME\fR
-.RS 4
-Number of seconds a connection needs to be idle before TCP begins sending out keep\-alive probes\&.
-.sp
-Set to 0 or \-1 to use the value chosen by the operating system (default)\&.
-.sp
-Supported on Linux and Solaris 11 only\&.
-.sp
-On Solaris\ \&11, the accepted values are \-1, 0, and 10 to 864000\&.
-.sp
-Search for
-\fBtcp_keepalive_time\fR
-and
-\fBtcp_keepalive_interval\fR
-in
-\fBtcp\fR(7)
-on Solaris 11 for more information\&.
-.RE
-.PP
-\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_MAX_PROBE_COUNT\fR
-.RS 4
-Maximum number of TCP keep\-alive probes to send before giving up and killing the connection if no response is obtained from the other end\&.
-.sp
-Set to 0 or \-1 to use the value chosen by the operating system (default)\&.
-.sp
-Supported on Linux only\&.
-.sp
-Search for
-\fBtcp_keepalive_probes\fR
-in
-\fBtcp\fR(7)
-for more information\&.
-.RE
-.PP
-\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_PROBE_INTERVAL\fR
-.RS 4
-Number of seconds between TCP keep\-alive probes\&.
-.sp
-Set to 0 or \-1 to use the value chosen by the operating system (default)\&.
-.sp
-Supported on Linux only\&.
-.sp
-Search for
-\fBtcp_keepalive_intvl\fR
-in
-\fBtcp\fR(7)
-for more information\&.
-.RE
-.PP
-\fBLTTNG_RELAYD_WORKING_DIRECTORY\fR
-.RS 4
-Working directory of the processes the relay daemon creates\&.
-.sp
-The
-\fB--working-directory\fR
-option overrides this variable\&.
-.RE
-.SH "FILES"
-.PP
-\fB$LTTNG_HOME/.lttng\fR
-.RS 4
-User LTTng runtime and configuration directory\&.
-.RE
-.PP
-\fB$LTTNG_HOME/lttng-traces\fR
-.RS 4
-Default base output directory of LTTng traces\&. This can be overridden with the
-\fB--output\fR
-option\&.
-.RE
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-.sp
-\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR when not explicitly set\&.
-.sp .5v
+Show version and quit\&.
 .RE
 .SH "EXIT STATUS"
 .PP
@@ -570,14 +558,184 @@ Error
 .RS 4
 Fatal error
 .RE
-.SH "LIMITATIONS"
+.SH "ENVIRONMENT"
+.PP
+\fBLTTNG_ABORT_ON_ERROR\fR
+.RS 4
+Set to
+\fB1\fR
+to abort the process after the first error is encountered\&.
+.RE
+.PP
+\fBLTTNG_NETWORK_SOCKET_TIMEOUT\fR
+.RS 4
+Socket connection, receive, and send timeout (milliseconds)\&.
 .sp
-As of this version, only the TCP protocol is supported for both control and data ports\&. In future versions, TCP will remain the sole available protocol for control data since those communications are low\-volume and need absolute reliability; trace data could be carried over UDP\&.
+Set to
+\fB0\fR
+or
+\fB-1\fR
+to set an infinite timeout (default)\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_DISALLOW_CLEAR\fR
+.RS 4
+Set to
+\fB1\fR
+to disallow clearing operations (see
+\fBlttng-clear\fR(1))\&.
 .sp
-For an unprivileged user running \fBlttng-relayd\fR, the maximum number of file descriptors per process is usually 1024\&. This limits the number of connections and opened trace files\&. This limit can be configured with \fBulimit\fR(3)\&.
-.SH "BUGS"
+The
+\fB--disallow-clear\fR
+option overrides this environment variable\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_HEALTH\fR
+.RS 4
+Path to the health check socket of the relay daemon\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_TCP_KEEP_ALIVE\fR
+.RS 4
+Set to
+\fB1\fR
+to enable TCP keep\-alive\&.
 .sp
-If you encounter any issue or usability problem, please report it on the LTTng bug tracker <https://bugs.lttng.org/projects/lttng-tools>\&.
+The TCP keep\-alive mechanism allows the detection of dead peers (\fBlttng-sessiond\fR(8)) in cases of unclean termination (for example, a hard reset) of a peer\&.
+.sp
+Supported on Linux and Solaris only\&. The default behaviour of the TCP keep\-alive mechanism is OS\-specific\&.
+.sp
+Search for
+\fBtcp_keepalive\fR
+in
+\fBtcp\fR(7)
+to learn more\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_ABORT_THRESHOLD\fR
+.RS 4
+The time threshold (seconds) to abort a TCP connection after the keep\-alive probing mechanism has failed\&.
+.sp
+Set to
+\fB0\fR
+or
+\fB-1\fR
+to use the value chosen by the operating system (default)\&.
+.sp
+Supported on Solaris 11 only\&.
+.sp
+Search for
+\fBtcp_keepalive_abort_threshold\fR
+in
+\fBtcp\fR(7)
+to learn more\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_IDLE_TIME\fR
+.RS 4
+Number of seconds a connection needs to be idle before TCP begins sending out keep\-alive probes\&.
+.sp
+Set to
+\fB0\fR
+or
+\fB-1\fR
+to use the value chosen by the operating system (default)\&.
+.sp
+Supported on Linux and Solaris 11 only\&.
+.sp
+On Solaris\ \&11, the accepted values are
+\fB-1\fR,
+\fB0\fR, and
+\fB10\fR
+to
+\fB864000\fR\&.
+.sp
+Search for
+\fBtcp_keepalive_time\fR
+and
+\fBtcp_keepalive_interval\fR
+in
+\fBtcp\fR(7)
+on Solaris\ \&11 to learn more\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_MAX_PROBE_COUNT\fR
+.RS 4
+Maximum number of TCP keep\-alive probes to send before giving up and killing the connection if no response is obtained from the other end\&.
+.sp
+Set to
+\fB0\fR
+or
+\fB-1\fR
+to use the value chosen by the operating system (default)\&.
+.sp
+Supported on Linux only\&.
+.sp
+Search for
+\fBtcp_keepalive_probes\fR
+in
+\fBtcp\fR(7)
+to learn more\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_TCP_KEEP_ALIVE_PROBE_INTERVAL\fR
+.RS 4
+Number of seconds between TCP keep\-alive probes\&.
+.sp
+Set to
+\fB0\fR
+or
+\fB-1\fR
+to use the value chosen by the operating system (default)\&.
+.sp
+Supported on Linux only\&.
+.sp
+Search for
+\fBtcp_keepalive_intvl\fR
+in
+\fBtcp\fR(7)
+to learn more\&.
+.RE
+.PP
+\fBLTTNG_RELAYD_WORKING_DIRECTORY\fR
+.RS 4
+Working directory of the processes the relay daemon creates\&.
+.sp
+The
+\fB--working-directory\fR
+option overrides this environment variable\&.
+.RE
+.SH "FILES"
+.PP
+\fB$LTTNG_HOME/.lttng\fR
+.RS 4
+Unix user\(cqs LTTng runtime and configuration directory\&.
+.RE
+.PP
+\fB$LTTNG_HOME/lttng-traces\fR
+.RS 4
+Default base output directory of LTTng traces\&.
+.sp
+Override this path with the
+\fB--output\fR
+option\&.
+.RE
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR\&.
+.sp .5v
+.RE
 .SH "RESOURCES"
 .sp
 .RS 4
@@ -610,7 +768,7 @@ LTTng documentation <https://lttng.org/docs>
 .sp -1
 .IP \(bu 2.3
 .\}
-Git repositories <http://git.lttng.org>
+LTTng bug tracker <https://bugs.lttng.org>
 .RE
 .sp
 .RS 4
@@ -621,7 +779,7 @@ Git repositories <http://git.lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-GitHub organization <http://github.com/lttng>
+Git repositories <https://git.lttng.org>
 .RE
 .sp
 .RS 4
@@ -632,7 +790,7 @@ GitHub organization <http://github.com/lttng>
 .sp -1
 .IP \(bu 2.3
 .\}
-Continuous integration <http://ci.lttng.org/>
+GitHub organization <https://github.com/lttng>
 .RE
 .sp
 .RS 4
@@ -643,7 +801,18 @@ Continuous integration <http://ci.lttng.org/>
 .sp -1
 .IP \(bu 2.3
 .\}
-Mailing list <http://lists.lttng.org>
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
 for support and development:
 \fBlttng-dev@lists.lttng.org\fR
 .RE
@@ -661,11 +830,11 @@ IRC channel <irc://irc.oftc.net/lttng>:
 on
 \fBirc.oftc.net\fR
 .RE
-.SH "COPYRIGHTS"
+.SH "COPYRIGHT"
 .sp
 This program is part of the LTTng\-tools project\&.
 .sp
-LTTng\-tools is distributed under the GNU General Public License version 2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
 .SH "THANKS"
 .sp
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
@@ -673,4 +842,4 @@ Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.p
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
 .SH "SEE ALSO"
 .sp
-\fBlttng\fR(1), \fBlttng-sessiond\fR(8), \fBlttng-crash\fR(1), \fBlttng-ust\fR(3), \fBbabeltrace2\fR(1)
+\fBbabeltrace2\fR(1), \fBlttng\fR(1), \fBlttng-sessiond\fR(8)

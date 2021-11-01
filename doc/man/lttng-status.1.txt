@@ -1,11 +1,11 @@
 lttng-status(1)
 ===============
-:revdate: 14 March 2017
+:revdate: 14 June 2021
 
 
 NAME
 ----
-lttng-status - Get the current LTTng tracing session's status
+lttng-status - Show the status of the current LTTng recording session
 
 
 SYNOPSIS
@@ -16,30 +16,34 @@ SYNOPSIS
 
 DESCRIPTION
 -----------
-The `lttng status` command shows the status of the current
-tracing session.
+The `lttng status` command shows the status of the current recording
+session (see man:lttng-concepts(7) to learn more about the current
+recording session).
 
-This command is the exact equivalent of:
+This command is equivalent to:
 
-[role="term"]
-----
-$ lttng list CURSESSION
-----
+[verse]
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *list* 'CURSESSION'
 
-where `CURSESSION` is the name of the current tracing session.
-Use man:lttng-set-session(1) to set the current tracing session.
+where `CURSESSION` is the name of the current recording session.
 
 
-include::common-cmd-options-head.txt[]
+include::common-lttng-cmd-options-head.txt[]
 
 
-include::common-cmd-help-options.txt[]
+include::common-lttng-cmd-help-options.txt[]
 
 
-include::common-cmd-footer.txt[]
+include::common-lttng-cmd-after-options.txt[]
+
+
+include::common-footer.txt[]
 
 
 SEE ALSO
 --------
+man:lttng(1),
+man:lttng-create(1),
+man:lttng-list(1),
 man:lttng-set-session(1),
-man:lttng(1)
+man:lttng-concepts(7)

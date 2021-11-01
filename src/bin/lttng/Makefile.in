@@ -122,6 +122,8 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
 	$(top_srcdir)/m4/lttng_check_sdt_works.m4 \
+	$(top_srcdir)/m4/lttng_pthread_getname_np.m4 \
+	$(top_srcdir)/m4/lttng_pthread_setname_np.m4 \
 	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
 	$(top_srcdir)/m4/pprint.m4 \
 	$(top_srcdir)/m4/rw_prog_cxx_works.m4 \
@@ -155,8 +157,11 @@ am_lttng_OBJECTS = lttng-conf.$(OBJEXT) commands/lttng-start.$(OBJEXT) \
 	commands/lttng-help.$(OBJEXT) commands/lttng-rotate.$(OBJEXT) \
 	commands/lttng-enable_rotation.$(OBJEXT) \
 	commands/lttng-disable_rotation.$(OBJEXT) \
-	commands/lttng-clear.$(OBJEXT) lttng-utils.$(OBJEXT) \
-	lttng-lttng.$(OBJEXT)
+	commands/lttng-clear.$(OBJEXT) lttng-loglevel.$(OBJEXT) \
+	commands/lttng-add_trigger.$(OBJEXT) \
+	commands/lttng-list_triggers.$(OBJEXT) \
+	commands/lttng-remove_trigger.$(OBJEXT) lttng-utils.$(OBJEXT) \
+	lttng-lttng.$(OBJEXT) lttng-uprobe.$(OBJEXT)
 lttng_OBJECTS = $(am_lttng_OBJECTS)
 am__DEPENDENCIES_1 =
 lttng_DEPENDENCIES =  \
@@ -164,6 +169,8 @@ lttng_DEPENDENCIES =  \
 	$(top_builddir)/src/common/libcommon.la \
 	$(top_builddir)/src/common/config/libconfig.la \
 	$(top_builddir)/src/common/string-utils/libstring-utils.la \
+	$(top_builddir)/src/common/filter/libfilter.la \
+	$(top_builddir)/src/common/argpar/libargpar.la \
 	$(am__DEPENDENCIES_1)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -255,6 +262,7 @@ CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_ADD_TRIGGER = @CMD_DESCR_ADD_TRIGGER@
 CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
@@ -266,8 +274,10 @@ CMD_DESCR_ENABLE_EVENT = @CMD_DESCR_ENABLE_EVENT@
 CMD_DESCR_ENABLE_ROTATION = @CMD_DESCR_ENABLE_ROTATION@
 CMD_DESCR_HELP = @CMD_DESCR_HELP@
 CMD_DESCR_LIST = @CMD_DESCR_LIST@
+CMD_DESCR_LIST_TRIGGERS = @CMD_DESCR_LIST_TRIGGERS@
 CMD_DESCR_LOAD = @CMD_DESCR_LOAD@
 CMD_DESCR_REGENERATE = @CMD_DESCR_REGENERATE@
+CMD_DESCR_REMOVE_TRIGGER = @CMD_DESCR_REMOVE_TRIGGER@
 CMD_DESCR_ROTATE = @CMD_DESCR_ROTATE@
 CMD_DESCR_SAVE = @CMD_DESCR_SAVE@
 CMD_DESCR_SET_SESSION = @CMD_DESCR_SET_SESSION@
@@ -299,6 +309,7 @@ DEFAULT_APP_SOCKET_RW_TIMEOUT = @DEFAULT_APP_SOCKET_RW_TIMEOUT@
 DEFAULT_CHANNEL_SUBBUF_SIZE = @DEFAULT_CHANNEL_SUBBUF_SIZE@
 DEFAULT_CHANNEL_TRACEFILE_COUNT = @DEFAULT_CHANNEL_TRACEFILE_COUNT@
 DEFAULT_CHANNEL_TRACEFILE_SIZE = @DEFAULT_CHANNEL_TRACEFILE_SIZE@
+DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE = @DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE@
 DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT = @DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT@
 DEFAULT_KERNEL_CHANNEL_LIVE_TIMER = @DEFAULT_KERNEL_CHANNEL_LIVE_TIMER@
 DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER = @DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER@
@@ -388,6 +399,7 @@ NMEDIT = @NMEDIT@
 OBJCOPY = @OBJCOPY@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
+OSTYPE = @OSTYPE@
 OTOOL = @OTOOL@
 OTOOL64 = @OTOOL64@
 PACKAGE = @PACKAGE@
@@ -428,6 +440,12 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
+URCU_BP_CFLAGS = @URCU_BP_CFLAGS@
+URCU_BP_LIBS = @URCU_BP_LIBS@
+URCU_CDS_CFLAGS = @URCU_CDS_CFLAGS@
+URCU_CDS_LIBS = @URCU_CDS_LIBS@
+URCU_CFLAGS = @URCU_CFLAGS@
+URCU_LIBS = @URCU_LIBS@
 UST_CFLAGS = @UST_CFLAGS@
 UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
 UST_CTL_LIBS = @UST_CTL_LIBS@
@@ -479,6 +497,7 @@ localedir = @localedir@
 localstatedir = @localstatedir@
 lttngactionincludedir = @lttngactionincludedir@
 lttngconditionincludedir = @lttngconditionincludedir@
+lttngeventruleincludedir = @lttngeventruleincludedir@
 lttngincludedir = @lttngincludedir@
 lttnglibexecdir = @lttnglibexecdir@
 lttngnotificationincludedir = @lttngnotificationincludedir@
@@ -530,13 +549,20 @@ lttng_SOURCES = command.h conf.c conf.h commands/start.c \
 				commands/enable_rotation.c \
 				commands/disable_rotation.c \
 				commands/clear.c \
-				utils.c utils.h lttng.c
+				loglevel.c loglevel.h \
+				commands/add_trigger.c \
+				commands/list_triggers.c \
+				commands/remove_trigger.c \
+				utils.c utils.h lttng.c \
+				uprobe.c uprobe.h
 
 lttng_CFLAGS = $(AM_CFLAGS) $(POPT_CFLAGS)
 lttng_LDADD = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la \
 			$(top_builddir)/src/common/libcommon.la \
 			$(top_builddir)/src/common/config/libconfig.la \
 			$(top_builddir)/src/common/string-utils/libstring-utils.la \
+			$(top_builddir)/src/common/filter/libfilter.la \
+			$(top_builddir)/src/common/argpar/libargpar.la \
 			$(POPT_LIBS)
 
 all: all-am
@@ -677,6 +703,12 @@ commands/lttng-disable_rotation.$(OBJEXT): commands/$(am__dirstamp) \
 	commands/$(DEPDIR)/$(am__dirstamp)
 commands/lttng-clear.$(OBJEXT): commands/$(am__dirstamp) \
 	commands/$(DEPDIR)/$(am__dirstamp)
+commands/lttng-add_trigger.$(OBJEXT): commands/$(am__dirstamp) \
+	commands/$(DEPDIR)/$(am__dirstamp)
+commands/lttng-list_triggers.$(OBJEXT): commands/$(am__dirstamp) \
+	commands/$(DEPDIR)/$(am__dirstamp)
+commands/lttng-remove_trigger.$(OBJEXT): commands/$(am__dirstamp) \
+	commands/$(DEPDIR)/$(am__dirstamp)
 
 lttng$(EXEEXT): $(lttng_OBJECTS) $(lttng_DEPENDENCIES) $(EXTRA_lttng_DEPENDENCIES) 
 	@rm -f lttng$(EXEEXT)
@@ -690,9 +722,12 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-conf.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-loglevel.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-lttng.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-uprobe.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-utils.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-add_context.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-add_trigger.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-clear.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-create.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-destroy.Po@am__quote@
@@ -704,9 +739,11 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-enable_rotation.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-help.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-list.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-list_triggers.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-load.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-metadata.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-regenerate.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-remove_trigger.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-rotate.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-save.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@commands/$(DEPDIR)/lttng-set_session.Po@am__quote@
@@ -1106,6 +1143,62 @@ commands/lttng-clear.obj: commands/clear.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o commands/lttng-clear.obj `if test -f 'commands/clear.c'; then $(CYGPATH_W) 'commands/clear.c'; else $(CYGPATH_W) '$(srcdir)/commands/clear.c'; fi`
 
+lttng-loglevel.o: loglevel.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT lttng-loglevel.o -MD -MP -MF $(DEPDIR)/lttng-loglevel.Tpo -c -o lttng-loglevel.o `test -f 'loglevel.c' || echo '$(srcdir)/'`loglevel.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/lttng-loglevel.Tpo $(DEPDIR)/lttng-loglevel.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='loglevel.c' object='lttng-loglevel.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o lttng-loglevel.o `test -f 'loglevel.c' || echo '$(srcdir)/'`loglevel.c
+
+lttng-loglevel.obj: loglevel.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT lttng-loglevel.obj -MD -MP -MF $(DEPDIR)/lttng-loglevel.Tpo -c -o lttng-loglevel.obj `if test -f 'loglevel.c'; then $(CYGPATH_W) 'loglevel.c'; else $(CYGPATH_W) '$(srcdir)/loglevel.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/lttng-loglevel.Tpo $(DEPDIR)/lttng-loglevel.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='loglevel.c' object='lttng-loglevel.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o lttng-loglevel.obj `if test -f 'loglevel.c'; then $(CYGPATH_W) 'loglevel.c'; else $(CYGPATH_W) '$(srcdir)/loglevel.c'; fi`
+
+commands/lttng-add_trigger.o: commands/add_trigger.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT commands/lttng-add_trigger.o -MD -MP -MF commands/$(DEPDIR)/lttng-add_trigger.Tpo -c -o commands/lttng-add_trigger.o `test -f 'commands/add_trigger.c' || echo '$(srcdir)/'`commands/add_trigger.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) commands/$(DEPDIR)/lttng-add_trigger.Tpo commands/$(DEPDIR)/lttng-add_trigger.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='commands/add_trigger.c' object='commands/lttng-add_trigger.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o commands/lttng-add_trigger.o `test -f 'commands/add_trigger.c' || echo '$(srcdir)/'`commands/add_trigger.c
+
+commands/lttng-add_trigger.obj: commands/add_trigger.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT commands/lttng-add_trigger.obj -MD -MP -MF commands/$(DEPDIR)/lttng-add_trigger.Tpo -c -o commands/lttng-add_trigger.obj `if test -f 'commands/add_trigger.c'; then $(CYGPATH_W) 'commands/add_trigger.c'; else $(CYGPATH_W) '$(srcdir)/commands/add_trigger.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) commands/$(DEPDIR)/lttng-add_trigger.Tpo commands/$(DEPDIR)/lttng-add_trigger.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='commands/add_trigger.c' object='commands/lttng-add_trigger.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o commands/lttng-add_trigger.obj `if test -f 'commands/add_trigger.c'; then $(CYGPATH_W) 'commands/add_trigger.c'; else $(CYGPATH_W) '$(srcdir)/commands/add_trigger.c'; fi`
+
+commands/lttng-list_triggers.o: commands/list_triggers.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT commands/lttng-list_triggers.o -MD -MP -MF commands/$(DEPDIR)/lttng-list_triggers.Tpo -c -o commands/lttng-list_triggers.o `test -f 'commands/list_triggers.c' || echo '$(srcdir)/'`commands/list_triggers.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) commands/$(DEPDIR)/lttng-list_triggers.Tpo commands/$(DEPDIR)/lttng-list_triggers.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='commands/list_triggers.c' object='commands/lttng-list_triggers.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o commands/lttng-list_triggers.o `test -f 'commands/list_triggers.c' || echo '$(srcdir)/'`commands/list_triggers.c
+
+commands/lttng-list_triggers.obj: commands/list_triggers.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT commands/lttng-list_triggers.obj -MD -MP -MF commands/$(DEPDIR)/lttng-list_triggers.Tpo -c -o commands/lttng-list_triggers.obj `if test -f 'commands/list_triggers.c'; then $(CYGPATH_W) 'commands/list_triggers.c'; else $(CYGPATH_W) '$(srcdir)/commands/list_triggers.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) commands/$(DEPDIR)/lttng-list_triggers.Tpo commands/$(DEPDIR)/lttng-list_triggers.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='commands/list_triggers.c' object='commands/lttng-list_triggers.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o commands/lttng-list_triggers.obj `if test -f 'commands/list_triggers.c'; then $(CYGPATH_W) 'commands/list_triggers.c'; else $(CYGPATH_W) '$(srcdir)/commands/list_triggers.c'; fi`
+
+commands/lttng-remove_trigger.o: commands/remove_trigger.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT commands/lttng-remove_trigger.o -MD -MP -MF commands/$(DEPDIR)/lttng-remove_trigger.Tpo -c -o commands/lttng-remove_trigger.o `test -f 'commands/remove_trigger.c' || echo '$(srcdir)/'`commands/remove_trigger.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) commands/$(DEPDIR)/lttng-remove_trigger.Tpo commands/$(DEPDIR)/lttng-remove_trigger.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='commands/remove_trigger.c' object='commands/lttng-remove_trigger.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o commands/lttng-remove_trigger.o `test -f 'commands/remove_trigger.c' || echo '$(srcdir)/'`commands/remove_trigger.c
+
+commands/lttng-remove_trigger.obj: commands/remove_trigger.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT commands/lttng-remove_trigger.obj -MD -MP -MF commands/$(DEPDIR)/lttng-remove_trigger.Tpo -c -o commands/lttng-remove_trigger.obj `if test -f 'commands/remove_trigger.c'; then $(CYGPATH_W) 'commands/remove_trigger.c'; else $(CYGPATH_W) '$(srcdir)/commands/remove_trigger.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) commands/$(DEPDIR)/lttng-remove_trigger.Tpo commands/$(DEPDIR)/lttng-remove_trigger.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='commands/remove_trigger.c' object='commands/lttng-remove_trigger.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o commands/lttng-remove_trigger.obj `if test -f 'commands/remove_trigger.c'; then $(CYGPATH_W) 'commands/remove_trigger.c'; else $(CYGPATH_W) '$(srcdir)/commands/remove_trigger.c'; fi`
+
 lttng-utils.o: utils.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT lttng-utils.o -MD -MP -MF $(DEPDIR)/lttng-utils.Tpo -c -o lttng-utils.o `test -f 'utils.c' || echo '$(srcdir)/'`utils.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/lttng-utils.Tpo $(DEPDIR)/lttng-utils.Po
@@ -1133,6 +1226,20 @@ lttng-lttng.obj: lttng.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='lttng.c' object='lttng-lttng.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o lttng-lttng.obj `if test -f 'lttng.c'; then $(CYGPATH_W) 'lttng.c'; else $(CYGPATH_W) '$(srcdir)/lttng.c'; fi`
+
+lttng-uprobe.o: uprobe.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT lttng-uprobe.o -MD -MP -MF $(DEPDIR)/lttng-uprobe.Tpo -c -o lttng-uprobe.o `test -f 'uprobe.c' || echo '$(srcdir)/'`uprobe.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/lttng-uprobe.Tpo $(DEPDIR)/lttng-uprobe.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='uprobe.c' object='lttng-uprobe.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o lttng-uprobe.o `test -f 'uprobe.c' || echo '$(srcdir)/'`uprobe.c
+
+lttng-uprobe.obj: uprobe.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -MT lttng-uprobe.obj -MD -MP -MF $(DEPDIR)/lttng-uprobe.Tpo -c -o lttng-uprobe.obj `if test -f 'uprobe.c'; then $(CYGPATH_W) 'uprobe.c'; else $(CYGPATH_W) '$(srcdir)/uprobe.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/lttng-uprobe.Tpo $(DEPDIR)/lttng-uprobe.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='uprobe.c' object='lttng-uprobe.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(lttng_CFLAGS) $(CFLAGS) -c -o lttng-uprobe.obj `if test -f 'uprobe.c'; then $(CYGPATH_W) 'uprobe.c'; else $(CYGPATH_W) '$(srcdir)/uprobe.c'; fi`
 
 mostlyclean-libtool:
 	-rm -f *.lo

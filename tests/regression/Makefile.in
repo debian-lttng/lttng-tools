@@ -107,12 +107,15 @@ target_triplet = @target@
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/blocking/test_blocking \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/multi-lib/test_multi_lib \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/rotation-destroy-flush/test_rotation_destroy_flush \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/namespaces/test_ns_contexts \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/namespaces/test_ns_contexts_change \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	tools/metadata/test_ust \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	tools/relayd-grouping/test_ust
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	tools/relayd-grouping/test_ust \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	tools/trigger/rate-policy/test_ust_rate_policy
 
-@PYTHON_BINDING_TRUE@am__append_3 = ust/linking/test_linking \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@am__append_3 = \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	ust/namespaces/test_ns_contexts \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	ust/namespaces/test_ns_contexts_change
+
+@PYTHON_BINDING_TRUE@am__append_4 = ust/linking/test_linking \
 @PYTHON_BINDING_TRUE@	ust/daemon/test_daemon \
 @PYTHON_BINDING_TRUE@	ust/exit-fast/test_exit-fast \
 @PYTHON_BINDING_TRUE@	ust/fork/test_fork \
@@ -150,6 +153,8 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
 	$(top_srcdir)/m4/lttng_check_sdt_works.m4 \
+	$(top_srcdir)/m4/lttng_pthread_getname_np.m4 \
+	$(top_srcdir)/m4/lttng_pthread_setname_np.m4 \
 	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
 	$(top_srcdir)/m4/pprint.m4 \
 	$(top_srcdir)/m4/rw_prog_cxx_works.m4 \
@@ -466,6 +471,7 @@ CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_ADD_TRIGGER = @CMD_DESCR_ADD_TRIGGER@
 CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
@@ -477,8 +483,10 @@ CMD_DESCR_ENABLE_EVENT = @CMD_DESCR_ENABLE_EVENT@
 CMD_DESCR_ENABLE_ROTATION = @CMD_DESCR_ENABLE_ROTATION@
 CMD_DESCR_HELP = @CMD_DESCR_HELP@
 CMD_DESCR_LIST = @CMD_DESCR_LIST@
+CMD_DESCR_LIST_TRIGGERS = @CMD_DESCR_LIST_TRIGGERS@
 CMD_DESCR_LOAD = @CMD_DESCR_LOAD@
 CMD_DESCR_REGENERATE = @CMD_DESCR_REGENERATE@
+CMD_DESCR_REMOVE_TRIGGER = @CMD_DESCR_REMOVE_TRIGGER@
 CMD_DESCR_ROTATE = @CMD_DESCR_ROTATE@
 CMD_DESCR_SAVE = @CMD_DESCR_SAVE@
 CMD_DESCR_SET_SESSION = @CMD_DESCR_SET_SESSION@
@@ -510,6 +518,7 @@ DEFAULT_APP_SOCKET_RW_TIMEOUT = @DEFAULT_APP_SOCKET_RW_TIMEOUT@
 DEFAULT_CHANNEL_SUBBUF_SIZE = @DEFAULT_CHANNEL_SUBBUF_SIZE@
 DEFAULT_CHANNEL_TRACEFILE_COUNT = @DEFAULT_CHANNEL_TRACEFILE_COUNT@
 DEFAULT_CHANNEL_TRACEFILE_SIZE = @DEFAULT_CHANNEL_TRACEFILE_SIZE@
+DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE = @DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE@
 DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT = @DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT@
 DEFAULT_KERNEL_CHANNEL_LIVE_TIMER = @DEFAULT_KERNEL_CHANNEL_LIVE_TIMER@
 DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER = @DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER@
@@ -599,6 +608,7 @@ NMEDIT = @NMEDIT@
 OBJCOPY = @OBJCOPY@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
+OSTYPE = @OSTYPE@
 OTOOL = @OTOOL@
 OTOOL64 = @OTOOL64@
 PACKAGE = @PACKAGE@
@@ -639,6 +649,12 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
+URCU_BP_CFLAGS = @URCU_BP_CFLAGS@
+URCU_BP_LIBS = @URCU_BP_LIBS@
+URCU_CDS_CFLAGS = @URCU_CDS_CFLAGS@
+URCU_CDS_LIBS = @URCU_CDS_LIBS@
+URCU_CFLAGS = @URCU_CFLAGS@
+URCU_LIBS = @URCU_LIBS@
 UST_CFLAGS = @UST_CFLAGS@
 UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
 UST_CTL_LIBS = @UST_CTL_LIBS@
@@ -690,6 +706,7 @@ localedir = @localedir@
 localstatedir = @localstatedir@
 lttngactionincludedir = @lttngactionincludedir@
 lttngconditionincludedir = @lttngconditionincludedir@
+lttngeventruleincludedir = @lttngeventruleincludedir@
 lttngincludedir = @lttngincludedir@
 lttnglibexecdir = @lttnglibexecdir@
 lttngnotificationincludedir = @lttngnotificationincludedir@
@@ -724,9 +741,10 @@ top_srcdir = @top_srcdir@
 SUBDIRS = tools kernel ust $(am__append_1)
 LOG_DRIVER_FLAGS = --merge --post-script $(top_srcdir)/tests/utils/warn_processes.sh
 LOG_DRIVER = env PGREP='$(PGREP)' AM_TAP_AWK='$(AWK)' $(SHELL) \
-	$(top_srcdir)/config/tap-driver.sh
+	$(top_srcdir)/tests/utils/tap-driver.sh
 
-TESTS = tools/filtering/test_invalid_filter \
+TESTS = tools/base-path/test_ust tools/channel/test_channel \
+	tools/filtering/test_invalid_filter \
 	tools/filtering/test_unsupported_op \
 	tools/filtering/test_valid_filter tools/streaming/test_ust \
 	tools/health/test_thread_ok tools/live/test_ust \
@@ -739,17 +757,31 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/mi/test_mi tools/wildcard/test_event_wildcard \
 	tools/crash/test_crash tools/regen-metadata/test_ust \
 	tools/regen-statedump/test_ust \
-	tools/notification/test_notification_ust \
-	tools/notification/test_notification_kernel \
+	tools/notification/test_notification_ust_error \
+	tools/notification/test_notification_ust_buffer_usage \
+	tools/notification/test_notification_ust_capture \
+	tools/notification/test_notification_ust_event_rule_condition_exclusion \
+	tools/notification/test_notification_kernel_error \
+	tools/notification/test_notification_kernel_buffer_usage \
+	tools/notification/test_notification_kernel_capture \
+	tools/notification/test_notification_kernel_instrumentation \
+	tools/notification/test_notification_kernel_syscall \
+	tools/notification/test_notification_notifier_discarded_count \
+	tools/notification/test_notification_kernel_userspace_probe \
 	tools/notification/test_notification_multi_app \
 	tools/rotation/test_ust tools/rotation/test_kernel \
 	tools/rotation/test_save_load_mi \
 	tools/rotation/test_schedule_api tools/metadata/test_kernel \
 	tools/working-directory/test_relayd_working_directory \
-	tools/notification/test_notification_multi_app \
 	tools/clear/test_ust tools/clear/test_kernel \
-	tools/tracker/test_event_tracker $(am__append_2) \
-	$(am__append_3)
+	tools/tracker/test_event_tracker \
+	tools/trigger/start-stop/test_start_stop \
+	tools/trigger/test_add_trigger_cli \
+	tools/trigger/test_list_triggers_cli \
+	tools/trigger/test_remove_trigger_cli \
+	tools/trigger/name/test_trigger_name_backwards_compat \
+	tools/trigger/hidden/test_hidden_trigger $(am__append_2) \
+	$(am__append_3) $(am__append_4)
 all: all-recursive
 
 .SUFFIXES:
@@ -1030,6 +1062,20 @@ recheck: all
 	        am__force_recheck=am--force-recheck \
 	        TEST_LOGS="$$log_list"; \
 	exit $$?
+tools/base-path/test_ust.log: tools/base-path/test_ust
+	@p='tools/base-path/test_ust'; \
+	b='tools/base-path/test_ust'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/channel/test_channel.log: tools/channel/test_channel
+	@p='tools/channel/test_channel'; \
+	b='tools/channel/test_channel'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
 tools/filtering/test_invalid_filter.log: tools/filtering/test_invalid_filter
 	@p='tools/filtering/test_invalid_filter'; \
 	b='tools/filtering/test_invalid_filter'; \
@@ -1177,16 +1223,79 @@ tools/regen-statedump/test_ust.log: tools/regen-statedump/test_ust
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
 	"$$tst" $(AM_TESTS_FD_REDIRECT)
-tools/notification/test_notification_ust.log: tools/notification/test_notification_ust
-	@p='tools/notification/test_notification_ust'; \
-	b='tools/notification/test_notification_ust'; \
+tools/notification/test_notification_ust_error.log: tools/notification/test_notification_ust_error
+	@p='tools/notification/test_notification_ust_error'; \
+	b='tools/notification/test_notification_ust_error'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
 	"$$tst" $(AM_TESTS_FD_REDIRECT)
-tools/notification/test_notification_kernel.log: tools/notification/test_notification_kernel
-	@p='tools/notification/test_notification_kernel'; \
-	b='tools/notification/test_notification_kernel'; \
+tools/notification/test_notification_ust_buffer_usage.log: tools/notification/test_notification_ust_buffer_usage
+	@p='tools/notification/test_notification_ust_buffer_usage'; \
+	b='tools/notification/test_notification_ust_buffer_usage'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/notification/test_notification_ust_capture.log: tools/notification/test_notification_ust_capture
+	@p='tools/notification/test_notification_ust_capture'; \
+	b='tools/notification/test_notification_ust_capture'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/notification/test_notification_ust_event_rule_condition_exclusion.log: tools/notification/test_notification_ust_event_rule_condition_exclusion
+	@p='tools/notification/test_notification_ust_event_rule_condition_exclusion'; \
+	b='tools/notification/test_notification_ust_event_rule_condition_exclusion'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/notification/test_notification_kernel_error.log: tools/notification/test_notification_kernel_error
+	@p='tools/notification/test_notification_kernel_error'; \
+	b='tools/notification/test_notification_kernel_error'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/notification/test_notification_kernel_buffer_usage.log: tools/notification/test_notification_kernel_buffer_usage
+	@p='tools/notification/test_notification_kernel_buffer_usage'; \
+	b='tools/notification/test_notification_kernel_buffer_usage'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/notification/test_notification_kernel_capture.log: tools/notification/test_notification_kernel_capture
+	@p='tools/notification/test_notification_kernel_capture'; \
+	b='tools/notification/test_notification_kernel_capture'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/notification/test_notification_kernel_instrumentation.log: tools/notification/test_notification_kernel_instrumentation
+	@p='tools/notification/test_notification_kernel_instrumentation'; \
+	b='tools/notification/test_notification_kernel_instrumentation'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/notification/test_notification_kernel_syscall.log: tools/notification/test_notification_kernel_syscall
+	@p='tools/notification/test_notification_kernel_syscall'; \
+	b='tools/notification/test_notification_kernel_syscall'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/notification/test_notification_notifier_discarded_count.log: tools/notification/test_notification_notifier_discarded_count
+	@p='tools/notification/test_notification_notifier_discarded_count'; \
+	b='tools/notification/test_notification_notifier_discarded_count'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/notification/test_notification_kernel_userspace_probe.log: tools/notification/test_notification_kernel_userspace_probe
+	@p='tools/notification/test_notification_kernel_userspace_probe'; \
+	b='tools/notification/test_notification_kernel_userspace_probe'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
@@ -1257,6 +1366,48 @@ tools/clear/test_kernel.log: tools/clear/test_kernel
 tools/tracker/test_event_tracker.log: tools/tracker/test_event_tracker
 	@p='tools/tracker/test_event_tracker'; \
 	b='tools/tracker/test_event_tracker'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/trigger/start-stop/test_start_stop.log: tools/trigger/start-stop/test_start_stop
+	@p='tools/trigger/start-stop/test_start_stop'; \
+	b='tools/trigger/start-stop/test_start_stop'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/trigger/test_add_trigger_cli.log: tools/trigger/test_add_trigger_cli
+	@p='tools/trigger/test_add_trigger_cli'; \
+	b='tools/trigger/test_add_trigger_cli'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/trigger/test_list_triggers_cli.log: tools/trigger/test_list_triggers_cli
+	@p='tools/trigger/test_list_triggers_cli'; \
+	b='tools/trigger/test_list_triggers_cli'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/trigger/test_remove_trigger_cli.log: tools/trigger/test_remove_trigger_cli
+	@p='tools/trigger/test_remove_trigger_cli'; \
+	b='tools/trigger/test_remove_trigger_cli'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/trigger/name/test_trigger_name_backwards_compat.log: tools/trigger/name/test_trigger_name_backwards_compat
+	@p='tools/trigger/name/test_trigger_name_backwards_compat'; \
+	b='tools/trigger/name/test_trigger_name_backwards_compat'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/trigger/hidden/test_hidden_trigger.log: tools/trigger/hidden/test_hidden_trigger
+	@p='tools/trigger/hidden/test_hidden_trigger'; \
+	b='tools/trigger/hidden/test_hidden_trigger'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
@@ -1373,20 +1524,6 @@ ust/rotation-destroy-flush/test_rotation_destroy_flush.log: ust/rotation-destroy
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
 	"$$tst" $(AM_TESTS_FD_REDIRECT)
-ust/namespaces/test_ns_contexts.log: ust/namespaces/test_ns_contexts
-	@p='ust/namespaces/test_ns_contexts'; \
-	b='ust/namespaces/test_ns_contexts'; \
-	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
-	--log-file $$b.log --trs-file $$b.trs \
-	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
-	"$$tst" $(AM_TESTS_FD_REDIRECT)
-ust/namespaces/test_ns_contexts_change.log: ust/namespaces/test_ns_contexts_change
-	@p='ust/namespaces/test_ns_contexts_change'; \
-	b='ust/namespaces/test_ns_contexts_change'; \
-	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
-	--log-file $$b.log --trs-file $$b.trs \
-	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
-	"$$tst" $(AM_TESTS_FD_REDIRECT)
 tools/metadata/test_ust.log: tools/metadata/test_ust
 	@p='tools/metadata/test_ust'; \
 	b='tools/metadata/test_ust'; \
@@ -1397,6 +1534,27 @@ tools/metadata/test_ust.log: tools/metadata/test_ust
 tools/relayd-grouping/test_ust.log: tools/relayd-grouping/test_ust
 	@p='tools/relayd-grouping/test_ust'; \
 	b='tools/relayd-grouping/test_ust'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/trigger/rate-policy/test_ust_rate_policy.log: tools/trigger/rate-policy/test_ust_rate_policy
+	@p='tools/trigger/rate-policy/test_ust_rate_policy'; \
+	b='tools/trigger/rate-policy/test_ust_rate_policy'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+ust/namespaces/test_ns_contexts.log: ust/namespaces/test_ns_contexts
+	@p='ust/namespaces/test_ns_contexts'; \
+	b='ust/namespaces/test_ns_contexts'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+ust/namespaces/test_ns_contexts_change.log: ust/namespaces/test_ns_contexts_change
+	@p='ust/namespaces/test_ns_contexts_change'; \
+	b='ust/namespaces/test_ns_contexts_change'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \

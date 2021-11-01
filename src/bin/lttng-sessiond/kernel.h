@@ -29,7 +29,7 @@ int kernel_create_session(struct ltt_session *session);
 int kernel_create_channel(struct ltt_kernel_session *session,
 		struct lttng_channel *chan);
 int kernel_create_event(struct lttng_event *ev, struct ltt_kernel_channel *channel,
-		char *filter_expression, struct lttng_filter_bytecode *filter);
+		char *filter_expression, struct lttng_bytecode *filter);
 int kernel_disable_channel(struct ltt_kernel_channel *chan);
 int kernel_disable_event(struct ltt_kernel_event *event);
 int kernel_enable_event(struct ltt_kernel_event *event);
@@ -58,8 +58,8 @@ int kernel_start_session(struct ltt_kernel_session *session);
 int kernel_stop_session(struct ltt_kernel_session *session);
 ssize_t kernel_list_events(struct lttng_event **event_list);
 void kernel_wait_quiescent(void);
-int kernel_validate_version(struct lttng_kernel_tracer_version *kernel_tracer_version,
-		struct lttng_kernel_tracer_abi_version *kernel_tracer_abi_version);
+int kernel_validate_version(struct lttng_kernel_abi_tracer_version *kernel_tracer_version,
+		struct lttng_kernel_abi_tracer_abi_version *kernel_tracer_abi_version);
 void kernel_destroy_session(struct ltt_kernel_session *ksess);
 void kernel_free_session(struct ltt_kernel_session *ksess);
 void kernel_destroy_channel(struct ltt_kernel_channel *kchan);
@@ -74,11 +74,25 @@ enum lttng_error_code kernel_clear_session(struct ltt_session *session);
 int init_kernel_workarounds(void);
 int kernel_supports_ring_buffer_snapshot_sample_positions(void);
 int kernel_supports_ring_buffer_packet_sequence_number(void);
+int kernel_supports_event_notifiers(void);
 int init_kernel_tracer(void);
 void cleanup_kernel_tracer(void);
 bool kernel_tracer_is_initialized(void);
 
 enum lttng_error_code kernel_create_channel_subdirectories(
 		const struct ltt_kernel_session *ksess);
+
+enum lttng_error_code kernel_create_event_notifier_group_notification_fd(
+		int *event_notifier_group_notification_fd);
+enum lttng_error_code kernel_destroy_event_notifier_group_notification_fd(
+		int event_notifier_group_notification_fd);
+
+enum lttng_error_code kernel_register_event_notifier(
+		struct lttng_trigger *trigger,
+		const struct lttng_credentials *cmd_creds);
+enum lttng_error_code kernel_unregister_event_notifier(
+		const struct lttng_trigger *trigger);
+
+int kernel_get_notification_fd(void);
 
 #endif /* _LTT_KERNEL_CTL_H */

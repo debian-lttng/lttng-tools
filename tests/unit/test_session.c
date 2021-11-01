@@ -6,7 +6,6 @@
  */
 
 #include <assert.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +16,7 @@
 
 #include <tap/tap.h>
 
+#include <common/compat/errno.h>
 #include <bin/lttng-sessiond/session.h>
 #include <bin/lttng-sessiond/ust-app.h>
 #include <bin/lttng-sessiond/ht-cleanup.h>
@@ -34,11 +34,6 @@
 #define NUM_TESTS 11
 
 static struct ltt_session_list *session_list;
-
-/* For error.h */
-int lttng_opt_quiet = 1;
-int lttng_opt_verbose = 0;
-int lttng_opt_mi;
 
 static const char alphanum[] =
 	"0123456789"
@@ -335,7 +330,7 @@ int main(int argc, char **argv)
 
 	plan_tests(NUM_TESTS);
 
-	health_sessiond = health_app_create(NR_HEALTH_SESSIOND_TYPES);
+	the_health_sessiond = health_app_create(NR_HEALTH_SESSIOND_TYPES);
 	ht_cleanup_thread = launch_ht_cleanup_thread();
 	assert(ht_cleanup_thread);
 	lttng_thread_put(ht_cleanup_thread);

@@ -1,0 +1,80 @@
+EXIT STATUS
+-----------
+*0*::
+    Success
+
+*1*::
+    Command error
+
+*2*::
+    Undefined command
+
+*3*::
+    Fatal error
+
+*4*::
+    Command warning (something went wrong during the command)
+
+
+ENVIRONMENT
+-----------
+`LTTNG_ABORT_ON_ERROR`::
+    Set to `1` to abort the process after the first error is
+    encountered.
+
+`LTTNG_HOME`::
+    Path to the LTTng home directory.
++
+Defaults to `$HOME`.
++
+Useful when the Unix user running the commands has a non-writable home
+directory.
+
+`LTTNG_MAN_BIN_PATH`::
+    Absolute path to the manual pager to use to read the LTTng
+    command-line help (with man:lttng-help(1) or with the
+    nloption:--help option) instead of `/usr/bin/man`.
+
+`LTTNG_SESSION_CONFIG_XSD_PATH`::
+    Path to the directory containing the `session.xsd` recording session
+    configuration XML schema.
+
+`LTTNG_SESSIOND_PATH`::
+    Absolute path to the LTTng session daemon binary (see
+    man:lttng-sessiond(8)) to spawn from the man:lttng-create(1)
+    command.
++
+The genoption:--sessiond-path general option overrides this environment
+variable.
+
+
+FILES
+-----
+`$LTTNG_HOME/.lttngrc`::
+    Unix user's LTTng runtime configuration.
++
+This is where LTTng stores the name of the Unix user's current recording
+session between executions of man:lttng(1). man:lttng-create(1) and
+man:lttng-set-session(1) set the current recording session.
+
+`$LTTNG_HOME/lttng-traces`::
+    Default output directory of LTTng traces in local and snapshot
+    modes.
++
+Override this path with the nloption:--output option of the
+man:lttng-create(1) command.
+
+`$LTTNG_HOME/.lttng`::
+    Unix user's LTTng runtime and configuration directory.
+
+`$LTTNG_HOME/.lttng/sessions`::
+    Default directory containing the Unix user's saved recording session
+    configurations (see man:lttng-save(1) and man:lttng-load(1)).
+
++{system_sessions_dir}+::
+    Directory containing the system-wide saved recording session
+    configurations (see man:lttng-save(1) and man:lttng-load(1)).
+
+NOTE: `$LTTNG_HOME` defaults to the value of the `HOME` environment
+variable.
+

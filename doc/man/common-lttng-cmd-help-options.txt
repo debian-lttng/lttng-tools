@@ -1,0 +1,3 @@
+Program information
+~~~~~~~~~~~~~~~~~~~
+include::common-help-option.txt[]

@@ -1,11 +1,11 @@
 lttng-set-session(1)
 ====================
-:revdate: 7 April 2016
+:revdate: 14 June 2021
 
 
 NAME
 ----
-lttng-set-session - Set the current LTTng tracing session
+lttng-set-session - Set the current LTTng recording session
 
 
 SYNOPSIS
@@ -16,27 +16,34 @@ SYNOPSIS
 
 DESCRIPTION
 -----------
-The `lttng set-session` command sets the current tracing session.
+The `lttng set-session` command sets the current recording session of your
+Unix user to the recording session named 'SESSION'.
 
-'SESSION' is the name of an existing tracing session. `lttng list`
-outputs all the existing tracing sessions (see man:lttng-list(1)).
+See man:lttng-concepts(7) to learn more about the current recording
+session.
 
-The current tracing session is used by default when a session can be
-specified in other commands. See man:lttng-create(1) for more
-information about the current tracing session.
+The `set-session` command effectively updates the `$LTTNG_HOME/.lttngrc`
+file.
 
-
-include::common-cmd-options-head.txt[]
-
-
-include::common-cmd-help-options.txt[]
+List the recording sessions of your Unix user, or of all users if
+your Unix user is `root`, within the connected session daemon with the
+man:lttng-list(1) command.
 
 
-include::common-cmd-footer.txt[]
+include::common-lttng-cmd-options-head.txt[]
+
+
+include::common-lttng-cmd-help-options.txt[]
+
+
+include::common-lttng-cmd-after-options.txt[]
+
+
+include::common-footer.txt[]
 
 
 SEE ALSO
 --------
+man:lttng(1),
 man:lttng-create(1),
-man:lttng-destroy(1),
-man:lttng(1)
+man:lttng-concepts(7)

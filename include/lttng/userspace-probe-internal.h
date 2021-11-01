@@ -11,8 +11,22 @@
 
 #include <lttng/userspace-probe.h>
 #include <common/macros.h>
-#include <common/dynamic-buffer.h>
-#include <common/buffer-view.h>
+#include <common/fd-handle.h>
+#include <stdbool.h>
+
+struct lttng_payload;
+struct lttng_payload_view;
+struct lttng_dynamic_buffer;
+struct mi_writer;
+
+typedef bool (*userspace_probe_location_equal_cb)(
+		const struct lttng_userspace_probe_location *a,
+		const struct lttng_userspace_probe_location *b);
+typedef unsigned long (*userspace_probe_location_hash_cb)(
+		const struct lttng_userspace_probe_location *location);
+typedef enum lttng_error_code (*userspace_probe_location_mi)(
+		const struct lttng_userspace_probe_location *location,
+		struct mi_writer);
 
 /*
  * No elf-specific comm structure is defined since no elf-specific payload is
@@ -79,6 +93,9 @@ struct lttng_userspace_probe_location_tracepoint_comm {
 struct lttng_userspace_probe_location {
 	enum lttng_userspace_probe_location_type type;
 	struct lttng_userspace_probe_location_lookup_method *lookup_method;
+	userspace_probe_location_equal_cb equal;
+	userspace_probe_location_hash_cb hash;
+	userspace_probe_location_hash_cb mi;
 };
 
 struct lttng_userspace_probe_location_function {
@@ -89,9 +106,8 @@ struct lttng_userspace_probe_location_function {
 	 * binary_fd is a file descriptor to the executable file. It's open
 	 * early on to keep the backing inode valid over the course of the
 	 * intrumentation and use. It prevents deletion and reuse races.
-	 * Set to -1 if not open.
 	 */
-	int binary_fd;
+	struct fd_handle *binary_fd_handle;
 	enum lttng_userspace_probe_location_function_instrumentation_type instrumentation_type;
 };
 
@@ -104,29 +120,19 @@ struct lttng_userspace_probe_location_tracepoint {
 	 * binary_fd is a file descriptor to the executable file. It's open
 	 * early on to keep the backing inode valid over the course of the
 	 * intrumentation and use. It prevents deletion and reuse races.
-	 * Set to -1 if not open.
 	 */
-	int binary_fd;
+	struct fd_handle *binary_fd_handle;
 };
 
 LTTNG_HIDDEN
 int lttng_userspace_probe_location_serialize(
 		const struct lttng_userspace_probe_location *location,
-		struct lttng_dynamic_buffer *buffer,
-		int *binary_fd);
+		struct lttng_payload *payload);
 
 LTTNG_HIDDEN
-int lttng_userspace_probe_location_create_from_buffer(
-		const struct lttng_buffer_view *buffer,
+int lttng_userspace_probe_location_create_from_payload(
+		struct lttng_payload_view *view,
 		struct lttng_userspace_probe_location **probe_location);
-
-LTTNG_HIDDEN
-int lttng_userspace_probe_location_function_set_binary_fd(
-		struct lttng_userspace_probe_location *location, int binary_fd);
-
-LTTNG_HIDDEN
-int lttng_userspace_probe_location_tracepoint_set_binary_fd(
-		struct lttng_userspace_probe_location *location, int binary_fd);
 
 /*
  * Returns a version of the location that is serialized to a contiguous region
@@ -141,5 +147,24 @@ int lttng_userspace_probe_location_flatten(
 LTTNG_HIDDEN
 struct lttng_userspace_probe_location *lttng_userspace_probe_location_copy(
 		const struct lttng_userspace_probe_location *location);
+
+LTTNG_HIDDEN
+bool lttng_userspace_probe_location_lookup_method_is_equal(
+		const struct lttng_userspace_probe_location_lookup_method *a,
+		const struct lttng_userspace_probe_location_lookup_method *b);
+
+LTTNG_HIDDEN
+bool lttng_userspace_probe_location_is_equal(
+		const struct lttng_userspace_probe_location *a,
+		const struct lttng_userspace_probe_location *b);
+
+LTTNG_HIDDEN
+unsigned long lttng_userspace_probe_location_hash(
+		const struct lttng_userspace_probe_location *location);
+
+LTTNG_HIDDEN
+enum lttng_error_code lttng_userspace_probe_location_mi_serialize(
+		const struct lttng_userspace_probe_location *location,
+		struct mi_writer *writer);
 
 #endif /* LTTNG_USERSPACE_PROBE_INTERNAL_H */

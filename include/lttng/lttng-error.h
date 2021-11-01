@@ -43,7 +43,7 @@ enum lttng_error_code {
 	LTTNG_ERR_CONNECT_FAIL           = 30,  /* Unable to connect to unix socket */
 	LTTNG_ERR_SNAPSHOT_OUTPUT_EXIST  = 31,  /* Snapshot output already exists */
 	LTTNG_ERR_EPERM                  = 32,  /* Permission denied */
-	LTTNG_ERR_KERN_NA                = 33,  /* Kernel tracer unavalable */
+	LTTNG_ERR_KERN_NA                = 33,  /* Kernel tracer unavailable */
 	LTTNG_ERR_KERN_VERSION           = 34,  /* Kernel tracer not compatible */
 	LTTNG_ERR_KERN_EVENT_EXIST       = 35,  /* Kernel event already exists */
 	LTTNG_ERR_KERN_SESS_FAIL         = 36,  /* Kernel create session failed */
@@ -174,6 +174,13 @@ enum lttng_error_code {
 	LTTNG_ERR_GROUP_NOT_FOUND        = 161, /* Group not found. */
 	LTTNG_ERR_UNSUPPORTED_DOMAIN     = 162,  /* Unsupported domain used. */
 	LTTNG_ERR_PROCESS_ATTR_TRACKER_INVALID_TRACKING_POLICY = 163, /* Operation does not apply to the process attribute tracker's tracking policy */
+	LTTNG_ERR_EVENT_NOTIFIER_GROUP_NOTIFICATION_FD = 164, /* Error initializing event notifier group notification file descriptor */
+	LTTNG_ERR_INVALID_CAPTURE_EXPRESSION = 165, /* Invalid capture expression. */
+	LTTNG_ERR_EVENT_NOTIFIER_REGISTRATION = 166, /* Error registering event notifier to the tracer. */
+	LTTNG_ERR_EVENT_NOTIFIER_ERROR_ACCOUNTING = 167, /* Error initializing event notifier error accounting. */
+	LTTNG_ERR_EVENT_NOTIFIER_ERROR_ACCOUNTING_FULL = 168, /* Error event notifier error accounting full. */
+	LTTNG_ERR_INVALID_ERROR_QUERY_TARGET = 169, /* Invalid error query target. */
+	LTTNG_ERR_BUFFER_FLUSH_FAILED        = 170, /* Buffer flush failed */
 
 	/* MUST be last element of the manually-assigned section of the enum */
 	LTTNG_ERR_NR,

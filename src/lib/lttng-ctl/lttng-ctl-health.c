@@ -15,7 +15,6 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <limits.h>
-#include <errno.h>
 #include <string.h>
 #include <lttng/health-internal.h>
 
@@ -24,6 +23,7 @@
 #include <bin/lttng-relayd/health-relayd.h>
 #include <common/defaults.h>
 #include <common/utils.h>
+#include <common/compat/errno.h>
 
 #include "lttng-ctl-helper.h"
 
@@ -62,6 +62,7 @@ const char *sessiond_thread_name[NR_HEALTH_SESSIOND_TYPES] = {
 	[ HEALTH_SESSIOND_TYPE_APP_REG_DISPATCH ] = "Session daemon application registration dispatcher",
 	[ HEALTH_SESSIOND_TYPE_ROTATION ] = "Session daemon rotation manager",
 	[ HEALTH_SESSIOND_TYPE_TIMER ] = "Session daemon timer manager",
+	[ HEALTH_SESSIOND_TYPE_ACTION_EXECUTOR ] = "Session daemon trigger action executor",
 };
 
 static
@@ -230,8 +231,8 @@ struct lttng_health *lttng_health_create_relayd(const char *path)
 		goto error;
 	}
 
-	ret = lttng_strncpy(lh->health_sock_path, path ?: "",
-			    sizeof(lh->health_sock_path));
+	ret = lttng_strncpy(lh->health_sock_path, path,
+			sizeof(lh->health_sock_path));
 	if (ret) {
 		goto error;
 	}

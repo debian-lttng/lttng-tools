@@ -7,11 +7,6 @@
  *
  */
 
-#include "common/dynamic-buffer.h"
-#include "common/tracker.h"
-#include "lttng/domain.h"
-#include "lttng/lttng-error.h"
-#include "lttng/tracker.h"
 #define _LGPL_SOURCE
 #include <ctype.h>
 #include <popt.h>
@@ -29,6 +24,10 @@
 #include <common/dynamic-array.h>
 #include <common/mi-lttng.h>
 #include <common/optional.h>
+#include <common/dynamic-buffer.h>
+#include <common/tracker.h>
+
+#include <lttng/lttng.h>
 
 #include "../command.h"
 
@@ -284,7 +283,7 @@ static enum cmd_error_code run_command_string(enum cmd_type cmd_type,
 					strtoul(one_value_str, NULL, 10);
 
 			if (writer) {
-				const int ret = mi_lttng_integral_process_attribute_value(
+				ret = mi_lttng_integral_process_attribute_value(
 						writer, process_attr,
 						(int64_t) one_value_int, true);
 				if (ret) {
@@ -354,7 +353,7 @@ static enum cmd_error_code run_command_string(enum cmd_type cmd_type,
 
 		} else {
 			if (writer) {
-				const int ret = mi_lttng_string_process_attribute_value(
+				ret = mi_lttng_string_process_attribute_value(
 						writer, process_attr,
 						one_value_str, true);
 				if (ret) {
@@ -470,7 +469,7 @@ static enum cmd_error_code run_command_string(enum cmd_type cmd_type,
 		free(prettified_arg);
 
 		if (writer) {
-			int ret = mi_lttng_writer_write_element_bool(writer,
+			ret = mi_lttng_writer_write_element_bool(writer,
 					mi_lttng_element_success,
 					cmd_ret == CMD_SUCCESS);
 

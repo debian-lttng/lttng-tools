@@ -13,6 +13,12 @@
 
 struct lttng_action_notify {
 	struct lttng_action parent;
+	struct lttng_rate_policy *policy;
 };
+
+LTTNG_HIDDEN
+ssize_t lttng_action_notify_create_from_payload(
+		struct lttng_payload_view *view,
+		struct lttng_action **action);
 
 #endif /* LTTNG_ACTION_NOTIFY_INTERNAL_H */

@@ -27,6 +27,7 @@
 #include <common/trace-chunk-registry.h>
 #include <common/credentials.h>
 #include <common/buffer-view.h>
+#include <common/dynamic-array.h>
 
 struct lttng_consumer_local_data;
 
@@ -95,7 +96,7 @@ enum sync_metadata_status {
 	SYNC_METADATA_STATUS_ERROR,
 };
 
-extern struct lttng_consumer_global_data consumer_data;
+extern struct lttng_consumer_global_data the_consumer_data;
 
 struct stream_list {
 	struct cds_list_head head;
@@ -159,7 +160,7 @@ struct lttng_consumer_channel {
 
 	/* For UST */
 	uid_t ust_app_uid;	/* Application UID. */
-	struct ustctl_consumer_channel *uchan;
+	struct lttng_ust_ctl_consumer_channel *uchan;
 	unsigned char uuid[LTTNG_UUID_STR_LEN];
 	/*
 	 * Temporary stream list used to store the streams once created and waiting
@@ -298,6 +299,12 @@ struct stream_subbuffer {
 	} info;
 };
 
+enum get_next_subbuffer_status {
+	GET_NEXT_SUBBUFFER_STATUS_OK,
+	GET_NEXT_SUBBUFFER_STATUS_NO_DATA,
+	GET_NEXT_SUBBUFFER_STATUS_ERROR,
+};
+
 /*
  * Perform any operation required to acknowledge
  * the wake-up of a consumer stream (e.g. consume a byte on a wake-up pipe).
@@ -320,8 +327,8 @@ typedef int (*on_sleep_cb)(struct lttng_consumer_stream *,
  *
  * Stream and channel locks are acquired during this call.
  */
-typedef int (*get_next_subbuffer_cb)(struct lttng_consumer_stream *,
-		struct stream_subbuffer *);
+typedef enum get_next_subbuffer_status (*get_next_subbuffer_cb)(
+		struct lttng_consumer_stream *, struct stream_subbuffer *);
 
 /*
  * Populate the stream_subbuffer's info member. The info to populate
@@ -539,7 +546,7 @@ struct lttng_consumer_stream {
 	/* Stream name. Format is: <channel_name>_<cpu_number> */
 	char name[LTTNG_SYMBOL_NAME_LEN];
 	/* Internal state of libustctl. */
-	struct ustctl_consumer_stream *ustream;
+	struct lttng_ust_ctl_consumer_stream *ustream;
 	struct cds_list_head send_node;
 	/* On-disk circular buffer */
 	uint64_t tracefile_size_current;
@@ -636,7 +643,7 @@ struct lttng_consumer_stream {
 		reset_metadata_cb reset_metadata;
 		consume_subbuffer_cb consume_subbuffer;
 		put_next_subbuffer_cb put_next_subbuffer;
-		post_consume_cb post_consume;
+		struct lttng_dynamic_array post_consume_cbs;
 		send_live_beacon_cb send_live_beacon;
 		on_sleep_cb on_sleep;
 		unlock_cb unlock;
@@ -1052,5 +1059,6 @@ int lttng_consumer_clear_channel(struct lttng_consumer_channel *channel);
 enum lttcomm_return_code lttng_consumer_open_channel_packets(
 		struct lttng_consumer_channel *channel);
 int consumer_metadata_wakeup_pipe(const struct lttng_consumer_channel *channel);
+void lttng_consumer_sigbus_handle(void *addr);
 
 #endif /* LIB_CONSUMER_H */

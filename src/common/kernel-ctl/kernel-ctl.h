@@ -20,26 +20,42 @@ int kernctl_create_session(int fd);
 int kernctl_open_metadata(int fd, struct lttng_channel_attr *chops);
 int kernctl_create_channel(int fd, struct lttng_channel_attr *chops);
 int kernctl_create_stream(int fd);
-int kernctl_create_event(int fd, struct lttng_kernel_event *ev);
-int kernctl_add_context(int fd, struct lttng_kernel_context *ctx);
+int kernctl_create_event(int fd, struct lttng_kernel_abi_event *ev);
+int kernctl_add_context(int fd, struct lttng_kernel_abi_context *ctx);
 
 int kernctl_enable(int fd);
 int kernctl_disable(int fd);
 int kernctl_start_session(int fd);
 int kernctl_stop_session(int fd);
 
-/* Apply on event FD */
-int kernctl_filter(int fd, struct lttng_filter_bytecode *filter);
-int kernctl_add_callsite(int fd, struct lttng_kernel_event_callsite *callsite);
+int kernctl_create_event_notifier_group(int fd);
+
+/* Apply on event notifier_group file descriptor. */
+int kernctl_create_event_notifier_group_notification_fd(int fd);
+int kernctl_create_event_notifier_group_error_counter(int fd,
+		const struct lttng_kernel_abi_counter_conf *error_counter_conf);
+int kernctl_create_event_notifier(int fd,
+		const struct lttng_kernel_abi_event_notifier *event_notifier);
+
+int kernctl_counter_get_aggregate_value(int counter_fd,
+		struct lttng_kernel_abi_counter_aggregate *value);
+int kernctl_counter_clear(int counter_fd,
+		struct lttng_kernel_abi_counter_clear *clear);
+
+/* Apply on event file descriptor. */
+int kernctl_filter(int fd, const struct lttng_bytecode *filter);
+int kernctl_add_callsite(int fd, struct lttng_kernel_abi_event_callsite *callsite);
+int kernctl_capture(int fd, const struct lttng_bytecode *capture);
 
 int kernctl_tracepoint_list(int fd);
 int kernctl_syscall_list(int fd);
-int kernctl_tracer_version(int fd, struct lttng_kernel_tracer_version *v);
-int kernctl_tracer_abi_version(int fd, struct lttng_kernel_tracer_abi_version *v);
+int kernctl_tracer_version(int fd, struct lttng_kernel_abi_tracer_version *v);
+int kernctl_tracer_abi_version(int fd, struct lttng_kernel_abi_tracer_abi_version *v);
 int kernctl_wait_quiescent(int fd);
 
 /*
- * kernctl_syscall_mask - Get syscall mask associated to a channel FD.
+ * kernctl_syscall_mask - Get syscall mask associated to a channel file
+ * descriptor.
  *
  * The parameter @syscall_mask should initially be either NULL or point
  * to memory allocated with malloc(3) or realloc(3). When the function
@@ -52,7 +68,7 @@ int kernctl_wait_quiescent(int fd);
 int kernctl_syscall_mask(int fd, char **syscall_mask,
 		uint32_t *nr_bits);
 
-/* Process ID tracking can be applied to session FD */
+/* Process ID tracking can be applied to session file descriptor. */
 int kernctl_track_pid(int fd, int pid);
 int kernctl_untrack_pid(int fd, int pid);
 int kernctl_list_tracker_pids(int fd);

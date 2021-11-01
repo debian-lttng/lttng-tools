@@ -2,12 +2,12 @@
 .\"     Title: lttng
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 16 October 2019
+.\"      Date: 14 June 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.12.3
+.\"    Source: LTTng 2.13.1
 .\"  Language: English
 .\"
-.TH "LTTNG" "1" "16 October 2019" "LTTng 2\&.12\&.3" "LTTng Manual"
+.TH "LTTNG" "1" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -28,64 +28,137 @@
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
 .SH "NAME"
-lttng \- LTTng 2 tracer control command\-line tool
+lttng \- Control LTTng tracing
 .SH "SYNOPSIS"
 .sp
 .nf
-\fBlttng\fR [\fB--group\fR=\fIGROUP\fR] [\fB--mi\fR=\fITYPE\fR] [\fB--no-sessiond\fR | \fB--sessiond-path\fR=\fIPATH\fR]
-      [\fB--quiet\fR | \fB-v\fR | \fB-vv\fR | \fB-vvv\fR] \fI\fICOMMAND\fR\fR [\fICOMMAND OPTIONS\fR]
+\fBlttng\fR [\fB--group\fR=\fIGROUP\fR] [\fB--mi\fR=\fBxml\fR] [\fB--no-sessiond\fR | \fB--sessiond-path\fR=\fIPATH\fR]
+      [\fB--relayd-path\fR=\fIPATH\fR] [\fB--quiet\fR | \fB-verbose\fR\&...]
+      \fICOMMAND\fR [\fICOMMAND OPTIONS\fR]
 .fi
 .SH "DESCRIPTION"
 .sp
-The \fILinux Trace Toolkit: next generation\fR <https://lttng.org/> is an open source software package used for correlated tracing of the Linux kernel, user applications, and user libraries\&.
+The \fILinux Trace Toolkit: next generation\fR <https://lttng.org/> is an open\-source software package used for correlated tracing of the Linux kernel, user applications, and user libraries\&.
 .sp
 LTTng consists of Linux kernel modules (for Linux kernel tracing) and dynamically loaded libraries (for user application and library tracing)\&.
 .sp
-An LTTng \fIsession daemon\fR, \fBlttng-sessiond\fR(8), receives commands from the command\-line interface \fBlttng\fR to control the LTTng tracers\&. All interactions with the LTTng tracers happen through the \fBlttng\fR tool or through the liblttng\-ctl library shipped with the LTTng\-tools package\&.
+The \fBlttng\fR command\-line tool, as well as any user application linked with the LTTng control library (\fBliblttng-ctl\fR), sends commands to a listening LTTng session daemon (\fBlttng-sessiond\fR(8))\&. A session daemon:
 .sp
-A \fItracing domain\fR is a tracer category\&. There are five available domains\&. For some commands, the domain needs to be specified with a command\-line option\&. The domain options are:
-.PP
-\fB-j\fR, \fB--jul\fR
 .RS 4
-Apply command to the
-\fBjava.util.logging\fR
-(JUL) domain\&.
-.RE
-.PP
-\fB-k\fR, \fB--kernel\fR
-.RS 4
-Apply command to the Linux kernel domain\&.
-.RE
-.PP
-\fB-l\fR, \fB--log4j\fR
-.RS 4
-Apply command to the
-Apache log4j 1\&.2 <https://logging.apache.org/log4j/1.2/>
-(Java) domain\&.
-.RE
-.PP
-\fB-p\fR, \fB--python\fR
-.RS 4
-Apply command to the
-Python <https://www.python.org/>
-domain\&.
-.RE
-.PP
-\fB-u\fR, \fB--userspace\fR
-.RS 4
-Apply command to the user space domain (application using liblttng\-ust directly; see
-\fBlttng-ust\fR(3))\&.
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Manages recording sessions (see
+\fBlttng-concepts\fR(7)
+to learn more about recording sessions)\&.
 .RE
 .sp
-The LTTng session daemon is a tracing registry which allows the user to interact with multiple tracers (kernel and user space) within the same container, a \fItracing session\fR\&. Traces can be gathered from the Linux kernel and/or from instrumented applications (see \fBlttng-ust\fR(3))\&. You can aggregate and read the events of LTTng traces using \fBbabeltrace2\fR(1)\&.
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Controls the various components (like tracers and consumer daemons) of LTTng\&.
+.RE
 .sp
-To trace the Linux kernel, the session daemon needs to be running as \fBroot\fR\&. LTTng uses a \fItracing group\fR to allow specific users to interact with the root session daemon\&. The default tracing group name is \fBtracing\fR\&. You can use the \fB--group\fR option to set the tracing group name to use\&.
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Sends asynchronous notifications to user applications\&.
+.RE
 .sp
-Session daemons can coexist\&. You can have a session daemon running as user Alice that can be used to trace her applications alongside a root session daemon or a session daemon running as user Bob\&.
+By default, the \fBlttng-create\fR(1) command automatically spawns:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A session daemon for your Unix user if none is currently running\&.
+.sp
+Override the path of the session daemon binary to spawn with the
+\fB--sessiond-path\fR
+option\&.
+.sp
+Avoid automatically spawning a session daemon with the
+\fB--no-sessiond\fR
+option\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A relay daemon (see
+\fBlttng-relayd\fR(8)) if all the following statements are true:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+You specify the
+\fB--live\fR
+option\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+You don\(cqt specify any of the
+\fB--set-url\fR,
+\fB--ctrl-url\fR, or
+\fB--data-url\fR
+options\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+No relay daemon is currently listening for TCP connections on
+\fB127.0.0.1:5344\fR
+(default LTTng live reader connection address and port)\&.
+.RE
+.sp
+Override the path of the relay daemon binary to spawn with the
+\fB--relayd-path\fR
+option\&.
+.RE
 .if n \{\
 .sp
 .\}
-.RS 4
 .it 1 an-trap
 .nr an-no-space-flag 1
 .nr an-break-flag 1
@@ -94,63 +167,134 @@ Session daemons can coexist\&. You can have a session daemon running as user Ali
 \fBNote\fR
 .ps -1
 .br
+.RS 4
 .sp
-It is highly recommended to start the session daemon at boot time for stable and long\-term tracing\&.
+The LTTng project recommends that you start the session daemon at boot time for stable and long\-term tracing\&.
 .sp .5v
 .RE
 .sp
-User applications instrumented with LTTng automatically register to the root session daemon and to user session daemons\&. This allows any session daemon to list the available traceable applications and event sources (see \fBlttng-list\fR(1))\&.
+See \fBlttng-concepts\fR(7) to learn more about the foundational concepts of LTTng\&.
 .sp
-By default, the \fBlttng-create\fR(1) command automatically spawns a user session daemon if none is currently running\&. The \fB--no-sessiond\fR general option can be set to avoid this\&.
+The \fBlttng\fR tool offers a subcommand\-based command\-line interface\&. The \(lqCOMMANDS\(rq section below lists the available commands\&.
+.SS "Session daemon connection"
+.sp
+For most of its commands, the \fBlttng\fR tool needs to connect to a listening LTTng session daemon (\fBlttng-sessiond\fR(8)) to control LTTng tracing\&.
+.sp
+Each Unix user may have its own independent running session daemon\&. However, the \fBlttng\fR tool must connect to the session daemon of the \fBroot\fR user (the root session daemon) to control Linux kernel tracing\&.
+.sp
+How the \fBlttng\fR tool chooses which session daemon to connect to is as follows:
+.PP
+If your Unix user is \fBroot\fR
+.RS 4
+Connect to the root session daemon\&.
+.RE
+.PP
+If your Unix user is not \fBroot\fR
+.RS 4
+.PP
+If your Unix user is part of the Unix tracing group
+.RS 4
+Try to connect to the root session daemon\&.
+.sp
+If the root session daemon isn\(cqt running, connect to the session daemon of your Unix user\&.
+.RE
+.PP
+If your Unix user is not part of the tracing group
+.RS 4
+Connect to the session daemon of your Unix user\&.
+.RE
+.RE
+.sp
+The name of the Unix tracing group is one of:
+.PP
+With the \fB--group\fR=\fIGROUP\fR option of the root session daemon (\fBlttng-sessiond\fR(8))
+.RS 4
+\fIGROUP\fR
+.sp
+In that case, you must use the
+\fB--group\fR=\fIGROUP\fR
+option, with the same
+\fIGROUP\fR
+argument, of the
+\fBlttng\fR
+tool\&.
+.RE
+.PP
+Without the \fB--group\fR option of the root session daemon
+.RS 4
+\fBtracing\fR
+.RE
+.sp
+LTTng\-instrumented user applications automatically register to both the root and user session daemons\&. This makes it possible for both session daemons to list the available instrumented applications and their instrumentation points (see \fBlttng-list\fR(1))\&.
 .SH "OPTIONS"
 .PP
 \fB-g\fR \fIGROUP\fR, \fB--group\fR=\fIGROUP\fR
 .RS 4
-Use
+Set the name of the Unix tracing group to
 \fIGROUP\fR
-as Unix tracing group (default:
-\fBtracing\fR)\&.
+instead of
+\fBtracing\fR\&.
+.sp
+You must use this option to be able to connect to a root session daemon (\fBlttng-sessiond\fR(8)) which was started with its own
+\fB--group\fR=\fIGROUP\fR
+option\&.
 .RE
 .PP
-\fB-m\fR \fITYPE\fR, \fB--mi\fR=\fITYPE\fR
+\fB-m\fR \fBxml\fR, \fB--mi\fR=\fBxml\fR
 .RS 4
-Print the command\(cqs result using the machine interface type
-\fITYPE\fR
-instead of a human\-readable output\&.
+Print the command\(cqs result using a stable XML machine interface (MI) output instead of the default, unstable human\-readable output\&.
 .sp
-Supported types:
-\fBxml\fR\&.
-.sp
-The machine interface (MI) mode converts the traditional pretty\-printing to a machine output syntax\&. The MI mode provides a change\-resistant way to access information generated by the
+With this mode,
 \fBlttng\fR
-command\-line program\&.
+prints the resulting XML document to the standard output, while it prints any error/warning to the standard error with an unstable, human\-readable format\&.
 .sp
-When using the MI mode, the data is printed to the standard output\&. Errors and warnings are printed on the standard error with the pretty\-print default format\&.
-.sp
-If any error occurs during the execution of a command, the return value of the command will be different than 0\&. In this case,
+If any error occurs during the execution of
+\fBlttng\fR, the command exits with a status different than\ \&0, and
 \fBlttng\fR
-does NOT guarantee the syntax and data validity of the generated MI output\&.
+does NOT guarantee the syntax and data validity of its MI output\&.
 .sp
-For the
-\fBxml\fR
-MI type, an XML schema definition (XSD) file used for validation is available: see the
+An XML schema definition (XSD) file used for validation of the MI output is available: see the
 \fBsrc/common/mi_lttng.xsd\fR
 file in the LTTng\-tools source tree\&.
 .RE
 .PP
 \fB-n\fR, \fB--no-sessiond\fR
 .RS 4
-Do not automatically spawn a session daemon\&.
+Do not automatically spawn a session daemon for your Unix user when running the
+\fBlttng-create\fR(1)
+command\&.
+.sp
+You may NOT use this option with the
+\fB--sessiond-path\fR
+option\&.
 .RE
 .PP
 \fB-q\fR, \fB--quiet\fR
 .RS 4
 Suppress all messages, including warnings and errors\&.
+.sp
+You may NOT use this option with the
+\fB--verbose\fR
+option\&.
 .RE
 .PP
 \fB--sessiond-path\fR=\fIPATH\fR
 .RS 4
-Set the session daemon binary\(cqs absolute path to
+Set the absolute path of the session daemon binary to spawn from the
+\fBlttng-create\fR(1)
+command to
+\fIPATH\fR\&.
+.sp
+You may NOT use this option with the
+\fB--no-sessiond\fR
+option\&.
+.RE
+.PP
+\fB--relayd-path\fR=\fIPATH\fR
+.RS 4
+Set the absolute path of the relay daemon binary to spawn from the
+\fBlttng-create\fR(1)
+command to
 \fIPATH\fR\&.
 .RE
 .PP
@@ -158,262 +302,342 @@ Set the session daemon binary\(cqs absolute path to
 .RS 4
 Increase verbosity\&.
 .sp
-Three levels of verbosity are available, which are triggered by appending additional
-\fBv\fR
-letters to the option (that is,
-\fB-vv\fR
-and
-\fB-vvv\fR)\&.
+Specify this option up to three times to get more levels of verbosity\&.
+.sp
+You may NOT use this option with the
+\fB--quiet\fR
+option\&.
 .RE
 .SS "Program information"
 .PP
 \fB-h\fR, \fB--help\fR
 .RS 4
 Show help\&.
-.RE
-.PP
-\fB--list-commands\fR
-.RS 4
-List available commands\&.
+.sp
+This option attempts to launch
+\fB/usr/bin/man\fR
+to view this manual page\&. Override the manual pager path with the
+\fBLTTNG_MAN_BIN_PATH\fR
+environment variable\&.
 .RE
 .PP
 \fB--list-options\fR
 .RS 4
-List available general options\&.
+List available command options and quit\&.
+.RE
+.PP
+\fB--list-commands\fR
+.RS 4
+List available commands and quit\&.
 .RE
 .PP
 \fB-V\fR, \fB--version\fR
 .RS 4
-Show version\&.
+Show version and quit\&.
 .RE
 .SH "COMMANDS"
 .sp
 The following commands also have their own \fB--help\fR option\&.
-.SS "Tracing sessions"
-.PP
+.SS "Recording session"
+.TS
+allbox tab(:);
+ltB ltB.
+T{
+Command
+T}:T{
+Description
+T}
+.T&
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt.
+T{
+.sp
 \fBlttng-create\fR(1)
-.RS 4
-Create a tracing session\&.
-.RE
-.PP
+T}:T{
+.sp
+Create a recording session\&.
+T}
+T{
+.sp
 \fBlttng-destroy\fR(1)
-.RS 4
-Tear down tracing sessions\&.
-.RE
-.PP
-\fBlttng-load\fR(1)
-.RS 4
-Load tracing session configurations\&.
-.RE
-.PP
-\fBlttng-regenerate\fR(1)
-.RS 4
-Manage an LTTng tracing session\(cqs data regeneration\&.
-.RE
-.PP
-\fBlttng-save\fR(1)
-.RS 4
-Save tracing session configurations\&.
-.RE
-.PP
-\fBlttng-set-session\fR(1)
-.RS 4
-Set current tracing session\&.
-.RE
-.SS "Channels"
-.PP
-\fBlttng-add-context\fR(1)
-.RS 4
-Add context fields to a channel\&.
-.RE
-.PP
-\fBlttng-disable-channel\fR(1)
-.RS 4
-Disable tracing channels\&.
-.RE
-.PP
-\fBlttng-enable-channel\fR(1)
-.RS 4
-Create or enable tracing channels\&.
-.RE
-.SS "Event rules"
-.PP
-\fBlttng-disable-event\fR(1)
-.RS 4
-Disable event rules\&.
-.RE
-.PP
-\fBlttng-enable-event\fR(1)
-.RS 4
-Create or enable event rules\&.
-.RE
-.SS "Status"
-.PP
-\fBlttng-list\fR(1)
-.RS 4
-List tracing sessions, domains, channels, and events\&.
-.RE
-.PP
-\fBlttng-status\fR(1)
-.RS 4
-Get the status of the current tracing session\&.
-.RE
-.SS "Control"
-.PP
-\fBlttng-snapshot\fR(1)
-.RS 4
-Snapshot buffers of current tracing session\&.
-.RE
-.PP
-\fBlttng-start\fR(1)
-.RS 4
-Start tracing\&.
-.RE
-.PP
-\fBlttng-stop\fR(1)
-.RS 4
-Stop tracing\&.
-.RE
-.SS "Tracing session rotation"
-.PP
+T}:T{
+.sp
+Destroy recording sessions\&.
+T}
+T{
+.sp
 \fBlttng-disable-rotation\fR(1)
-.RS 4
-Unset a rotation schedule\&.
-.RE
-.PP
+T}:T{
+.sp
+Unset a recording session rotation schedule\&.
+T}
+T{
+.sp
 \fBlttng-enable-rotation\fR(1)
-.RS 4
-Set a rotation schedule\&.
-.RE
-.PP
+T}:T{
+.sp
+Set a recording session rotation schedule\&.
+T}
+T{
+.sp
+\fBlttng-load\fR(1)
+T}:T{
+.sp
+Load recording session configurations\&.
+T}
+T{
+.sp
+\fBlttng-regenerate\fR(1)
+T}:T{
+.sp
+Regenerate specific recording session data\&.
+T}
+T{
+.sp
 \fBlttng-rotate\fR(1)
-.RS 4
-Archive a tracing session\(cqs current trace chunk\&.
-.RE
+T}:T{
+.sp
+Archive the current trace chunk of a recording session\&.
+T}
+T{
+.sp
+\fBlttng-save\fR(1)
+T}:T{
+.sp
+Save recording session configurations\&.
+T}
+T{
+.sp
+\fBlttng-set-session\fR(1)
+T}:T{
+.sp
+Set the current recording session\&.
+T}
+T{
+.sp
+\fBlttng-snapshot\fR(1)
+T}:T{
+.sp
+Take a recording session snapshot\&.
+T}
+T{
+.sp
+\fBlttng-start\fR(1)
+T}:T{
+.sp
+Start a recording session\&.
+T}
+T{
+.sp
+\fBlttng-status\fR(1)
+T}:T{
+.sp
+Show the status of the current recording session\&.
+T}
+T{
+.sp
+\fBlttng-stop\fR(1)
+T}:T{
+.sp
+Stop a recording session\&.
+T}
+.TE
+.sp 1
+.SS "Channel"
+.TS
+allbox tab(:);
+ltB ltB.
+T{
+Command
+T}:T{
+Description
+T}
+.T&
+lt lt
+lt lt
+lt lt.
+T{
+.sp
+\fBlttng-add-context\fR(1)
+T}:T{
+.sp
+Add context fields to be recorded\&.
+T}
+T{
+.sp
+\fBlttng-disable-channel\fR(1)
+T}:T{
+.sp
+Disable channels\&.
+T}
+T{
+.sp
+\fBlttng-enable-channel\fR(1)
+T}:T{
+.sp
+Create or enable a channel\&.
+T}
+.TE
+.sp 1
+.SS "Recording event rule"
+.TS
+allbox tab(:);
+ltB ltB.
+T{
+Command
+T}:T{
+Description
+T}
+.T&
+lt lt
+lt lt.
+T{
+.sp
+\fBlttng-disable-event\fR(1)
+T}:T{
+.sp
+Disable recording event rules\&.
+T}
+T{
+.sp
+\fBlttng-enable-event\fR(1)
+T}:T{
+.sp
+Create or enable recording event rules\&.
+T}
+.TE
+.sp 1
+.SS "Information"
+.TS
+allbox tab(:);
+ltB ltB.
+T{
+Command
+T}:T{
+Description
+T}
+.T&
+lt lt.
+T{
+.sp
+\fBlttng-list\fR(1)
+T}:T{
+.sp
+List recording sessions and instrumentation points\&.
+T}
+.TE
+.sp 1
 .SS "Resource tracking"
-.PP
+.TS
+allbox tab(:);
+ltB ltB.
+T{
+Command
+T}:T{
+Description
+T}
+.T&
+lt lt
+lt lt.
+T{
+.sp
 \fBlttng-track\fR(1)
-.RS 4
-Track specific system resources\&.
-.RE
-.PP
+T}:T{
+.sp
+Allow specific processes to record events\&.
+T}
+T{
+.sp
 \fBlttng-untrack\fR(1)
-.RS 4
-Untrack specific system resources\&.
-.RE
+T}:T{
+.sp
+Disallow specific processes to record events\&.
+T}
+.TE
+.sp 1
+.SS "Trigger"
+.TS
+allbox tab(:);
+ltB ltB.
+T{
+Command
+T}:T{
+Description
+T}
+.T&
+lt lt
+lt lt
+lt lt.
+T{
+.sp
+\fBlttng-add-trigger\fR(1)
+T}:T{
+.sp
+Add a trigger\&.
+T}
+T{
+.sp
+\fBlttng-list-triggers\fR(1)
+T}:T{
+.sp
+List triggers\&.
+T}
+T{
+.sp
+\fBlttng-remove-trigger\fR(1)
+T}:T{
+.sp
+Remove a trigger\&.
+T}
+.TE
+.sp 1
 .SS "Miscellaneous"
-.PP
+.TS
+allbox tab(:);
+ltB ltB.
+T{
+Command
+T}:T{
+Description
+T}
+.T&
+lt lt
+lt lt
+lt lt.
+T{
+.sp
 \fBlttng-help\fR(1)
-.RS 4
-Display help information about a command\&.
-.RE
-.PP
+T}:T{
+.sp
+Show the help of a command\&.
+T}
+T{
+.sp
 \fBlttng-version\fR(1)
-.RS 4
-Show version information\&.
-.RE
-.PP
+T}:T{
+.sp
+Show LTTng\-tools version information\&.
+T}
+T{
+.sp
 \fBlttng-view\fR(1)
-.RS 4
-Start trace viewer\&.
-.RE
-.SH "ENVIRONMENT VARIABLES"
-.PP
-\fBLTTNG_ABORT_ON_ERROR\fR
-.RS 4
-Set to 1 to abort the process after the first error is encountered\&.
-.RE
-.PP
-\fBLTTNG_HOME\fR
-.RS 4
-Overrides the
-\fB$HOME\fR
-environment variable\&. Useful when the user running the commands has a non\-writable home directory\&.
-.RE
-.PP
-\fBLTTNG_MAN_BIN_PATH\fR
-.RS 4
-Absolute path to the man pager to use for viewing help information about LTTng commands (using
-\fBlttng-help\fR(1)
-or
-\fBlttng COMMAND --help\fR)\&.
-.RE
-.PP
-\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
-.RS 4
-Path in which the
-\fBsession.xsd\fR
-session configuration XML schema may be found\&.
-.RE
-.PP
-\fBLTTNG_SESSIOND_PATH\fR
-.RS 4
-Full session daemon binary path\&.
+T}:T{
 .sp
-The
-\fB--sessiond-path\fR
-option has precedence over this environment variable\&.
-.RE
-.sp
-Note that the \fBlttng-create\fR(1) command can spawn an LTTng session daemon automatically if none is running\&. See \fBlttng-sessiond\fR(8) for the environment variables influencing the execution of the session daemon\&.
-.SH "FILES"
-.PP
-\fB$LTTNG_HOME/.lttngrc\fR
-.RS 4
-User LTTng runtime configuration\&.
-.sp
-This is where the per\-user current tracing session is stored between executions of
-\fBlttng\fR(1)\&. The current tracing session can be set with
-\fBlttng-set-session\fR(1)\&. See
-\fBlttng-create\fR(1)
-for more information about tracing sessions\&.
-.RE
-.PP
-\fB$LTTNG_HOME/lttng-traces\fR
-.RS 4
-Default output directory of LTTng traces\&. This can be overridden with the
-\fB--output\fR
-option of the
-\fBlttng-create\fR(1)
-command\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng\fR
-.RS 4
-User LTTng runtime and configuration directory\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng/sessions\fR
-.RS 4
-Default location of saved user tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.PP
-\fB/usr/local/etc/lttng/sessions\fR
-.RS 4
-System\-wide location of saved tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-.sp
-\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR when not explicitly set\&.
-.sp .5v
-.RE
+Launch a trace reader\&.
+T}
+.TE
+.sp 1
 .SH "EXIT STATUS"
 .PP
 \fB0\fR
@@ -440,9 +664,114 @@ Fatal error
 .RS 4
 Command warning (something went wrong during the command)
 .RE
-.SH "BUGS"
+.SH "ENVIRONMENT"
+.PP
+\fBLTTNG_ABORT_ON_ERROR\fR
+.RS 4
+Set to
+\fB1\fR
+to abort the process after the first error is encountered\&.
+.RE
+.PP
+\fBLTTNG_HOME\fR
+.RS 4
+Path to the LTTng home directory\&.
 .sp
-If you encounter any issue or usability problem, please report it on the LTTng bug tracker <https://bugs.lttng.org/projects/lttng-tools>\&.
+Defaults to
+\fB$HOME\fR\&.
+.sp
+Useful when the Unix user running the commands has a non\-writable home directory\&.
+.RE
+.PP
+\fBLTTNG_MAN_BIN_PATH\fR
+.RS 4
+Absolute path to the manual pager to use to read the LTTng command\-line help (with
+\fBlttng-help\fR(1)
+or with the
+\fB--help\fR
+option) instead of
+\fB/usr/bin/man\fR\&.
+.RE
+.PP
+\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
+.RS 4
+Path to the directory containing the
+\fBsession.xsd\fR
+recording session configuration XML schema\&.
+.RE
+.PP
+\fBLTTNG_SESSIOND_PATH\fR
+.RS 4
+Absolute path to the LTTng session daemon binary (see
+\fBlttng-sessiond\fR(8)) to spawn from the
+\fBlttng-create\fR(1)
+command\&.
+.sp
+The
+\fB--sessiond-path\fR
+general option overrides this environment variable\&.
+.RE
+.SH "FILES"
+.PP
+\fB$LTTNG_HOME/.lttngrc\fR
+.RS 4
+Unix user\(cqs LTTng runtime configuration\&.
+.sp
+This is where LTTng stores the name of the Unix user\(cqs current recording session between executions of
+\fBlttng\fR(1)\&.
+\fBlttng-create\fR(1)
+and
+\fBlttng-set-session\fR(1)
+set the current recording session\&.
+.RE
+.PP
+\fB$LTTNG_HOME/lttng-traces\fR
+.RS 4
+Default output directory of LTTng traces in local and snapshot modes\&.
+.sp
+Override this path with the
+\fB--output\fR
+option of the
+\fBlttng-create\fR(1)
+command\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng\fR
+.RS 4
+Unix user\(cqs LTTng runtime and configuration directory\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng/sessions\fR
+.RS 4
+Default directory containing the Unix user\(cqs saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.PP
+\fB/usr/local/etc/lttng/sessions\fR
+.RS 4
+Directory containing the system\-wide saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+\fB$LTTNG_HOME\fR defaults to the value of the \fBHOME\fR environment variable\&.
+.sp .5v
+.RE
 .SH "RESOURCES"
 .sp
 .RS 4
@@ -475,7 +804,7 @@ LTTng documentation <https://lttng.org/docs>
 .sp -1
 .IP \(bu 2.3
 .\}
-Git repositories <http://git.lttng.org>
+LTTng bug tracker <https://bugs.lttng.org>
 .RE
 .sp
 .RS 4
@@ -486,7 +815,7 @@ Git repositories <http://git.lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-GitHub organization <http://github.com/lttng>
+Git repositories <https://git.lttng.org>
 .RE
 .sp
 .RS 4
@@ -497,7 +826,7 @@ GitHub organization <http://github.com/lttng>
 .sp -1
 .IP \(bu 2.3
 .\}
-Continuous integration <http://ci.lttng.org/>
+GitHub organization <https://github.com/lttng>
 .RE
 .sp
 .RS 4
@@ -508,7 +837,18 @@ Continuous integration <http://ci.lttng.org/>
 .sp -1
 .IP \(bu 2.3
 .\}
-Mailing list <http://lists.lttng.org>
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
 for support and development:
 \fBlttng-dev@lists.lttng.org\fR
 .RE
@@ -526,11 +866,11 @@ IRC channel <irc://irc.oftc.net/lttng>:
 on
 \fBirc.oftc.net\fR
 .RE
-.SH "COPYRIGHTS"
+.SH "COPYRIGHT"
 .sp
 This program is part of the LTTng\-tools project\&.
 .sp
-LTTng\-tools is distributed under the GNU General Public License version 2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
 .SH "THANKS"
 .sp
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
@@ -538,4 +878,4 @@ Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.p
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
 .SH "SEE ALSO"
 .sp
-\fBlttng-sessiond\fR(8), \fBlttng-relayd\fR(8), \fBlttng-crash\fR(1), \fBlttng-ust\fR(3), \fBbabeltrace2\fR(1)
+\fBlttng-concepts\fR(7) \fBlttng-relayd\fR(8), \fBlttng-sessiond\fR(8)

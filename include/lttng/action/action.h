@@ -17,6 +17,19 @@ extern "C" {
 enum lttng_action_type {
 	LTTNG_ACTION_TYPE_UNKNOWN = -1,
 	LTTNG_ACTION_TYPE_NOTIFY = 0,
+	LTTNG_ACTION_TYPE_START_SESSION = 1,
+	LTTNG_ACTION_TYPE_STOP_SESSION = 2,
+	LTTNG_ACTION_TYPE_ROTATE_SESSION = 3,
+	LTTNG_ACTION_TYPE_SNAPSHOT_SESSION = 4,
+	LTTNG_ACTION_TYPE_LIST = 5,
+};
+
+enum lttng_action_status {
+	LTTNG_ACTION_STATUS_OK = 0,
+	LTTNG_ACTION_STATUS_ERROR = -1,
+	LTTNG_ACTION_STATUS_UNKNOWN = -2,
+	LTTNG_ACTION_STATUS_INVALID = -3,
+	LTTNG_ACTION_STATUS_UNSET = -4,
 };
 
 /*
@@ -25,7 +38,7 @@ enum lttng_action_type {
  * Returns the type of an action on success, LTTNG_ACTION_TYPE_UNKNOWN on error.
  */
 extern enum lttng_action_type lttng_action_get_type(
-		struct lttng_action *action);
+		const struct lttng_action *action);
 
 /*
  * Destroy (frees) an action object.

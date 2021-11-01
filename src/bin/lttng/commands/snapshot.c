@@ -19,7 +19,7 @@
 
 #include <common/utils.h>
 #include <common/mi-lttng.h>
-#include <lttng/snapshot.h>
+#include <lttng/lttng.h>
 
 #include "../command.h"
 
@@ -624,10 +624,11 @@ int cmd_snapshot(int argc, const char **argv)
 		case OPT_MAX_SIZE:
 		{
 			uint64_t val;
-			const char *opt = poptGetOptArg(pc);
+			const char *max_size_arg = poptGetOptArg(pc);
 
-			if (utils_parse_size_suffix((char *) opt, &val) < 0) {
-				ERR("Unable to handle max-size value %s", opt);
+			if (utils_parse_size_suffix((char *) max_size_arg, &val) < 0) {
+				ERR("Unable to handle max-size value %s",
+						max_size_arg);
 				cmd_ret = CMD_ERROR;
 				goto end;
 			}

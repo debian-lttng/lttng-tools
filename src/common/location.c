@@ -8,6 +8,7 @@
 #include <lttng/location-internal.h>
 #include <common/macros.h>
 #include <stdlib.h>
+#include <common/error.h>
 
 static
 struct lttng_trace_archive_location *lttng_trace_archive_location_create(
@@ -20,18 +21,17 @@ struct lttng_trace_archive_location *lttng_trace_archive_location_create(
 		goto end;
 	}
 
+	urcu_ref_init(&location->ref);
 	location->type = type;
 end:
 	return location;
 }
 
-LTTNG_HIDDEN
-void lttng_trace_archive_location_destroy(
-		struct lttng_trace_archive_location *location)
+static
+void trace_archive_location_destroy_ref(struct urcu_ref *ref)
 {
-	if (!location) {
-		return;
-	}
+	struct lttng_trace_archive_location *location =
+			container_of(ref, struct lttng_trace_archive_location, ref);
 
 	switch (location->type) {
 	case LTTNG_TRACE_ARCHIVE_LOCATION_TYPE_LOCAL:
@@ -46,6 +46,22 @@ void lttng_trace_archive_location_destroy(
 	}
 
 	free(location);
+}
+
+LTTNG_HIDDEN
+void lttng_trace_archive_location_get(struct lttng_trace_archive_location *location)
+{
+	urcu_ref_get(&location->ref);
+}
+
+LTTNG_HIDDEN
+void lttng_trace_archive_location_put(struct lttng_trace_archive_location *location)
+{
+	if (!location) {
+		return;
+	}
+
+	urcu_ref_put(&location->ref, trace_archive_location_destroy_ref);
 }
 
 LTTNG_HIDDEN
@@ -72,7 +88,7 @@ struct lttng_trace_archive_location *lttng_trace_archive_location_local_create(
 end:
 	return location;
 error:
-	lttng_trace_archive_location_destroy(location);
+	lttng_trace_archive_location_put(location);
 	return NULL;
 }
 
@@ -110,7 +126,7 @@ struct lttng_trace_archive_location *lttng_trace_archive_location_relay_create(
 end:
 	return location;
 error:
-	lttng_trace_archive_location_destroy(location);
+	lttng_trace_archive_location_put(location);
 	return NULL;
 }
 
@@ -125,11 +141,12 @@ ssize_t lttng_trace_archive_location_create_from_buffer(
 
 	location_comm_view = lttng_buffer_view_from_view(view, 0,
 			sizeof(*location_comm));
-	if (!location_comm_view.data) {
+	if (!lttng_buffer_view_is_valid(&location_comm_view)) {
 		goto error;
 	}
+
 	offset += location_comm_view.size;
-	location_comm = (const struct lttng_trace_archive_location_comm *) view->data;
+	location_comm = (const struct lttng_trace_archive_location_comm *) location_comm_view.data;
 
 	switch ((enum lttng_trace_archive_location_type) location_comm->type) {
 	case LTTNG_TRACE_ARCHIVE_LOCATION_TYPE_LOCAL:
@@ -138,9 +155,10 @@ ssize_t lttng_trace_archive_location_create_from_buffer(
 				lttng_buffer_view_from_view(view, offset,
 				location_comm->types.local.absolute_path_len);
 
-		if (!absolute_path_view.data) {
+		if (!lttng_buffer_view_is_valid(&absolute_path_view)) {
 			goto error;
 		}
+
 		if (absolute_path_view.data[absolute_path_view.size - 1] != '\0') {
 			goto error;
 		}
@@ -163,9 +181,12 @@ ssize_t lttng_trace_archive_location_create_from_buffer(
 				offset + hostname_view.size,
 				location_comm->types.relay.relative_path_len);
 
-		if (!hostname_view.data || !relative_path_view.data) {
+		if (!lttng_buffer_view_is_valid(&hostname_view) ||
+				!lttng_buffer_view_is_valid(
+						&relative_path_view)) {
 			goto error;
 		}
+
 		if (hostname_view.data[hostname_view.size - 1] != '\0') {
 			goto error;
 		}

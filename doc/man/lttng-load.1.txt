@@ -1,106 +1,169 @@
 lttng-load(1)
 =============
-:revdate: 28 November 2016
+:revdate: 14 June 2021
 
 
 NAME
 ----
-lttng-load - Load LTTng tracing session configurations
+lttng-load - Load LTTng recording session configurations
 
 
 SYNOPSIS
 --------
 [verse]
 *lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *load* [option:--force] [option:--input-path='PATH']
-      [option:--override-url='URL'] ['SESSION' [option:--override-name='NAME']]
+      [option:--override-url='URL'] [option:--all | 'SESSION' [option:--override-name='NAME']]
 
 
 DESCRIPTION
 -----------
 The `lttng load` command loads the configurations of one or more
-tracing sessions from files.
+recording sessions from files.
 
-The `lttng load` command is used in conjunction with the
-man:lttng-save(1) command to save and restore the complete
-configurations of tracing sessions. This includes the enabled channels
-and event rules, the context added to channels, the tracing activity,
-and more.
+See man:lttng-concepts(7) to learn more about recording sessions.
 
-Once one or more tracing session configurations are loaded, they appear
-exactly as they were saved from the user's point of view.
+Use the `load` command in conjunction with the man:lttng-save(1) command
+to save and restore the complete configurations of recording sessions. A
+recording session configuration includes the enabled channels and
+recording event rules, the context fields to be recorded, the recording
+activity, and more.
 
-The following directories are searched, non-recursively, in this order
-for configuration files:
+Once LTTng loads one or more recording session configurations, they
+appear exactly as they were saved from the user's point of view.
+
+LTTng searches the following directories, non-recursively, in this order
+for recording session configuration files:
 
 . `$LTTNG_HOME/.lttng/sessions` (`$LTTNG_HOME` defaults to `$HOME`)
 . +{system_sessions_dir}+
 
-The input path can be overridden with the option:--input-path option.
-When this option is specified, the default directories are :not:
-searched for configuration files. When it's not specified, _both_
-default directories are searched for configuration files.
+Override the input path with the option:--input-path='PATH' option. With
+this option, LTTng does :not: search the default directories above.
+'PATH' can be the path of one of:
 
-If the input path is a *directory*, then:
+A directory::
+    With the 'SESSION' argument:::
+        LTTng searches for the recording session configuration named
+        'SESSION' in all the files of the directory 'PATH' and loads it
+        if found.
 
-* If 'SESSION' is specified, the tracing session configuration named
-  'SESSION' is searched for in all the files of this directory and
-  loaded if found.
-* If 'SESSION' is not specified, the option:--all option is implicit:
-  all the tracing session configurations found in all the files in this
-  directory are loaded.
+    Without the 'SESSION' argument:::
+        The option:--all option is implicit: LTTng loads all the
+        recording session configurations found in all the files in the
+        directory 'PATH'.
 
-If the input path is a *file*, then:
+A file::
+    With the 'SESSION' argument:::
+        LTTng searches for the recording session configuration named
+        'SESSION' in the file 'PATH' and loads it if found.
 
-* If 'SESSION' is specified, the tracing session configuration named
-  'SESSION' is searched for in this file and loaded if found.
-* If 'SESSION' is not specified, the option:--all option is implicit:
-  all the tracing session configurations found in this file are loaded.
+    Without the 'SESSION' argument:::
+        The option:--all option is implicit: LTTng loads all the
+        recording session configurations found in the file 'PATH'.
 
-Aspects of the loaded configurations can be overridden at load time
-using the option:--override-url and option:--override-name options.
+Override the output URL of the loaded recording session configurations
+with the option:--override-url option.
 
-By default, existing tracing sessions are not overwritten when loading:
-the command fails. The option:--force option can be used to allow this.
+With the 'SESSION' argument, override the name of the loaded recording
+session configuration with the option:--override-name option.
+
+By default, the `load` command does :not: overwrite existing recording
+sessions: the command fails. Allow the `load` command to overwrite
+existing recording sessions with the option:--force option.
+
+See the ``<<examples,EXAMPLES>>'' section below for usage examples.
 
 
-include::common-cmd-options-head.txt[]
+include::common-lttng-cmd-options-head.txt[]
 
 
 option:-a, option:--all::
-    Load all tracing session configurations (default).
+    Load all the recording session configurations (default).
 
 option:-f, option:--force::
-    Overwrite existing tracing sessions when loading.
+    Overwrite existing recording sessions when loading.
 
 option:-i 'PATH', option:--input-path='PATH'::
-    Load tracing session configurations from 'PATH', either a directory
-    or a file, instead of loading them from the default search
+    Load recording session configurations from 'PATH', either a
+    directory or a file, instead of loading them from the default search
     directories.
 
 option:--override-name='NAME'::
-    Override the name of the loaded tracing session configuration,
+    Override the name of the loaded recording session configuration,
     'SESSION', with 'NAME'.
-+
-You must specify a tracing session name to load ('SESSION') and :not:
-use the option:--all option when using this option.
 
 option:--override-url='URL'::
-    Override the URL of the loaded tracing session configurations
-    with 'URL'.
+    Override the output URL of the loaded recording session
+    configurations with 'URL'.
 +
 This is the equivalent of the nloption:--set-url option of
 man:lttng-create(1). The validity of the URL override depends on the
-type of tracing session configurations to load. This option applies to
-_all_ the loaded tracing session configurations.
+type of recording session configurations to load. This option applies to
+_all_ the loaded recording session configurations.
 
 
-include::common-cmd-help-options.txt[]
+include::common-lttng-cmd-help-options.txt[]
 
 
-include::common-cmd-footer.txt[]
+include::common-lttng-cmd-after-options.txt[]
+
+
+[[examples]]
+EXAMPLES
+--------
+.Load all the recording session configurations from the default search directories.
+====
+[role="term"]
+----
+$ lttng load
+----
+====
+
+.Load all the recording session configurations from a specific directory.
+====
+See the option:--input-path option.
+
+[role="term"]
+----
+$ lttng load --input-path=/path/to/sessions
+----
+====
+
+.Load a specific recording session configuration from the default search directories.
+====
+[role="term"]
+----
+$ lttng load my-session
+----
+====
+
+.Allow LTTng to overwrite existing recording sessions when loading.
+====
+See the option:--force option.
+
+[role="term"]
+----
+$ lttng load --force
+----
+====
+
+.Load a specific recording session configuration from a specific file, overriding its name.
+====
+See the option:--input-path and option:--override-name options.
+
+[role="term"]
+----
+$ lttng load my-session --input-path=/path/to/sessions.lttng \
+             --override-name=new-test
+----
+====
+
+
+include::common-footer.txt[]
 
 
 SEE ALSO
 --------
+man:lttng(1),
 man:lttng-save(1),
-man:lttng(1)
+man:lttng-concepts(7)

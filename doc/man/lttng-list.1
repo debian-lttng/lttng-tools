@@ -2,12 +2,12 @@
 .\"     Title: lttng-list
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 28 November 2016
+.\"      Date: 14 June 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.12.3
+.\"    Source: LTTng 2.13.1
 .\"  Language: English
 .\"
-.TH "LTTNG\-LIST" "1" "28 November 2016" "LTTng 2\&.12\&.3" "LTTng Manual"
+.TH "LTTNG\-LIST" "1" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -28,210 +28,244 @@
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
 .SH "NAME"
-lttng-list \- List LTTng tracing sessions, domains, channels, and events
+lttng-list \- List LTTng recording sessions and instrumentation points
 .SH "SYNOPSIS"
 .sp
-List existing tracing sessions:
+List the recording sessions:
 .sp
 .nf
 \fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBlist\fR
 .fi
 .sp
-List available event sources:
-.sp
-.nf
-\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBlist\fR [\fB--fields\fR]
-      [\fB--kernel\fR [\fB--syscall\fR]] [\fB--userspace\fR] [\fB--jul\fR] [\fB--log4j\fR] [\fB--python\fR]
-.fi
-.sp
-List tracing session\(cqs domains:
+List the tracing domains of a recording session with at least one channel:
 .sp
 .nf
 \fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBlist\fR \fB--domain\fR \fISESSION\fR
 .fi
 .sp
-List tracing session\(cqs channels and event rules:
+List the channels and recording event rules of a recording session:
 .sp
 .nf
 \fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBlist\fR [\fB--channel\fR=\fICHANNEL\fR] \fISESSION\fR
+      [\fB--kernel\fR] [\fB--userspace\fR] [\fB--jul\fR] [\fB--log4j\fR] [\fB--python\fR]
+.fi
+.sp
+List the available LTTng tracepoints, Linux system calls, and/or Java/Python loggers:
+.sp
+.nf
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBlist\fR [\fB--fields\fR]
+      [\fB--kernel\fR [\fB--syscall\fR]] [\fB--userspace\fR] [\fB--jul\fR] [\fB--log4j\fR] [\fB--python\fR]
 .fi
 .SH "DESCRIPTION"
 .sp
-The \fBlttng list\fR command lists tracing sessions, tracing domains, channels, and events\&.
+The \fBlttng list\fR command lists:
+.PP
+Without arguments
+.RS 4
+The recording sessions of your Unix user, or of all users if your Unix user is
+\fBroot\fR, within the connected session daemon\&.
 .sp
-Without arguments, \fBlttng list\fR lists the existing tracing sessions and shows if they are active or not\&.
+See the \(lqSession daemon connection\(rq section of
+\fBlttng\fR(1)
+to learn how a user application connects to a session daemon\&.
 .sp
-With one or more of the \fB--kernel\fR, \fB--userspace\fR, \fB--jul\fR, \fB--log4j\fR, and \fB--python\fR domain options, the command lists the available event sources of the selected domain on the system\&. The JUL, log4j, and Python domains list the names of their available \fIloggers\fR\&. The \fB--syscall\fR option can be used alongside the \fB--kernel\fR option to get a list of traceable Linux system calls\&. The \fB--fields\fR option can be used to show the fields of the listed event sources\&.
+The command shows recording session properties such as their output directories/URLs and whether or not they\(cqre active\&.
+.RE
+.PP
+With the \fISESSION\fR argument
+.RS 4
+.PP
+With the \fB--domain\fR option
+.RS 4
+The tracing domains (with at least one channel) of the recording session named
+\fISESSION\fR\&.
+.RE
+.PP
+Without the \fB--domain\fR option
+.RS 4
+.PP
+With the \fB--channel\fR=\fICHANNEL\fR option
+.RS 4
+The recording event rules of the channel
+\fICHANNEL\fR
+of the recording session named
+\fISESSION\fR\&.
+.RE
+.PP
+Without the \fB--channel\fR option
+.RS 4
+The channels of the recording session named
+\fISESSION\fR
+and their recording event rules\&.
 .sp
-Providing a tracing session name \fISESSION\fR targets a specific tracing session\&. If the \fB--domain\fR option is used, domains containing at least one channel in the selected tracing session are listed\&. Otherwise, all the domains, channels, and event rules of the selected tracing session are listed along with its details (trace path, for example), except when the \fB--channel\fR option is used to isolate a specific channel by name\&.
+Use the dedicated tracing domain options (\fB--kernel\fR,
+\fB--userspace\fR,
+\fB--jul\fR,
+\fB--log4j\fR, and
+\fB--python\fR) to only show specific channels\&.
+.RE
+.RE
+.RE
+.PP
+Without the \fISESSION\fR argument and with at least one dedicated tracing domain option
+.RS 4
+.PP
+With the \fB--kernel\fR option
+.RS 4
+.PP
+Without the \fB--syscall\fR option
+.RS 4
+The available LTTng kernel tracepoints\&.
+.RE
+.PP
+With the \fB--syscall\fR option
+.RS 4
+The available, instrumented Linux system calls\&.
+.RE
+.RE
+.PP
+With the \fB--userspace\fR option
+.RS 4
+The available LTTng user space tracepoints\&.
+.RE
+.PP
+With the \fB--jul\fR, \fB--log4j\fR, and/or \fB--python\fR options
+.RS 4
+The available
+\fBjava.util.logging\fR, Apache log4j, and/or Python logger names\&.
+.RE
+.sp
+Also list the available instrumentation point fields with the
+\fB--fields\fR
+option\&.
+.RE
+.sp
+See \fBlttng-concept\fR(7) to learn more about recording sessions, tracing domains, channels, recording event rules, and instrumentation points\&.
+.sp
+See the \(lqEXAMPLES\(rq section below for usage examples\&.
+.sp
+List the channels and recording event rules of the current recording session (see \fBlttng-concept\fR(7) to learn more) with the \fBlttng-status\fR(1) command\&.
 .SH "OPTIONS"
 .sp
-General options are described in \fBlttng\fR(1)\&.
-.SS "Domain"
+See \fBlttng\fR(1) for \fIGENERAL OPTIONS\fR\&.
+.SS "Tracing domain"
 .PP
 \fB-j\fR, \fB--jul\fR
 .RS 4
-List event sources in the
+.PP
+Without the \fISESSION\fR argument
+.RS 4
+List the
 \fBjava.util.logging\fR
-(JUL) domain\&.
+logger names\&.
+.RE
+.PP
+With the \fISESSION\fR argument
+.RS 4
+Only list the
+\fBjava.util.logging\fR
+channels and their recording event rules\&.
+.RE
 .RE
 .PP
 \fB-k\fR, \fB--kernel\fR
 .RS 4
-List event sources in the Linux kernel domain\&.
+.PP
+Without the \fISESSION\fR argument
+.RS 4
+List the LTTng kernel instrumentation points\&.
+.RE
+.PP
+With the \fISESSION\fR argument
+.RS 4
+Only list the Linux kernel channels and their recording event rules\&.
+.RE
 .RE
 .PP
 \fB-l\fR, \fB--log4j\fR
 .RS 4
-List event sources in the Apache log4j domain\&.
+.PP
+Without the \fISESSION\fR argument
+.RS 4
+List the Apache log4j logger names\&.
+.RE
+.PP
+With the \fISESSION\fR argument
+.RS 4
+Only list the Apache log4j channels and their recording event rules\&.
+.RE
 .RE
 .PP
 \fB-p\fR, \fB--python\fR
 .RS 4
-List event sources in the Python domain\&.
+.PP
+Without the \fISESSION\fR argument
+.RS 4
+List the Python logger names\&.
+.RE
+.PP
+With the \fISESSION\fR argument
+.RS 4
+Only list the Python channels and their recording event rules\&.
+.RE
 .RE
 .PP
 \fB-u\fR, \fB--userspace\fR
 .RS 4
-List event sources in the user space domain\&.
+.PP
+Without the \fISESSION\fR argument
+.RS 4
+List the LTTng user space tracepoints\&.
 .RE
-.SS "Target"
+.PP
+With the \fISESSION\fR argument
+.RS 4
+Only list the user space channels and their recording event rules\&.
+.RE
+.RE
+.SS "Filtering"
 .PP
 \fB-c\fR \fICHANNEL\fR, \fB--channel\fR=\fICHANNEL\fR
 .RS 4
-Only list the details of the channel named
+Only list the properties and recording event rules of the channel named
 \fICHANNEL\fR\&.
+.sp
+Only available with the
+\fISESSION\fR
+argument\&.
 .RE
-.SS "Listing"
 .PP
 \fB-d\fR, \fB--domain\fR
 .RS 4
-Show the domains of the target tracing session in which at least one channel exists\&.
+Show the tracing domains with at least one channel of the recording session named
+\fISESSION\fR\&.
 .RE
 .PP
 \fB-f\fR, \fB--fields\fR
 .RS 4
-When listing the event sources with one of the domain options, also show their fields\&.
+When listing instrumentation points, also show their fields if they\(cqre available\&.
 .RE
 .PP
 \fB--syscall\fR
 .RS 4
-When listing the event sources of the Linux kernel domain, list the traceable system calls instead of the kernel tracepoints\&.
+When listing LTTng kernel instrumentation points, only list Linux system calls\&.
 .RE
 .SS "Program information"
 .PP
 \fB-h\fR, \fB--help\fR
 .RS 4
-Show command help\&.
+Show help\&.
 .sp
-This option, like
-\fBlttng-help\fR(1), attempts to launch
+This option attempts to launch
 \fB/usr/bin/man\fR
-to view the command\(cqs man page\&. The path to the man pager can be overridden by the
+to view this manual page\&. Override the manual pager path with the
 \fBLTTNG_MAN_BIN_PATH\fR
 environment variable\&.
 .RE
 .PP
 \fB--list-options\fR
 .RS 4
-List available command options\&.
-.RE
-.SH "ENVIRONMENT VARIABLES"
-.PP
-\fBLTTNG_ABORT_ON_ERROR\fR
-.RS 4
-Set to 1 to abort the process after the first error is encountered\&.
-.RE
-.PP
-\fBLTTNG_HOME\fR
-.RS 4
-Overrides the
-\fB$HOME\fR
-environment variable\&. Useful when the user running the commands has a non\-writable home directory\&.
-.RE
-.PP
-\fBLTTNG_MAN_BIN_PATH\fR
-.RS 4
-Absolute path to the man pager to use for viewing help information about LTTng commands (using
-\fBlttng-help\fR(1)
-or
-\fBlttng COMMAND --help\fR)\&.
-.RE
-.PP
-\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
-.RS 4
-Path in which the
-\fBsession.xsd\fR
-session configuration XML schema may be found\&.
-.RE
-.PP
-\fBLTTNG_SESSIOND_PATH\fR
-.RS 4
-Full session daemon binary path\&.
-.sp
-The
-\fB--sessiond-path\fR
-option has precedence over this environment variable\&.
-.RE
-.sp
-Note that the \fBlttng-create\fR(1) command can spawn an LTTng session daemon automatically if none is running\&. See \fBlttng-sessiond\fR(8) for the environment variables influencing the execution of the session daemon\&.
-.SH "FILES"
-.PP
-\fB$LTTNG_HOME/.lttngrc\fR
-.RS 4
-User LTTng runtime configuration\&.
-.sp
-This is where the per\-user current tracing session is stored between executions of
-\fBlttng\fR(1)\&. The current tracing session can be set with
-\fBlttng-set-session\fR(1)\&. See
-\fBlttng-create\fR(1)
-for more information about tracing sessions\&.
-.RE
-.PP
-\fB$LTTNG_HOME/lttng-traces\fR
-.RS 4
-Default output directory of LTTng traces\&. This can be overridden with the
-\fB--output\fR
-option of the
-\fBlttng-create\fR(1)
-command\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng\fR
-.RS 4
-User LTTng runtime and configuration directory\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng/sessions\fR
-.RS 4
-Default location of saved user tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.PP
-\fB/usr/local/etc/lttng/sessions\fR
-.RS 4
-System\-wide location of saved tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-.sp
-\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR when not explicitly set\&.
-.sp .5v
+List available command options and quit\&.
 .RE
 .SH "EXIT STATUS"
 .PP
@@ -259,9 +293,205 @@ Fatal error
 .RS 4
 Command warning (something went wrong during the command)
 .RE
-.SH "BUGS"
+.SH "ENVIRONMENT"
+.PP
+\fBLTTNG_ABORT_ON_ERROR\fR
+.RS 4
+Set to
+\fB1\fR
+to abort the process after the first error is encountered\&.
+.RE
+.PP
+\fBLTTNG_HOME\fR
+.RS 4
+Path to the LTTng home directory\&.
 .sp
-If you encounter any issue or usability problem, please report it on the LTTng bug tracker <https://bugs.lttng.org/projects/lttng-tools>\&.
+Defaults to
+\fB$HOME\fR\&.
+.sp
+Useful when the Unix user running the commands has a non\-writable home directory\&.
+.RE
+.PP
+\fBLTTNG_MAN_BIN_PATH\fR
+.RS 4
+Absolute path to the manual pager to use to read the LTTng command\-line help (with
+\fBlttng-help\fR(1)
+or with the
+\fB--help\fR
+option) instead of
+\fB/usr/bin/man\fR\&.
+.RE
+.PP
+\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
+.RS 4
+Path to the directory containing the
+\fBsession.xsd\fR
+recording session configuration XML schema\&.
+.RE
+.PP
+\fBLTTNG_SESSIOND_PATH\fR
+.RS 4
+Absolute path to the LTTng session daemon binary (see
+\fBlttng-sessiond\fR(8)) to spawn from the
+\fBlttng-create\fR(1)
+command\&.
+.sp
+The
+\fB--sessiond-path\fR
+general option overrides this environment variable\&.
+.RE
+.SH "FILES"
+.PP
+\fB$LTTNG_HOME/.lttngrc\fR
+.RS 4
+Unix user\(cqs LTTng runtime configuration\&.
+.sp
+This is where LTTng stores the name of the Unix user\(cqs current recording session between executions of
+\fBlttng\fR(1)\&.
+\fBlttng-create\fR(1)
+and
+\fBlttng-set-session\fR(1)
+set the current recording session\&.
+.RE
+.PP
+\fB$LTTNG_HOME/lttng-traces\fR
+.RS 4
+Default output directory of LTTng traces in local and snapshot modes\&.
+.sp
+Override this path with the
+\fB--output\fR
+option of the
+\fBlttng-create\fR(1)
+command\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng\fR
+.RS 4
+Unix user\(cqs LTTng runtime and configuration directory\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng/sessions\fR
+.RS 4
+Default directory containing the Unix user\(cqs saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.PP
+\fB/usr/local/etc/lttng/sessions\fR
+.RS 4
+Directory containing the system\-wide saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+\fB$LTTNG_HOME\fR defaults to the value of the \fBHOME\fR environment variable\&.
+.sp .5v
+.RE
+.SH "EXAMPLES"
+.PP
+\fBExample\ \&1.\ \&List the recording sessions\&.\fR
+.RS 4
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng list
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&2.\ \&Show the details of a specific recording session\&.\fR
+.RS 4
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng list my\-session
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&3.\ \&List the available Linux kernel system call instrumentation points\&.\fR
+.RS 4
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng list \-\-kernel \-\-syscall
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&4.\ \&List the available user space tracepoints with their fields\&.\fR
+.RS 4
+.sp
+See the \fB--fields\fR option\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng list \-\-userspace \-\-fields
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&5.\ \&List the tracing domains of a specific recording session having at least one channel\&.\fR
+.RS 4
+.sp
+See the \fB--domain\fR option\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng list \-\-domain my\-session
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&6.\ \&Show the details of a specific channel in a specific recording session\&.\fR
+.RS 4
+.sp
+See the \fB--channel\fR option\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng list my\-session \-\-channel=channel0
+.fi
+.if n \{\
+.RE
+.\}
+.RE
 .SH "RESOURCES"
 .sp
 .RS 4
@@ -294,7 +524,7 @@ LTTng documentation <https://lttng.org/docs>
 .sp -1
 .IP \(bu 2.3
 .\}
-Git repositories <http://git.lttng.org>
+LTTng bug tracker <https://bugs.lttng.org>
 .RE
 .sp
 .RS 4
@@ -305,7 +535,7 @@ Git repositories <http://git.lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-GitHub organization <http://github.com/lttng>
+Git repositories <https://git.lttng.org>
 .RE
 .sp
 .RS 4
@@ -316,7 +546,7 @@ GitHub organization <http://github.com/lttng>
 .sp -1
 .IP \(bu 2.3
 .\}
-Continuous integration <http://ci.lttng.org/>
+GitHub organization <https://github.com/lttng>
 .RE
 .sp
 .RS 4
@@ -327,7 +557,18 @@ Continuous integration <http://ci.lttng.org/>
 .sp -1
 .IP \(bu 2.3
 .\}
-Mailing list <http://lists.lttng.org>
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
 for support and development:
 \fBlttng-dev@lists.lttng.org\fR
 .RE
@@ -345,11 +586,11 @@ IRC channel <irc://irc.oftc.net/lttng>:
 on
 \fBirc.oftc.net\fR
 .RE
-.SH "COPYRIGHTS"
+.SH "COPYRIGHT"
 .sp
 This program is part of the LTTng\-tools project\&.
 .sp
-LTTng\-tools is distributed under the GNU General Public License version 2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
 .SH "THANKS"
 .sp
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
@@ -357,4 +598,4 @@ Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.p
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
 .SH "SEE ALSO"
 .sp
-\fBlttng\fR(1)
+\fBlttng\fR(1), \fBlttng-concepts\fR(7)

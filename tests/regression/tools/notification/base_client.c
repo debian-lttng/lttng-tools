@@ -17,6 +17,7 @@
 #include <assert.h>
 
 #include <lttng/action/action.h>
+#include <lttng/action/list.h>
 #include <lttng/action/notify.h>
 #include <lttng/condition/buffer-usage.h>
 #include <lttng/condition/condition.h>
@@ -35,6 +36,7 @@ static const char *channel_name = NULL;
 static double threshold_ratio = 0.0;
 static uint64_t threshold_bytes = 0;
 static bool is_threshold_ratio = false;
+static bool use_action_list = false;
 static enum lttng_condition_type buffer_usage_type = LTTNG_CONDITION_TYPE_UNKNOWN;
 static enum lttng_domain_type domain_type = LTTNG_DOMAIN_NONE;
 
@@ -45,11 +47,13 @@ int handle_condition(
 static
 int parse_arguments(char **argv)
 {
+	int sscanf_ret;
 	const char *domain_type_string = NULL;
 	const char *buffer_usage_type_string = NULL;
 	const char *buffer_usage_threshold_type = NULL;
 	const char *buffer_usage_threshold_value = NULL;
 	const char *nr_expected_notifications_string = NULL;
+	const char *use_action_list_value = NULL;
 
 	session_name = argv[1];
 	channel_name = argv[2];
@@ -58,6 +62,7 @@ int parse_arguments(char **argv)
 	buffer_usage_threshold_type = argv[5];
 	buffer_usage_threshold_value = argv[6];
 	nr_expected_notifications_string = argv[7];
+	use_action_list_value = argv[8];
 
 	/* Parse arguments */
 	/* Domain type */
@@ -87,16 +92,39 @@ int parse_arguments(char **argv)
 	/* Ratio or bytes ? */
 	if (!strcasecmp("bytes", buffer_usage_threshold_type)) {
 		is_threshold_ratio = false;
-		sscanf(buffer_usage_threshold_value, "%" SCNu64, &threshold_bytes);
+		sscanf_ret = sscanf(buffer_usage_threshold_value, "%" SCNu64,
+				&threshold_bytes);
+		if (sscanf_ret != 1) {
+			printf("error: Invalid buffer usage threshold value bytes (integer), sscanf returned %d\n",
+					sscanf_ret);
+			goto error;
+		}
 	}
 
 	if (!strcasecmp("ratio", buffer_usage_threshold_type)) {
 		is_threshold_ratio = true;
-		sscanf(buffer_usage_threshold_value, "%lf", &threshold_ratio);
+		sscanf_ret = sscanf(buffer_usage_threshold_value, "%lf",
+				&threshold_ratio);
+		if (sscanf_ret != 1) {
+			printf("error: Invalid buffer usage threshold value ratio (float), sscanf returned %d\n",
+					sscanf_ret);
+			goto error;
+		}
 	}
 
 	/* Number of notification to expect */
-	sscanf(nr_expected_notifications_string, "%d", &nr_expected_notifications);
+	sscanf_ret = sscanf(nr_expected_notifications_string, "%d",
+			&nr_expected_notifications);
+	if (sscanf_ret != 1) {
+		printf("error: Invalid nr_expected_notifications, sscanf returned %d\n",
+				sscanf_ret);
+		goto error;
+	}
+
+	/* Put notify action in a group. */
+	if (!strcasecmp("1", use_action_list_value)) {
+		use_action_list = true;
+	}
 
 	return 0;
 error:
@@ -107,11 +135,13 @@ int main(int argc, char **argv)
 {
 	int ret = 0;
 	enum lttng_condition_status condition_status;
+	enum lttng_action_status action_status;
 	enum lttng_notification_channel_status nc_status;
 	struct lttng_notification_channel *notification_channel = NULL;
 	struct lttng_condition *condition = NULL;
 	struct lttng_action *action = NULL;
 	struct lttng_trigger *trigger = NULL;
+	enum lttng_error_code ret_code;
 
 	/*
 	 * Disable buffering on stdout.
@@ -120,7 +150,7 @@ int main(int argc, char **argv)
 	 */
 	setbuf(stdout, NULL);
 
-	if (argc < 8) {
+	if (argc < 9) {
 		printf("error: Missing arguments for tests\n");
 		ret = 1;
 		goto end;
@@ -196,11 +226,41 @@ int main(int argc, char **argv)
 		goto end;
 	}
 
-	action = lttng_action_notify_create();
-	if (!action) {
-		printf("error: Could not create action notify\n");
-		ret = 1;
-		goto end;
+	if (use_action_list) {
+		struct lttng_action *notify, *group;
+
+		group = lttng_action_list_create();
+		if (!group) {
+			printf("error: Could not create action list\n");
+			ret = 1;
+			goto end;
+		}
+
+		notify = lttng_action_notify_create();
+		if (!notify) {
+			lttng_action_destroy(group);
+			printf("error: Could not create action notify\n");
+			ret = 1;
+			goto end;
+		}
+
+		action_status = lttng_action_list_add_action(group, notify);
+		if (action_status != LTTNG_ACTION_STATUS_OK) {
+			printf("error: Could not add action notify to action list\n");
+			lttng_action_destroy(group);
+			lttng_action_destroy(notify);
+			ret = 1;
+			goto end;
+		}
+
+		action = group;
+	} else {
+		action = lttng_action_notify_create();
+		if (!action) {
+			printf("error: Could not create action notify\n");
+			ret = 1;
+			goto end;
+		}
 	}
 
 	trigger = lttng_trigger_create(condition, action);
@@ -210,14 +270,14 @@ int main(int argc, char **argv)
 		goto end;
 	}
 
-	ret = lttng_register_trigger(trigger);
+	ret_code = lttng_register_trigger_with_automatic_name(trigger);
 
 	/*
 	 * An equivalent trigger might already be registered if an other app
 	 * registered an equivalent trigger.
 	 */
-	if (ret < 0 && ret != -LTTNG_ERR_TRIGGER_EXISTS) {
-		printf("error: %s\n", lttng_strerror(ret));
+	if (ret_code != LTTNG_OK && ret_code != LTTNG_ERR_TRIGGER_EXISTS) {
+		printf("error: %s\n", lttng_strerror(-ret_code));
 		ret = 1;
 		goto end;
 	}
@@ -265,7 +325,7 @@ int main(int argc, char **argv)
 			goto end;
 		default:
 			/* Unhandled conditions / errors. */
-			printf("error: Unknown notification channel status\n");
+			printf("error: Unknown notification channel status (%d) \n", status);
 			ret = 1;
 			goto end;
 		}

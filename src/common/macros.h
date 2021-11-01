@@ -77,7 +77,15 @@ void *zmalloc(size_t len)
 #define LTTNG_PACKED __attribute__((__packed__))
 #endif
 
-#define is_signed(type) (((type) (-1)) < 0)
+#ifndef LTTNG_NO_SANITIZE_ADDRESS
+#if defined(__clang__) || defined (__GNUC__)
+#define LTTNG_NO_SANITIZE_ADDRESS __attribute__((no_sanitize_address))
+#else
+#define LTTNG_NO_SANITIZE_ADDRESS
+#endif
+#endif
+
+#define is_signed(type) (((type) -1) < (type) 1)
 
 /*
  * Align value to the next multiple of align. Returns val if it already is a

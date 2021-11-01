@@ -62,18 +62,34 @@
  * wrapped optional types. It is meant to be used with PODs.
  */
 #define LTTNG_OPTIONAL_GET(optional)			\
-        ({						\
+	({						\
 		assert((optional).is_set);		\
 		(optional).value;			\
 	})
 
 /*
- * Initialize an optional field.
+ * This macro is available as a 'convenience' to allow sites that assume
+ * an optional value is set to assert() that it is set when fecthing the
+ * underlying value's address.
+ */
+#define LTTNG_OPTIONAL_GET_PTR(optional)			\
+	({						\
+		assert((optional).is_set);		\
+		&(optional).value;			\
+	})
+
+/*
+ * Initialize an optional field as unset.
  *
  * The wrapped field is set to the value it would gave if it had static storage
  * duration.
  */
-#define LTTNG_OPTIONAL_INIT { .is_set = 0 }
+#define LTTNG_OPTIONAL_INIT_UNSET { .is_set = 0 }
+
+/*
+ * Initialize an optional field as 'set' with a given value.
+ */
+#define LTTNG_OPTIONAL_INIT_VALUE(val) { .value = val, .is_set = 1 }
 
 /* Set the value of an optional field. */
 #define LTTNG_OPTIONAL_SET(field_ptr, val)	\

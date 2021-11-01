@@ -13,6 +13,7 @@
 #include <urcu/wfcqueue.h>
 
 #include <common/sessiond-comm/sessiond-comm.h>
+#include <common/payload.h>
 #include <common/compat/poll.h>
 #include <common/compat/socket.h>
 #include <common/uuid.h>
@@ -33,7 +34,7 @@ enum consumerd_state {
 };
 
 /* Unique identifier of a session daemon instance. */
-extern lttng_uuid sessiond_uuid;
+extern lttng_uuid the_sessiond_uuid;
 
 /*
  * This consumer daemon state is used to validate if a client command will be
@@ -56,20 +57,15 @@ extern lttng_uuid sessiond_uuid;
  * command is safe. After that, we can not guarantee the correctness of the
  * client request vis-a-vis the consumer.
  */
-extern enum consumerd_state ust_consumerd_state;
-extern enum consumerd_state kernel_consumerd_state;
-
-extern const char default_home_dir[],
-	default_tracing_group[],
-	default_ust_sock_dir[],
-	default_global_apps_pipe[];
+extern enum consumerd_state the_ust_consumerd_state;
+extern enum consumerd_state the_kernel_consumerd_state;
 
 /* Set in main.c at boot time of the daemon */
-extern struct lttng_kernel_tracer_version kernel_tracer_version;
-extern struct lttng_kernel_tracer_abi_version kernel_tracer_abi_version;
+extern struct lttng_kernel_abi_tracer_version the_kernel_tracer_version;
+extern struct lttng_kernel_abi_tracer_abi_version the_kernel_tracer_abi_version;
 
 /* Notification thread handle. */
-extern struct notification_thread_handle *notification_thread_handle;
+extern struct notification_thread_handle *the_notification_thread_handle;
 
 /*
  * This contains extra data needed for processing a command received by the
@@ -78,8 +74,10 @@ extern struct notification_thread_handle *notification_thread_handle;
 struct command_ctx {
 	unsigned int lttng_msg_size;
 	struct ltt_session *session;
-	struct lttcomm_lttng_msg *llm;
-	struct lttcomm_session_msg *lsm;
+	/* Input message */
+	struct lttcomm_session_msg lsm;
+	/* Reply content, starts with an lttcomm_lttng_msg header. */
+	struct lttng_payload reply_payload;
 	lttng_sock_cred creds;
 };
 
@@ -124,32 +122,32 @@ struct ust_reg_wait_node {
  * be called by call_rcu thread, because it may hang (waiting for
  * call_rcu completion).
  */
-extern int ht_cleanup_pipe[2];
+extern int the_ht_cleanup_pipe[2];
 
-extern int kernel_poll_pipe[2];
+extern int the_kernel_poll_pipe[2];
 
 /*
  * Populated when the daemon starts with the current page size of the system.
  * Set in main() with the current page size.
  */
-extern long page_size;
+extern long the_page_size;
 
 /* Application health monitoring */
-extern struct health_app *health_sessiond;
+extern struct health_app *the_health_sessiond;
 
-extern struct sessiond_config config;
+extern struct sessiond_config the_config;
 
-extern int ust_consumerd64_fd, ust_consumerd32_fd;
+extern int the_ust_consumerd64_fd, the_ust_consumerd32_fd;
 
 /* Parent PID for --sig-parent option */
-extern pid_t ppid;
+extern pid_t the_ppid;
 /* Internal parent PID use with daemonize. */
-extern pid_t child_ppid;
+extern pid_t the_child_ppid;
 
 /* Consumer daemon specific control data. */
-extern struct consumer_data ustconsumer32_data;
-extern struct consumer_data ustconsumer64_data;
-extern struct consumer_data kconsumer_data;
+extern struct consumer_data the_ustconsumer32_data;
+extern struct consumer_data the_ustconsumer64_data;
+extern struct consumer_data the_kconsumer_data;
 
 int sessiond_init_thread_quit_pipe(void);
 int sessiond_check_thread_quit_pipe(int fd, uint32_t events);

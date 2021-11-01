@@ -29,8 +29,7 @@
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/uri.h>
 #include <common/utils.h>
-#include <lttng/snapshot.h>
-#include <lttng/session-descriptor.h>
+#include <lttng/lttng.h>
 
 static char *opt_output_path;
 static char *opt_session_name;
@@ -133,7 +132,6 @@ end:
 static
 struct lttng_session_descriptor *create_session_descriptor(void)
 {
-	int ret;
 	ssize_t uri_count;
 	enum output_type output_type;
 	struct lttng_uri *uris = NULL;
@@ -145,6 +143,7 @@ struct lttng_session_descriptor *create_session_descriptor(void)
 		output_type = OUTPUT_NONE;
 	} else if (opt_output_path) {
 		char *expanded_output_path;
+		int ret;
 
 		output_type = OUTPUT_LOCAL;
 		expanded_output_path = utils_expand_path(opt_output_path);
@@ -161,6 +160,8 @@ struct lttng_session_descriptor *create_session_descriptor(void)
 			goto end;
 		}
 	} else if (opt_url || opt_ctrl_url) {
+		int ret;
+
 		uri_str1 = opt_ctrl_url ? opt_ctrl_url : opt_url;
 		uri_str2 = opt_data_url;
 

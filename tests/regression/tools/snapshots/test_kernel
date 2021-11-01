@@ -12,9 +12,9 @@ EVENT_NAME="sched_switch"
 SESSION_NAME=""
 CHANNEL_NAME="snapchan"
 
-TRACE_PATH=$(mktemp -d)
+TRACE_PATH=$(mktemp --tmpdir -d tmp.test_snapshots_kernel_trace_path.XXXXXX)
 
-NUM_TESTS=2060
+NUM_TESTS=2061
 
 source $TESTDIR/utils/utils.sh
 
@@ -31,12 +31,11 @@ function test_kernel_local_snapshot ()
 	destroy_lttng_session_ok $SESSION_NAME
 
 	# Validate test
+	validate_trace_path_kernel_snapshot "$TRACE_PATH" "" "snapshot-1" 0 ""
 	validate_trace $EVENT_NAME $TRACE_PATH/
 	if [ $? -eq 0 ]; then
 		# Only delete if successful
 		rm -rf $TRACE_PATH
-	else
-		break
 	fi
 }
 
@@ -138,9 +137,9 @@ function test_kernel_local_snapshot_discard ()
 	rm -rf $TRACE_PATH
 
 	if [ x"$FIRST_LINE" != x"$FIRST_LINE_2" ]; then
-		fail "First snapshot event do not match."
+		fail "First snapshot event do not match"
 	else
-		pass "First snapshot event match."
+		pass "First snapshot event match"
 	fi
 
 	stop_lttng_tracing_ok $SESSION_NAME
@@ -176,9 +175,9 @@ function test_kernel_local_snapshot_overwrite_small_buffers ()
 	rm -rf $TRACE_PATH
 
 	if [ x"$FIRST_LINE" != x"$FIRST_LINE_2" ]; then
-		pass "First snapshot event do not match."
+		pass "First snapshot event do not match"
 	else
-		fail "First snapshot event match."
+		fail "First snapshot event match"
 	fi
 
 	stop_lttng_tracing_ok $SESSION_NAME
@@ -222,7 +221,7 @@ else
 	isroot=0
 fi
 
-skip $isroot "Root access is needed. Skipping all kernel snapshot tests." $NUM_TESTS ||
+skip $isroot "Root access is needed. Skipping all kernel snapshot tests" $NUM_TESTS ||
 {
 
 	validate_lttng_modules_present

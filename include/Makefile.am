@@ -74,7 +74,7 @@ version.i:
 	fi; \
 	echo "#define EXTRA_VERSION_NAME \"`$(SED) -n '1p' "$(top_srcdir)/version/extra_version_name" 2> /dev/null`\"" >> version.i.tmp; \
 	echo "#define EXTRA_VERSION_DESCRIPTION \"`$(SED) -E ':a ; N ; $$!ba ; s/[^a-zA-Z0-9 \n\t\.,]/-/g ; s/\r{0,1}\n/\\\n\\\t/g' "$(top_srcdir)/version/extra_version_description" 2> /dev/null`\"" >> version.i.tmp; \
-	echo "#define EXTRA_VERSION_PATCHES \"`ls --ignore='README' -1 "$(top_srcdir)/version/extra_patches" | $(SED) -E ':a ; N ; $$!ba ; s/[^a-zA-Z0-9 \n\t\.]/-/g ; s/\r{0,1}\n/\\\n\\\t/g' 2> /dev/null`\"" >> version.i.tmp; \
+	echo "#define EXTRA_VERSION_PATCHES \"`ls -1 "$(top_srcdir)/version/extra_patches" | $(GREP) -v '^README' | $(SED) -E ':a ; N ; $$!ba ; s/[^a-zA-Z0-9 \n\t\.]/-/g ; s/\r{0,1}\n/\\\n\\\t/g' 2> /dev/null`\"" >> version.i.tmp; \
 	if test ! -f version.i || \
 			test x"`cat version.i.tmp`" != x"`cat version.i`"; then \
 		mv version.i.tmp version.i; \
@@ -97,35 +97,48 @@ CLEANFILES = version.i.tmp
 DISTCLEANFILES = version.i
 
 lttnginclude_HEADERS = \
-	lttng/health.h \
-	lttng/lttng.h \
-	lttng/constant.h \
 	lttng/channel.h \
+	lttng/clear-handle.h \
+	lttng/clear.h \
+	lttng/constant.h \
+	lttng/destruction-handle.h \
 	lttng/domain.h \
+	lttng/endpoint.h \
+	lttng/error-query.h \
+	lttng/event-expr.h \
+	lttng/event-field-value.h \
 	lttng/event.h \
 	lttng/handle.h \
-	lttng/session.h \
-	lttng/lttng-error.h \
-	lttng/snapshot.h \
-	lttng/save.h \
+	lttng/health.h \
+	lttng/kernel-probe.h \
 	lttng/load.h \
-	lttng/endpoint.h \
-	lttng/rotation.h \
 	lttng/location.h \
-	lttng/userspace-probe.h \
+	lttng/log-level-rule.h \
+	lttng/lttng-error.h \
+	lttng/lttng.h \
+	lttng/rotation.h \
+	lttng/save.h \
 	lttng/session-descriptor.h \
-	lttng/destruction-handle.h \
-	lttng/clear.h \
-	lttng/clear-handle.h \
-	lttng/tracker.h
+	lttng/session.h \
+	lttng/snapshot.h \
+	lttng/tracker.h \
+	lttng/userspace-probe.h
 
 lttngactioninclude_HEADERS= \
 	lttng/action/action.h \
-	lttng/action/notify.h
+	lttng/action/list.h \
+	lttng/action/notify.h \
+	lttng/action/path.h \
+	lttng/action/rotate-session.h \
+	lttng/action/snapshot-session.h \
+	lttng/action/start-session.h \
+	lttng/action/stop-session.h \
+	lttng/action/rate-policy.h
 
 lttngconditioninclude_HEADERS= \
 	lttng/condition/condition.h \
 	lttng/condition/buffer-usage.h \
+	lttng/condition/event-rule-matches.h \
 	lttng/condition/session-consumed-size.h \
 	lttng/condition/session-rotation.h \
 	lttng/condition/evaluation.h
@@ -137,29 +150,63 @@ lttngnotificationinclude_HEADERS= \
 lttngtriggerinclude_HEADERS= \
 	lttng/trigger/trigger.h
 
+lttngeventruleinclude_HEADERS= \
+	lttng/event-rule/event-rule.h \
+	lttng/event-rule/jul-logging.h \
+	lttng/event-rule/kernel-kprobe.h \
+	lttng/event-rule/kernel-syscall.h \
+	lttng/event-rule/kernel-tracepoint.h \
+	lttng/event-rule/kernel-uprobe.h \
+	lttng/event-rule/log4j-logging.h \
+	lttng/event-rule/python-logging.h \
+	lttng/event-rule/user-tracepoint.h
+
 noinst_HEADERS = \
-	lttng/snapshot-internal.h \
-	lttng/health-internal.h \
-	lttng/save-internal.h \
-	lttng/load-internal.h \
 	lttng/action/action-internal.h \
+	lttng/action/list-internal.h \
 	lttng/action/notify-internal.h \
-	lttng/condition/condition-internal.h \
-	lttng/condition/buffer-usage-internal.h \
-	lttng/condition/session-consumed-size-internal.h \
-	lttng/condition/evaluation-internal.h \
-	lttng/condition/session-rotation-internal.h \
-	lttng/notification/notification-internal.h \
-	lttng/trigger/trigger-internal.h \
-	lttng/endpoint-internal.h \
-	lttng/notification/channel-internal.h \
+	lttng/action/path-internal.h \
+	lttng/action/rotate-session-internal.h \
+	lttng/action/snapshot-session-internal.h \
+	lttng/action/start-session-internal.h \
+	lttng/action/stop-session-internal.h \
+	lttng/action/rate-policy-internal.h \
 	lttng/channel-internal.h \
+	lttng/condition/buffer-usage-internal.h \
+	lttng/condition/condition-internal.h \
+	lttng/condition/evaluation-internal.h \
+	lttng/condition/event-rule-matches-internal.h \
+	lttng/condition/session-consumed-size-internal.h \
+	lttng/condition/session-rotation-internal.h \
+	lttng/domain-internal.h \
+	lttng/endpoint-internal.h \
+	lttng/error-query-internal.h \
+	lttng/event-expr-internal.h \
+	lttng/event-field-value-internal.h \
 	lttng/event-internal.h \
-	lttng/rotate-internal.h \
-	lttng/ref-internal.h \
+	lttng/event-rule/event-rule-internal.h \
+	lttng/event-rule/jul-logging-internal.h \
+	lttng/event-rule/kernel-kprobe-internal.h \
+	lttng/event-rule/kernel-syscall-internal.h \
+	lttng/event-rule/kernel-tracepoint-internal.h \
+	lttng/event-rule/kernel-uprobe-internal.h \
+	lttng/event-rule/log4j-logging-internal.h \
+	lttng/event-rule/python-logging-internal.h \
+	lttng/event-rule/user-tracepoint-internal.h \
+	lttng/health-internal.h \
+	lttng/kernel-probe-internal.h \
+	lttng/load-internal.h \
 	lttng/location-internal.h \
-	lttng/userspace-probe-internal.h \
-	lttng/session-internal.h \
+	lttng/log-level-rule-internal.h \
+	lttng/notification/channel-internal.h \
+	lttng/notification/notification-internal.h \
+	lttng/ref-internal.h \
+	lttng/rotate-internal.h \
+	lttng/save-internal.h \
 	lttng/session-descriptor-internal.h \
+	lttng/session-internal.h \
+	lttng/snapshot-internal.h \
+	lttng/trigger/trigger-internal.h \
+	lttng/userspace-probe-internal.h \
 	version.h \
 	version.i

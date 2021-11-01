@@ -2,12 +2,12 @@
 .\"     Title: lttng-track
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 4 March 2020
+.\"      Date: 14 June 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.12.3
+.\"    Source: LTTng 2.13.1
 .\"  Language: English
 .\"
-.TH "LTTNG\-TRACK" "1" "4 March 2020" "LTTng 2\&.12\&.3" "LTTng Manual"
+.TH "LTTNG\-TRACK" "1" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -28,70 +28,58 @@
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
 .SH "NAME"
-lttng-track \- Add one or more values to an LTTng process attribute tracker
+lttng-track \- Allow specific processes to record LTTng events
 .SH "SYNOPSIS"
 .sp
-Add specific process attribute values to a Linux kernel domain tracker:
+Allow specific processes to record Linux kernel events:
 .sp
 .nf
-\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBtrack\fR \fB--kernel\fR
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBtrack\fR \fB--kernel\fR [\fB--session\fR=\fISESSION\fR]
       (\fB--pid\fR=PID[,PID]\&... | \fB--vpid\fR=VPID[,VPID]\&... |
-      \fB--uid\fR=UID[,UID]\&... | \fB--vuid\fR=VUID[,VUID]\&... |
-      \fB--gid\fR=GID[,GID]\&... | \fB--vgid\fR=VGID[,VGID]\&... )\&...
+       \fB--uid\fR=UID[,UID]\&... | \fB--vuid\fR=VUSER[,VUSER]\&... |
+       \fB--gid\fR=GID[,GID]\&... | \fB--vgid\fR=VGROUP[,VGROUP]\&...)\&...
 .fi
 .sp
-Add all possible process attribute values to a Linux kernel domain tracker:
-.sp
 .nf
-\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBtrack\fR \fB--kernel\fR
-      \fB--all\fR (\fB--pid\fR | \fB--vpid\fR | \fB--uid\fR |
-      \fB--vuid\fR | \fB--gid\fR | \fB--vgid\fR )\&...
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBtrack\fR \fB--kernel\fR [\fB--session\fR=\fISESSION\fR]
+      \fB--all\fR (\fB--pid\fR | \fB--vpid\fR | \fB--uid\fR | \fB--vuid\fR | \fB--gid\fR | \fB--vgid\fR)\&...
 .fi
 .sp
-Add specific process attribute values to a user space domain tracker:
+Allow specific processes to record user space events:
 .sp
 .nf
-\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBtrack\fR \fB--userspace\fR
-      (\fB--vpid\fR=VPID[,VPID]\&... | \fB--vuid\fR=VUID[,VUID]\&... | \fB--vgid\fR=VGID[,VGID]\&...)\&...
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBtrack\fR \fB--userspace\fR [\fB--session\fR=\fISESSION\fR]
+      (\fB--vpid\fR=VPID[,VPID]\&... | \fB--vuid\fR=VUSER[,VUSER]\&... |
+       \fB--vgid\fR=VGROUP[,VGROUP]\&...)\&...
 .fi
 .sp
-Add all possible process attribute values to a user space domain tracker:
-.sp
 .nf
-\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBtrack\fR \fB--userspace\fR
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBtrack\fR \fB--userspace\fR [\fB--session\fR=\fISESSION\fR]
       \fB--all\fR (\fB--vpid\fR | \fB--vgid\fR | \fB--vuid\fR)\&...
 .fi
 .SH "DESCRIPTION"
 .sp
-The \fBlttng track\fR commands adds one or more values to a process attribute tracker\&.
-.sp
-A process attribute tracker is an \fIinclusion set\fR of process attributes\&. Tracked processes are allowed to emit events, provided those events are targeted by enabled event rules (see \fBlttng-enable-event\fR(1))\&.
-.sp
-Tracker values can be removed from an inclusion set with \fBlttng-untrack\fR(1)\&.
-.sp
-The available process attribute trackers are:
-.sp
+The \fBlttng track\fR command allows one or more processes to record LTTng events based on their attributes within:
+.PP
+With the \fB--session\fR=\fISESSION\fR option
 .RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-Process ID (PID)
+The recording session named
+\fISESSION\fR\&.
+.RE
+.PP
+Without the \fB--session\fR option
+.RS 4
+The current recording session (see
+\fBlttng-concepts\fR(7)
+to learn more about the current recording session)\&.
 .RE
 .sp
+See \fBlttng-concepts\fR(7) to learn more about recording sessions and recording event rules\&.
+.sp
+The \fBtrack\fR command adds values to \fIinclusion sets\fR of process attributes\&. The available inclusion sets are, for a given recording session:
+.PP
+With the \fB--kernel\fR option
 .RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-Virtual PID (VPID)
-.RE
 .sp
 .RS 4
 .ie n \{\
@@ -101,7 +89,7 @@ Virtual PID (VPID)
 .sp -1
 .IP \(bu 2.3
 .\}
-User ID (UID)
+Process ID (PID)\&.
 .RE
 .sp
 .RS 4
@@ -112,7 +100,9 @@ User ID (UID)
 .sp -1
 .IP \(bu 2.3
 .\}
-Virtual UID (VUID)
+Virtual process ID (VPID)\&.
+.sp
+This is the PID as seen by the application\&.
 .RE
 .sp
 .RS 4
@@ -123,7 +113,7 @@ Virtual UID (VUID)
 .sp -1
 .IP \(bu 2.3
 .\}
-Group ID (GID)
+Unix user ID (UID)\&.
 .RE
 .sp
 .RS 4
@@ -134,23 +124,106 @@ Group ID (GID)
 .sp -1
 .IP \(bu 2.3
 .\}
-Virtual GID (VGID)
+Virtual Unix user ID (VUID)\&.
+.sp
+This is the UID as seen by the application\&.
 .RE
 .sp
-A tracker follows one or more process attribute values; only the processes with a tracked value are allowed to emit events\&. By default, all possible values on the system are tracked: any process may emit enabled events, the equivalent of:
-.sp
-.if n \{\
 .RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
 .\}
-.nf
-$ lttng track \-\-kernel \-\-pid \-\-vpid \-\-uid \-\-vuid \-\-gid \-\-vgid \-\-all
-$ lttng track \-\-userspace \-\-vpid \-\-vuid \-\-vgid \-\-all
-.fi
-.if n \{\
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Unix group ID (GID)\&.
 .RE
-.\}
 .sp
-With the PID tracker, for example, you can record all system calls of a given process:
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Virtual Unix group ID (VGID)\&.
+.sp
+This is the GID as seen by the application\&.
+.RE
+.RE
+.PP
+With the \fB--userspace\fR option
+.RS 4
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+VPID
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+VUID
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+VGID
+.RE
+.RE
+.sp
+When an event\ \&\fIE\fR satisfies all the other explicit and implicit conditions of an event rule\ \&\fIER\fR, \fIER\fR matches\ \&\fIE\fR if the attributes of the process for which LTTng creates\ \&\fIE\fR are \fBall\fR part of the inclusion sets of the recording session and domain of\ \&\fIER\fR\&.
+.sp
+By default, on recording session creation (see \fBlttng-create\fR(1)), all processes are allowed to record events\&. In other words, all the inclusion sets of the recording session contain all the possible process attribute values\&.
+.sp
+If a given inclusion set\ \&\fIIS\fR contains all the possible values (\fB--all\fR option), then using the \fBtrack\fR command to add one or more values\ \&\fIV\fR to\ \&\fIIS\fR:
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 1.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  1." 4.2
+.\}
+Removes all the values from\ \&\fIIS\fR\&.
+.sp
+This effectively makes\ \&\fIIS\fR
+empty\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 2.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  2." 4.2
+.\}
+Adds\ \&\fIV\fR
+to\ \&\fIIS\fR\&.
+.RE
+.sp
+Example: with the PID inclusion set, you can record all the system calls of a given process:
 .sp
 .if n \{\
 .RS 4
@@ -164,11 +237,23 @@ $ lttng start
 .RE
 .\}
 .sp
-If all the PIDs are tracked (with the \fB--pid\fR and \fB--all\fR options), which is the default state of all domains when creating a tracing session), then using the track command with one or more specific PIDs has the effect of first removing all the PIDs from the inclusion set, then adding the specified PIDs\&.
-.SS "Example"
+See the \(lqEXAMPLES\(rq section below for usage examples\&.
+.sp
+Remove values from an inclusion set with the \fBlttng-untrack\fR(1) command\&.
+.SS "Inclusion set example"
+.sp
+This example operates on the Linux kernel process ID (PID) inclusion set of the current recording session to show how an inclusion set works\&.
 .sp
 Assume the maximum system PID is 7 for this example\&.
 .sp
+.RS 4
+.ie n \{\
+\h'-04' 1.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  1." 4.2
+.\}
 Initial inclusion set:
 .sp
 .if n \{\
@@ -180,7 +265,16 @@ Initial inclusion set:
 .if n \{\
 .RE
 .\}
+.RE
 .sp
+.RS 4
+.ie n \{\
+\h'-04' 2.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  2." 4.2
+.\}
 Command:
 .sp
 .if n \{\
@@ -193,7 +287,7 @@ $ lttng track \-\-kernel \-\-pid=3,6,7
 .RE
 .\}
 .sp
-inclusion set:
+Inclusion set is now:
 .sp
 .if n \{\
 .RS 4
@@ -204,7 +298,16 @@ inclusion set:
 .if n \{\
 .RE
 .\}
+.RE
 .sp
+.RS 4
+.ie n \{\
+\h'-04' 3.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  3." 4.2
+.\}
 Command:
 .sp
 .if n \{\
@@ -217,7 +320,7 @@ $ lttng untrack \-\-kernel \-\-pid=7
 .RE
 .\}
 .sp
-inclusion set:
+Inclusion set is now:
 .sp
 .if n \{\
 .RS 4
@@ -228,7 +331,16 @@ inclusion set:
 .if n \{\
 .RE
 .\}
+.RE
 .sp
+.RS 4
+.ie n \{\
+\h'-04' 4.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  4." 4.2
+.\}
 Command:
 .sp
 .if n \{\
@@ -241,7 +353,7 @@ $ lttng track \-\-kernel \-\-pid=1,5
 .RE
 .\}
 .sp
-inclusion set:
+Inclusion set is now:
 .sp
 .if n \{\
 .RS 4
@@ -252,300 +364,259 @@ inclusion set:
 .if n \{\
 .RE
 .\}
+.RE
 .sp
-See the \fBlttng-untrack\fR(1) for more details about removing values from the inclusion set\&.
+Remove values from an inclusion set with the \fBlttng-untrack\fR(1) command\&.
 .SH "OPTIONS"
 .sp
-General options are described in \fBlttng\fR(1)\&.
-.SS "Domain"
+See \fBlttng\fR(1) for \fIGENERAL OPTIONS\fR\&.
+.SS "Tracing domain"
 .sp
 One of:
 .PP
 \fB-k\fR, \fB--kernel\fR
 .RS 4
-Track process attributes in the Linux kernel domain\&.
+Add values to one or more Linux kernel inclusion sets\&.
 .RE
 .PP
 \fB-u\fR, \fB--userspace\fR
 .RS 4
-Track process attributes in the user space domain\&.
+Add values to one or more user space inclusion sets\&.
 .RE
-.SS "Target"
+.SS "Recording target"
 .PP
 \fB-s\fR \fISESSION\fR, \fB--session\fR=\fISESSION\fR
 .RS 4
-Track process attributes in the tracing session named
+Add values to one or more inclusion sets of the recording session named
 \fISESSION\fR
-instead of the current tracing session\&.
+instead of the current recording session\&.
 .RE
-.SS "Tracking"
-.PP
-\fB-a\fR, \fB--all\fR
-.RS 4
-Used in conjunction with a single, empty
-\fB--pid\fR,
-\fB--vpid\fR,
-\fB--uid\fR,
-\fB--vuid\fR,
-\fB--gid\fR, or
-\fB--vgid\fR
-option: track
-\fIall\fR
-possible process attribute values (add all values to the inclusion set)\&.
-.RE
+.SS "Inclusion set selection"
 .PP
 \fB-p\fR [\fIPID\fR[,\fIPID\fR]\&...], \fB--pid\fR[=\fIPID\fR[,\fIPID\fR]\&...]
 .RS 4
-Track process ID values
+For each
 \fIPID\fR
-(add them to the process ID inclusion set)\&.
+argument, add
+\fIPID\fR
+to the process ID inclusion set of the selected recording session and domain\&.
 .sp
 \fIPID\fR
-is the process ID attribute of a process as seen from the
-\fIroot PID namespace\fR
-(see
-\fBpid_namespaces\fR(7))\&. It can only be used with the
+is the process ID attribute of a process as seen from the root PID namespace (see
+\fBpid_namespaces\fR(7))\&.
+.sp
+Only available with
 \fB--kernel\fR
-domain option\&.
-.sp
-The
-\fIPID\fR
-argument must be omitted when also using the
-\fB--all\fR
 option\&.
 .RE
 .PP
 \fB--vpid\fR[=\fIVPID\fR[,\fIVPID\fR]\&...]
 .RS 4
-Track virtual process ID values
+For each
 \fIVPID\fR
-(add them to the virtual process ID inclusion set)\&.
+argument, add
+\fIVPID\fR
+to the virtual process ID inclusion set of the selected recording session and domain\&.
 .sp
 \fIVPID\fR
-is the virtual process ID attribute of a process as seen from the
-\fIPID namespace\fR
-of the process (see
+is the virtual process ID attribute of a process as seen from the PID namespace of the process (see
 \fBpid_namespaces\fR(7))\&.
-.sp
-The
-\fIVPID\fR
-argument must be omitted when also using the
-\fB--all\fR
-option\&.
 .RE
 .PP
 \fB--uid\fR[=\fIUSER\fR[,\fIUSER\fR]\&...]
 .RS 4
-Track user ID process attribute values
+For each
 \fIUSER\fR
-(add them to the user ID inclusion set)\&.
+argument, add
+\fIUSER\fR
+to the user ID inclusion set of the selected recording session and domain\&.
 .sp
 \fIUSER\fR
-is the real user ID (see
-\fBgetuid\fR(3)) of a process as seen from the
-\fIroot user namespace\fR
-(see
-\fBuser_namespaces\fR(7))\&. It can only be used with the
+is either:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The real user ID (see
+\fBgetuid\fR(3)) of a process as seen from the root user namespace (see
+\fBuser_namespaces\fR(7))\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A user name\&.
+.sp
+The connected LTTng session daemon (see
+\fBlttng-sessiond\fR(8)) performs the user name resolution on addition to the user ID inclusion set\&.
+.RE
+.sp
+Only available with
 \fB--kernel\fR
-domain option\&.
-.sp
-\fIUSER\fR
-can also be a user name\&. The user name resolution is performed by the session daemon (see
-\fBlttng-sessiond\fR(8)) on addition to the user ID inclusion set\&.
-.sp
-The
-\fIUSER\fR
-argument must be omitted when also using the
-\fB--all\fR
 option\&.
 .RE
 .PP
-\fB--vuid\fR[=\fIUSER\fR[,\fIUSER\fR]\&...]
+\fB--vuid\fR[=\fIVUSER\fR[,\fIVUSER\fR]\&...]
 .RS 4
-Track virtual user ID process attribute values
-\fIUSER\fR
-(add them to the virtual user ID inclusion set)\&.
+For each
+\fIVUSER\fR
+argument, add
+\fIVUSER\fR
+to the virtual user ID inclusion set of the selected recording session and domain\&.
 .sp
-\fIUSER\fR
-is the real user ID (see
-\fBgetuid\fR(3)) of a process as seen from the
-\fIuser namespace\fR
-of the process (see
+\fIVUSER\fR
+is either:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The real user ID (see
+\fBgetuid\fR(3)) of a process as seen from the user namespace (see
 \fBuser_namespaces\fR(7))\&.
+.RE
 .sp
-\fIUSER\fR
-can also be a user name\&. The user name resolution is performed by the session daemon (see
-\fBlttng-sessiond\fR(8)) on addition to the virtual user ID inclusion set\&.
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A user name\&.
 .sp
-The
-\fIUSER\fR
-argument must be omitted when also using the
-\fB--all\fR
-option\&.
+The connected LTTng session daemon (see
+\fBlttng-sessiond\fR(8)) performs the user name resolution on addition to the virtual user ID inclusion set\&.
+.RE
 .RE
 .PP
 \fB--gid\fR[=\fIGROUP\fR[,\fIGROUP\fR]\&...]
 .RS 4
-Track group ID process attribute values
+For each
 \fIGROUP\fR
-(add them to the group ID inclusion set)\&.
+argument, add
+\fIGROUP\fR
+to the group ID inclusion set of the selected recording session and domain\&.
 .sp
 \fIGROUP\fR
-is the real group ID (see
-\fBgetgid\fR(3)) of a process as seen from the
-\fIroot user namespace\fR
-(see
-\fBuser_namespaces\fR(7))\&. It can only be used with the
+is either:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The real group ID (see
+\fBgetgid\fR(3)) of a process as seen from the root user namespace (see
+\fBuser_namespaces\fR(7))\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A group name\&.
+.sp
+The connected LTTng session daemon (see
+\fBlttng-sessiond\fR(8)) performs the group name resolution on addition to the group ID inclusion set\&.
+.RE
+.sp
+Only available with
 \fB--kernel\fR
-domain option\&.
-.sp
-\fIGROUP\fR
-can also be a group name\&. The group name resolution is performed by the session daemon (see
-\fBlttng-sessiond\fR(8)) on addition to the group ID inclusion set\&.
-.sp
-The
-\fIGROUP\fR
-argument must be omitted when also using the
-\fB--all\fR
 option\&.
 .RE
 .PP
-\fB--vgid\fR[=\fIGROUP\fR[,\fIGROUP\fR]\&...]
+\fB--vgid\fR[=\fIVGROUP\fR[,\fIVGROUP\fR]\&...]
 .RS 4
-Track virtual group ID process attribute values
-\fIGROUP\fR(add them to the virtual group ID inclusion set)\&.
+For each
+\fIVGROUP\fR
+argument, add
+\fIVGROUP\fR
+to the virtual group ID inclusion set of the selected recording session and domain\&.
 .sp
-\fIGROUP\fR
-is the real group ID (see
-\fBgetgid\fR(3)) of a process as seen from the
-\fIuser namespace\fR
-of the process (see
+\fIVGROUP\fR
+is either:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The real group ID (see
+\fBgetgid\fR(3)) of a process as seen from the user namespace (see
 \fBuser_namespaces\fR(7))\&.
+.RE
 .sp
-\fIGROUP\fR
-can also be a group name\&. The group name resolution is performed by the session daemon (see
-\fBlttng-sessiond\fR(8)) on addition to the virtual group ID inclusion set\&.
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A group name\&.
 .sp
-The
-\fIGROUP\fR
-argument must be omitted when also using the
-\fB--all\fR
-option\&.
+The connected LTTng session daemon (see
+\fBlttng-sessiond\fR(8)) performs the group name resolution on addition to the virtual group ID inclusion set\&.
+.RE
+.RE
+.SS "Inclusion set operation"
+.PP
+\fB-a\fR, \fB--all\fR
+.RS 4
+With one or more empty
+\fB--pid\fR,
+\fB--vpid\fR,
+\fB--uid\fR,
+\fB--vuid\fR,
+\fB--gid\fR, and
+\fB--vgid\fR
+options: add
+\fBall\fR
+the possible values to the selected inclusion sets\&.
 .RE
 .SS "Program information"
 .PP
 \fB-h\fR, \fB--help\fR
 .RS 4
-Show command help\&.
+Show help\&.
 .sp
-This option, like
-\fBlttng-help\fR(1), attempts to launch
+This option attempts to launch
 \fB/usr/bin/man\fR
-to view the command\(cqs man page\&. The path to the man pager can be overridden by the
+to view this manual page\&. Override the manual pager path with the
 \fBLTTNG_MAN_BIN_PATH\fR
 environment variable\&.
 .RE
 .PP
 \fB--list-options\fR
 .RS 4
-List available command options\&.
-.RE
-.SH "ENVIRONMENT VARIABLES"
-.PP
-\fBLTTNG_ABORT_ON_ERROR\fR
-.RS 4
-Set to 1 to abort the process after the first error is encountered\&.
-.RE
-.PP
-\fBLTTNG_HOME\fR
-.RS 4
-Overrides the
-\fB$HOME\fR
-environment variable\&. Useful when the user running the commands has a non\-writable home directory\&.
-.RE
-.PP
-\fBLTTNG_MAN_BIN_PATH\fR
-.RS 4
-Absolute path to the man pager to use for viewing help information about LTTng commands (using
-\fBlttng-help\fR(1)
-or
-\fBlttng COMMAND --help\fR)\&.
-.RE
-.PP
-\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
-.RS 4
-Path in which the
-\fBsession.xsd\fR
-session configuration XML schema may be found\&.
-.RE
-.PP
-\fBLTTNG_SESSIOND_PATH\fR
-.RS 4
-Full session daemon binary path\&.
-.sp
-The
-\fB--sessiond-path\fR
-option has precedence over this environment variable\&.
-.RE
-.sp
-Note that the \fBlttng-create\fR(1) command can spawn an LTTng session daemon automatically if none is running\&. See \fBlttng-sessiond\fR(8) for the environment variables influencing the execution of the session daemon\&.
-.SH "FILES"
-.PP
-\fB$LTTNG_HOME/.lttngrc\fR
-.RS 4
-User LTTng runtime configuration\&.
-.sp
-This is where the per\-user current tracing session is stored between executions of
-\fBlttng\fR(1)\&. The current tracing session can be set with
-\fBlttng-set-session\fR(1)\&. See
-\fBlttng-create\fR(1)
-for more information about tracing sessions\&.
-.RE
-.PP
-\fB$LTTNG_HOME/lttng-traces\fR
-.RS 4
-Default output directory of LTTng traces\&. This can be overridden with the
-\fB--output\fR
-option of the
-\fBlttng-create\fR(1)
-command\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng\fR
-.RS 4
-User LTTng runtime and configuration directory\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng/sessions\fR
-.RS 4
-Default location of saved user tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.PP
-\fB/usr/local/etc/lttng/sessions\fR
-.RS 4
-System\-wide location of saved tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-.sp
-\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR when not explicitly set\&.
-.sp .5v
+List available command options and quit\&.
 .RE
 .SH "EXIT STATUS"
 .PP
@@ -573,9 +644,163 @@ Fatal error
 .RS 4
 Command warning (something went wrong during the command)
 .RE
-.SH "BUGS"
+.SH "ENVIRONMENT"
+.PP
+\fBLTTNG_ABORT_ON_ERROR\fR
+.RS 4
+Set to
+\fB1\fR
+to abort the process after the first error is encountered\&.
+.RE
+.PP
+\fBLTTNG_HOME\fR
+.RS 4
+Path to the LTTng home directory\&.
 .sp
-If you encounter any issue or usability problem, please report it on the LTTng bug tracker <https://bugs.lttng.org/projects/lttng-tools>\&.
+Defaults to
+\fB$HOME\fR\&.
+.sp
+Useful when the Unix user running the commands has a non\-writable home directory\&.
+.RE
+.PP
+\fBLTTNG_MAN_BIN_PATH\fR
+.RS 4
+Absolute path to the manual pager to use to read the LTTng command\-line help (with
+\fBlttng-help\fR(1)
+or with the
+\fB--help\fR
+option) instead of
+\fB/usr/bin/man\fR\&.
+.RE
+.PP
+\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
+.RS 4
+Path to the directory containing the
+\fBsession.xsd\fR
+recording session configuration XML schema\&.
+.RE
+.PP
+\fBLTTNG_SESSIOND_PATH\fR
+.RS 4
+Absolute path to the LTTng session daemon binary (see
+\fBlttng-sessiond\fR(8)) to spawn from the
+\fBlttng-create\fR(1)
+command\&.
+.sp
+The
+\fB--sessiond-path\fR
+general option overrides this environment variable\&.
+.RE
+.SH "FILES"
+.PP
+\fB$LTTNG_HOME/.lttngrc\fR
+.RS 4
+Unix user\(cqs LTTng runtime configuration\&.
+.sp
+This is where LTTng stores the name of the Unix user\(cqs current recording session between executions of
+\fBlttng\fR(1)\&.
+\fBlttng-create\fR(1)
+and
+\fBlttng-set-session\fR(1)
+set the current recording session\&.
+.RE
+.PP
+\fB$LTTNG_HOME/lttng-traces\fR
+.RS 4
+Default output directory of LTTng traces in local and snapshot modes\&.
+.sp
+Override this path with the
+\fB--output\fR
+option of the
+\fBlttng-create\fR(1)
+command\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng\fR
+.RS 4
+Unix user\(cqs LTTng runtime and configuration directory\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng/sessions\fR
+.RS 4
+Default directory containing the Unix user\(cqs saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.PP
+\fB/usr/local/etc/lttng/sessions\fR
+.RS 4
+Directory containing the system\-wide saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+\fB$LTTNG_HOME\fR defaults to the value of the \fBHOME\fR environment variable\&.
+.sp .5v
+.RE
+.SH "EXAMPLES"
+.PP
+\fBExample\ \&1.\ \&Add the PIDs 1728 and 3775 to the Linux kernel process ID inclusion set of the current recording session\&.\fR
+.RS 4
+.sp
+See the \fB--pid\fR option\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng track \-\-kernel \-\-pid=1728,3775
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&2.\ \&Add the ID of a specific user to the user space virtual user ID inclusion set of a specific recording session\&.\fR
+.RS 4
+.sp
+See the \fB--vuid\fR and \fB--session\fR options\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng track \-\-userspace \-\-session=my\-session \-\-vuid=http
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&3.\ \&Add all the possible group IDs to the Linux kernel group ID inclusion set of the current recording session\&.\fR
+.RS 4
+.sp
+See the \fB--all\fR and \fB--gid\fR options\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng track \-\-kernel \-\-all \-\-gid
+.fi
+.if n \{\
+.RE
+.\}
+.RE
 .SH "RESOURCES"
 .sp
 .RS 4
@@ -608,7 +833,7 @@ LTTng documentation <https://lttng.org/docs>
 .sp -1
 .IP \(bu 2.3
 .\}
-Git repositories <http://git.lttng.org>
+LTTng bug tracker <https://bugs.lttng.org>
 .RE
 .sp
 .RS 4
@@ -619,7 +844,7 @@ Git repositories <http://git.lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-GitHub organization <http://github.com/lttng>
+Git repositories <https://git.lttng.org>
 .RE
 .sp
 .RS 4
@@ -630,7 +855,7 @@ GitHub organization <http://github.com/lttng>
 .sp -1
 .IP \(bu 2.3
 .\}
-Continuous integration <http://ci.lttng.org/>
+GitHub organization <https://github.com/lttng>
 .RE
 .sp
 .RS 4
@@ -641,7 +866,18 @@ Continuous integration <http://ci.lttng.org/>
 .sp -1
 .IP \(bu 2.3
 .\}
-Mailing list <http://lists.lttng.org>
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
 for support and development:
 \fBlttng-dev@lists.lttng.org\fR
 .RE
@@ -659,11 +895,11 @@ IRC channel <irc://irc.oftc.net/lttng>:
 on
 \fBirc.oftc.net\fR
 .RE
-.SH "COPYRIGHTS"
+.SH "COPYRIGHT"
 .sp
 This program is part of the LTTng\-tools project\&.
 .sp
-LTTng\-tools is distributed under the GNU General Public License version 2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
 .SH "THANKS"
 .sp
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
@@ -671,4 +907,4 @@ Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.p
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
 .SH "SEE ALSO"
 .sp
-\fBlttng-untrack\fR(1), \fBlttng\fR(1)
+\fBlttng\fR(1), \fBlttng-untrack\fR(1), \fBlttng-concepts\fR(7)

@@ -18,11 +18,6 @@ source $CURDIR/rotate_utils.sh
 # Overwrite the lttng_bin to get mi output
 LTTNG_BIN="lttng --mi xml"
 
-XSD_PATH=$TESTDIR/../src/common/mi-lttng-4.0.xsd
-
-XML_VALIDATE="$TESTDIR/regression/tools/mi/validate_xml $XSD_PATH"
-XML_EXTRACT="$TESTDIR/regression/tools/mi/extract_xml"
-
 XPATH_CMD_OUTPUT="//lttng:command/lttng:output"
 XPATH_SESSION="$XPATH_CMD_OUTPUT/lttng:sessions/lttng:session"
 XPATH_ENABLE_ROTATE_TIMER="$XPATH_CMD_OUTPUT/lttng:rotation_schedule_results/lttng:rotation_schedule_result/lttng:rotation_schedule/lttng:periodic/lttng:time_us"
@@ -33,9 +28,9 @@ XPATH_LIST_ROTATE_SIZE="$XPATH_SESSION/lttng:rotation_schedules/lttng:size_thres
 
 function test_save_load_mi ()
 {
-	tmp_xml_output=$(mktemp -u)
-	tmp_save_output=$(mktemp -d)
-	trace_path=$(mktemp -d)
+	local tmp_xml_output=$(mktemp --tmpdir -u -t "tmp.${FUNCNAME[0]}_xml_output.XXXXXX")
+	local tmp_save_output=$(mktemp --tmpdir -d -t "tmp.${FUNCNAME[0]}_save_output.XXXXXX")
+	local trace_path=$(mktemp --tmpdir -d -t "tmp.${FUNCNAME[0]}_trace_path.XXXXXX")
 
 	diag "Test save/load/list/MI with rotation"
 	create_lttng_session_ok $SESSION_NAME $trace_path
@@ -45,7 +40,7 @@ function test_save_load_mi ()
 
 	OUTPUT_DEST=${tmp_xml_output}
 	lttng_enable_rotation_timer_ok $SESSION_NAME 500ms
-	$XML_VALIDATE ${tmp_xml_output}
+	$MI_VALIDATE ${tmp_xml_output}
 	ok $? "Valid lttng enable-rotation timer XML"
 
 	value=$($XML_EXTRACT ${tmp_xml_output} ${XPATH_ENABLE_ROTATE_TIMER})
@@ -54,7 +49,7 @@ function test_save_load_mi ()
 
 	# Enable a rotation size and check the MI output of the command
 	lttng_enable_rotation_size_ok $SESSION_NAME 500k
-	$XML_VALIDATE ${tmp_xml_output}
+	$MI_VALIDATE ${tmp_xml_output}
 	ok $? "Valid lttng enable-rotation size XML"
 
 	value=$($XML_EXTRACT ${tmp_xml_output} ${XPATH_ENABLE_ROTATE_SIZE})
@@ -63,7 +58,7 @@ function test_save_load_mi ()
 
 	# Check the output of lttng list with the 2 rotation parameters
 	list_lttng_with_opts $SESSION_NAME
-	$XML_VALIDATE ${tmp_xml_output}
+	$MI_VALIDATE ${tmp_xml_output}
 	ok $? "Valid lttng list XML"
 
 	value=$($XML_EXTRACT ${tmp_xml_output} ${XPATH_LIST_ROTATE_TIMER})
@@ -76,14 +71,14 @@ function test_save_load_mi ()
 
 	# save, destroy and reload the same session
 	OUTPUT_DEST=/dev/null
-	lttng_save $SESSION_NAME "-o $tmp_save_output$SESSION_NAME"
+	lttng_save $SESSION_NAME "-o $tmp_save_output/$SESSION_NAME"
 	destroy_lttng_session_ok $SESSION_NAME
-	lttng_load_ok "-i $tmp_save_output$SESSION_NAME"
+	lttng_load_ok "-i $tmp_save_output/$SESSION_NAME"
 
 	OUTPUT_DEST=${tmp_xml_output}
 	# Check the output of lttng list with the 2 rotation parameters after the load
 	list_lttng_with_opts $SESSION_NAME
-	$XML_VALIDATE ${tmp_xml_output}
+	$MI_VALIDATE ${tmp_xml_output}
 	ok $? "Valid lttng list XML after load"
 
 	value=$($XML_EXTRACT ${tmp_xml_output} ${XPATH_LIST_ROTATE_TIMER})
@@ -97,9 +92,9 @@ function test_save_load_mi ()
 	OUTPUT_DEST=/dev/null
 	destroy_lttng_session_ok $SESSION_NAME
 
-	rm -rf ${trace_path}
-	rm $tmp_xml_output
-	rm -rf $tmp_save_output
+	rm -rf "$trace_path"
+	rm "$tmp_xml_output"
+	rm -rf "$tmp_save_output"
 }
 
 plan_tests $NUM_TESTS

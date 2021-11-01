@@ -1,8 +1,5 @@
 /* include/config.h.in.  Generated from configure.ac by autoheader.  */
 
-/* This platform supports directory file descriptors. */
-#undef COMPAT_DIRFD
-
 /* Location of the babeltrace2 viewer executable. */
 #undef CONFIG_BABELTRACE2_BIN
 
@@ -11,6 +8,9 @@
 
 /* CMD_DESCR_ADD_CONTEXT */
 #undef CONFIG_CMD_DESCR_ADD_CONTEXT
+
+/* CMD_DESCR_ADD_TRIGGER */
+#undef CONFIG_CMD_DESCR_ADD_TRIGGER
 
 /* CMD_DESCR_CLEAR */
 #undef CONFIG_CMD_DESCR_CLEAR
@@ -45,11 +45,17 @@
 /* CMD_DESCR_LIST */
 #undef CONFIG_CMD_DESCR_LIST
 
+/* CMD_DESCR_LIST_TRIGGERS */
+#undef CONFIG_CMD_DESCR_LIST_TRIGGERS
+
 /* CMD_DESCR_LOAD */
 #undef CONFIG_CMD_DESCR_LOAD
 
 /* CMD_DESCR_REGENERATE */
 #undef CONFIG_CMD_DESCR_REGENERATE
+
+/* CMD_DESCR_REMOVE_TRIGGER */
+#undef CONFIG_CMD_DESCR_REMOVE_TRIGGER
 
 /* CMD_DESCR_ROTATE */
 #undef CONFIG_CMD_DESCR_ROTATE
@@ -116,6 +122,9 @@
 
 /* DEFAULT_CHANNEL_TRACEFILE_SIZE */
 #undef CONFIG_DEFAULT_CHANNEL_TRACEFILE_SIZE
+
+/* DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE */
+#undef CONFIG_DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE
 
 /* DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT */
 #undef CONFIG_DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT
@@ -246,7 +255,7 @@
 /* Define to 1 if you have the `clock_gettime' function. */
 #undef HAVE_CLOCK_GETTIME
 
-/* Define to 1 if you have the `dirfd' function. */
+/* This platform supports directory file descriptors. */
 #undef HAVE_DIRFD
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
@@ -312,9 +321,6 @@
 /* Define to 1 if you have the `rt' library (-lrt). */
 #undef HAVE_LIBRT
 
-/* Define to 1 if you have the `urcu-cds' library (-lurcu-cds). */
-#undef HAVE_LIBURCU_CDS
-
 /* Define to 1 if you have the <limits.h> header file. */
 #undef HAVE_LIMITS_H
 
@@ -357,11 +363,29 @@
 /* Define if you have POSIX threads libraries and header files. */
 #undef HAVE_PTHREAD
 
+/* Have function pthread_getname_np(char*, size_t) */
+#undef HAVE_PTHREAD_GETNAME_NP_WITHOUT_TID
+
+/* Have function pthread_getname_np(pthread_t, char*, size_t) */
+#undef HAVE_PTHREAD_GETNAME_NP_WITH_TID
+
+/* Have function pthread_get_name_np(pthread_t, char*, size_t) */
+#undef HAVE_PTHREAD_GET_NAME_NP_WITH_TID
+
 /* Define to 1 if you have the <pthread.h> header file. */
 #undef HAVE_PTHREAD_H
 
 /* Have PTHREAD_PRIO_INHERIT. */
 #undef HAVE_PTHREAD_PRIO_INHERIT
+
+/* Have function pthread_setname_np(const char*) */
+#undef HAVE_PTHREAD_SETNAME_NP_WITHOUT_TID
+
+/* Have function pthread_setname_np(pthread_t, const char*) */
+#undef HAVE_PTHREAD_SETNAME_NP_WITH_TID
+
+/* Have function pthread_set_name_np(pthread_t, const char*) */
+#undef HAVE_PTHREAD_SET_NAME_NP_WITH_TID
 
 /* Define to 1 if you have the `putenv' function. */
 #undef HAVE_PUTENV

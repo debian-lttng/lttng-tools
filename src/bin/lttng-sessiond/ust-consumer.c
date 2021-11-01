@@ -6,13 +6,13 @@
  */
 
 #define _LGPL_SOURCE
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <inttypes.h>
 
+#include <common/compat/errno.h>
 #include <common/common.h>
 #include <common/consumer/consumer.h>
 #include <common/defaults.h>
@@ -42,7 +42,7 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 	uint64_t key, chan_reg_key;
 	char *pathname = NULL;
 	struct lttcomm_consumer_msg msg;
-	struct ust_registry_channel *chan_reg;
+	struct ust_registry_channel *ust_reg_chan;
 	char shm_path[PATH_MAX] = "";
 	char root_shm_path[PATH_MAX] = "";
 	bool is_local_trace;
@@ -97,7 +97,7 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 		chan_reg_key = ua_chan->key;
 	}
 
-	if (ua_chan->attr.type == LTTNG_UST_CHAN_METADATA) {
+	if (ua_chan->attr.type == LTTNG_UST_ABI_CHAN_METADATA) {
 		chan_id = -1U;
 		/*
 		 * Metadata channels shm_path (buffers) are handled within
@@ -105,9 +105,9 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 		 * those buffer files.
 		 */
 	} else {
-		chan_reg = ust_registry_channel_find(registry, chan_reg_key);
-		assert(chan_reg);
-		chan_id = chan_reg->chan_id;
+		ust_reg_chan = ust_registry_channel_find(registry, chan_reg_key);
+		assert(ust_reg_chan);
+		chan_id = ust_reg_chan->chan_id;
 		if (ua_sess->shm_path[0]) {
 			strncpy(shm_path, ua_sess->shm_path, sizeof(shm_path));
 			shm_path[sizeof(shm_path) - 1] = '\0';
@@ -123,7 +123,7 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 	}
 
 	switch (ua_chan->attr.output) {
-	case LTTNG_UST_MMAP:
+	case LTTNG_UST_ABI_MMAP:
 	default:
 		output = LTTNG_EVENT_MMAP;
 		break;
@@ -151,7 +151,7 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 			ua_chan->tracefile_count,
 			ua_sess->id,
 			ua_sess->output_traces,
-			ua_sess->real_credentials.uid,
+			lttng_credentials_get_uid(&ua_sess->real_credentials),
 			ua_chan->attr.blocking_timeout,
 			root_shm_path, shm_path,
 			trace_chunk,
@@ -255,7 +255,7 @@ int ust_consumer_get_channel(struct consumer_socket *socket,
 	}
 
 	/* First, get the channel from consumer. */
-	ret = ustctl_recv_channel_from_consumer(*socket->fd_ptr, &ua_chan->obj);
+	ret = lttng_ust_ctl_recv_channel_from_consumer(*socket->fd_ptr, &ua_chan->obj);
 	if (ret < 0) {
 		if (ret != -EPIPE) {
 			ERR("Error recv channel from consumer %d with ret %d",
@@ -278,7 +278,7 @@ int ust_consumer_get_channel(struct consumer_socket *socket,
 		}
 
 		/* Stream object is populated by this call if successful. */
-		ret = ustctl_recv_stream_from_consumer(*socket->fd_ptr, &stream->obj);
+		ret = lttng_ust_ctl_recv_stream_from_consumer(*socket->fd_ptr, &stream->obj);
 		if (ret < 0) {
 			free(stream);
 			if (ret == -LTTNG_UST_ERR_NOENT) {
@@ -371,14 +371,19 @@ int ust_consumer_send_stream_to_ust(struct ust_app *app,
 
 	/* Relay stream to application. */
 	pthread_mutex_lock(&app->sock_lock);
-	ret = ustctl_send_stream_to_ust(app->sock, channel->obj, stream->obj);
+	ret = lttng_ust_ctl_send_stream_to_ust(app->sock, channel->obj, stream->obj);
 	pthread_mutex_unlock(&app->sock_lock);
 	if (ret < 0) {
-		if (ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
-			ERR("ustctl send stream handle %d to app pid: %d with ret %d",
-					stream->obj->handle, app->pid, ret);
+		if (ret == -EPIPE || ret == -LTTNG_UST_ERR_EXITING) {
+			DBG3("UST app send stream to ust failed. Application is dead. (pid: %d, sock: %d).",
+					app->pid, app->sock);
+		} else if (ret == -EAGAIN) {
+			WARN("UST app send stream to ust failed. Communication time out (pid: %d, sock: %d).",
+					app->pid, app->sock);
 		} else {
-			DBG3("UST app send stream to ust failed. Application is dead.");
+			ERR("UST app send stream, handle %d, to ust failed with ret %d (pid: %d, sock: %d).",
+					stream->obj->handle, ret, app->pid,
+					app->sock);
 		}
 		goto error;
 	}
@@ -408,14 +413,19 @@ int ust_consumer_send_channel_to_ust(struct ust_app *app,
 
 	/* Send stream to application. */
 	pthread_mutex_lock(&app->sock_lock);
-	ret = ustctl_send_channel_to_ust(app->sock, ua_sess->handle, channel->obj);
+	ret = lttng_ust_ctl_send_channel_to_ust(app->sock, ua_sess->handle, channel->obj);
 	pthread_mutex_unlock(&app->sock_lock);
 	if (ret < 0) {
-		if (ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
-			ERR("Error ustctl send channel %s to app pid: %d with ret %d",
-					channel->name, app->pid, ret);
+		if (ret == -EPIPE || ret == -LTTNG_UST_ERR_EXITING) {
+			DBG3("UST app send channel to ust failed. Application is dead (pid: %d, sock: %d).",
+					app->pid, app->sock);
+		} else if (ret == -EAGAIN) {
+			WARN("UST app send channel to ust failed. Communication timeout (pid: %d, sock: %d).",
+					app->pid, app->sock);
 		} else {
-			DBG3("UST app send channel to ust failed. Application is dead.");
+			ERR("UST app send channel %s, to ust failed with ret %d (pid: %d, sock: %d).",
+					channel->name, ret, app->pid,
+					app->sock);
 		}
 		goto error;
 	}

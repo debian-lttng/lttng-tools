@@ -90,7 +90,10 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
-@HAVE_LIBLTTNG_UST_CTL_TRUE@@HAVE_OBJCOPY_TRUE@am__append_1 = baddr-statedump ust-dl
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@HAVE_OBJCOPY_TRUE@am__append_1 = \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@HAVE_OBJCOPY_TRUE@	baddr-statedump \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@HAVE_OBJCOPY_TRUE@	ust-dl
+
 subdir = tests/regression/ust
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
@@ -120,6 +123,8 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
 	$(top_srcdir)/m4/lttng_check_sdt_works.m4 \
+	$(top_srcdir)/m4/lttng_pthread_getname_np.m4 \
+	$(top_srcdir)/m4/lttng_pthread_setname_np.m4 \
 	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
 	$(top_srcdir)/m4/pprint.m4 \
 	$(top_srcdir)/m4/rw_prog_cxx_works.m4 \
@@ -185,12 +190,12 @@ am__define_uniq_tagged_files = \
   done | $(am__uniquify_input)`
 ETAGS = etags
 CTAGS = ctags
-DIST_SUBDIRS = nprocesses high-throughput low-throughput before-after \
-	multi-session overlap buffers-pid linking daemon exit-fast \
-	fork libc-wrapper periodical-metadata-flush java-jul \
-	java-log4j python-logging getcpu-override clock-override \
-	type-declarations rotation-destroy-flush blocking multi-lib \
-	namespaces baddr-statedump ust-dl
+DIST_SUBDIRS = before-after blocking buffers-pid clock-override daemon \
+	exit-fast fork getcpu-override high-throughput java-jul \
+	java-log4j libc-wrapper linking low-throughput multi-lib \
+	multi-session namespaces nprocesses overlap \
+	periodical-metadata-flush rotation-destroy-flush \
+	type-declarations baddr-statedump ust-dl
 am__DIST_COMMON = $(srcdir)/Makefile.in
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 am__relativize = \
@@ -238,6 +243,7 @@ CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_ADD_TRIGGER = @CMD_DESCR_ADD_TRIGGER@
 CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
@@ -249,8 +255,10 @@ CMD_DESCR_ENABLE_EVENT = @CMD_DESCR_ENABLE_EVENT@
 CMD_DESCR_ENABLE_ROTATION = @CMD_DESCR_ENABLE_ROTATION@
 CMD_DESCR_HELP = @CMD_DESCR_HELP@
 CMD_DESCR_LIST = @CMD_DESCR_LIST@
+CMD_DESCR_LIST_TRIGGERS = @CMD_DESCR_LIST_TRIGGERS@
 CMD_DESCR_LOAD = @CMD_DESCR_LOAD@
 CMD_DESCR_REGENERATE = @CMD_DESCR_REGENERATE@
+CMD_DESCR_REMOVE_TRIGGER = @CMD_DESCR_REMOVE_TRIGGER@
 CMD_DESCR_ROTATE = @CMD_DESCR_ROTATE@
 CMD_DESCR_SAVE = @CMD_DESCR_SAVE@
 CMD_DESCR_SET_SESSION = @CMD_DESCR_SET_SESSION@
@@ -282,6 +290,7 @@ DEFAULT_APP_SOCKET_RW_TIMEOUT = @DEFAULT_APP_SOCKET_RW_TIMEOUT@
 DEFAULT_CHANNEL_SUBBUF_SIZE = @DEFAULT_CHANNEL_SUBBUF_SIZE@
 DEFAULT_CHANNEL_TRACEFILE_COUNT = @DEFAULT_CHANNEL_TRACEFILE_COUNT@
 DEFAULT_CHANNEL_TRACEFILE_SIZE = @DEFAULT_CHANNEL_TRACEFILE_SIZE@
+DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE = @DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE@
 DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT = @DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT@
 DEFAULT_KERNEL_CHANNEL_LIVE_TIMER = @DEFAULT_KERNEL_CHANNEL_LIVE_TIMER@
 DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER = @DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER@
@@ -371,6 +380,7 @@ NMEDIT = @NMEDIT@
 OBJCOPY = @OBJCOPY@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
+OSTYPE = @OSTYPE@
 OTOOL = @OTOOL@
 OTOOL64 = @OTOOL64@
 PACKAGE = @PACKAGE@
@@ -411,6 +421,12 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
+URCU_BP_CFLAGS = @URCU_BP_CFLAGS@
+URCU_BP_LIBS = @URCU_BP_LIBS@
+URCU_CDS_CFLAGS = @URCU_CDS_CFLAGS@
+URCU_CDS_LIBS = @URCU_CDS_LIBS@
+URCU_CFLAGS = @URCU_CFLAGS@
+URCU_LIBS = @URCU_LIBS@
 UST_CFLAGS = @UST_CFLAGS@
 UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
 UST_CTL_LIBS = @UST_CTL_LIBS@
@@ -462,6 +478,7 @@ localedir = @localedir@
 localstatedir = @localstatedir@
 lttngactionincludedir = @lttngactionincludedir@
 lttngconditionincludedir = @lttngconditionincludedir@
+lttngeventruleincludedir = @lttngeventruleincludedir@
 lttngincludedir = @lttngincludedir@
 lttnglibexecdir = @lttnglibexecdir@
 lttngnotificationincludedir = @lttngnotificationincludedir@
@@ -493,19 +510,22 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-@HAVE_LIBLTTNG_UST_CTL_TRUE@SUBDIRS = nprocesses high-throughput \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	low-throughput before-after \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	multi-session overlap buffers-pid \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	linking daemon exit-fast fork \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	libc-wrapper \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	periodical-metadata-flush java-jul \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	java-log4j python-logging \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	getcpu-override clock-override \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	type-declarations \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	rotation-destroy-flush blocking \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	multi-lib namespaces \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	$(am__append_1)
-@HAVE_LIBLTTNG_UST_CTL_TRUE@EXTRA_DIST = test_event_basic test_event_tracef test_event_perf
+@HAVE_LIBLTTNG_UST_CTL_TRUE@SUBDIRS = before-after blocking \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	buffers-pid clock-override daemon \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	exit-fast fork getcpu-override \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	high-throughput java-jul \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	java-log4j libc-wrapper linking \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	low-throughput multi-lib \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	multi-session namespaces \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	nprocesses overlap \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	periodical-metadata-flush \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	rotation-destroy-flush \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	type-declarations $(am__append_1)
+@HAVE_LIBLTTNG_UST_CTL_TRUE@EXTRA_DIST = \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	test_event_basic \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	test_event_perf	\
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	test_event_tracef
+
 all: all-recursive
 
 .SUFFIXES:

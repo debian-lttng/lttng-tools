@@ -2,12 +2,12 @@
 .\"     Title: lttng-sessiond
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 17 September 2018
+.\"      Date: 14 June 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.12.3
+.\"    Source: LTTng 2.13.1
 .\"  Language: English
 .\"
-.TH "LTTNG\-SESSIOND" "8" "17 September 2018" "LTTng 2\&.12\&.3" "LTTng Manual"
+.TH "LTTNG\-SESSIOND" "8" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -28,7 +28,7 @@
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
 .SH "NAME"
-lttng-sessiond \- LTTng 2 tracing session daemon
+lttng-sessiond \- LTTng session daemon
 .SH "SYNOPSIS"
 .sp
 .nf
@@ -46,25 +46,67 @@ lttng-sessiond \- LTTng 2 tracing session daemon
                [\fB--ustconsumerd64-cmd-sock\fR=\fIPATH\fR]
                [\fB--consumerd32-path\fR=\fIPATH\fR] [\fB--consumerd32-libdir\fR=\fIPATH\fR]
                [\fB--consumerd64-path\fR=\fIPATH\fR] [\fB--consumerd64-libdir\fR=\fIPATH\fR]
-               [\fB--quiet\fR | [\fB-v\fR | \fB-vv\fR | \fB-vvv\fR] [\fB--verbose-consumer\fR]]
+               [\fB--event-notifier-error-buffer-size-kernel\fR=\fISLOTS\fR]
+               [\fB--event-notifier-error-buffer-size-userspace\fR=\fISLOTS\fR]
+               [\fB--quiet\fR | [\fB--verbose\fR]\&... [\fB--verbose-consumer\fR]]
 .fi
 .SH "DESCRIPTION"
 .sp
-The \fILinux Trace Toolkit: next generation\fR <https://lttng.org/> is an open source software package used for correlated tracing of the Linux kernel, user applications, and user libraries\&.
+The \fILinux Trace Toolkit: next generation\fR <https://lttng.org/> is an open\-source software package used for correlated tracing of the Linux kernel, user applications, and user libraries\&.
 .sp
 LTTng consists of Linux kernel modules (for Linux kernel tracing) and dynamically loaded libraries (for user application and library tracing)\&.
 .sp
-The \fILTTng session daemon\fR is a tracing registry which allows the user to interact with multiple tracers (kernel and user space) within the same container, a \fItracing session\fR\&. Traces can be gathered from the Linux kernel and/or from instrumented applications (see \fBlttng-ust\fR(3))\&. You can aggregate and read the events of LTTng traces using \fBbabeltrace2\fR(1)\&.
+An LTTng session daemon, \fBlttng-sessiond\fR, is a program which:
 .sp
-To trace the Linux kernel, the session daemon needs to be running as \fBroot\fR\&. LTTng uses a \fItracing group\fR to allow specific users to interact with the root session daemon\&. The default tracing group name is \fBtracing\fR\&. You can use the \fB--group\fR option to set the tracing group name to use\&.
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Manages recording sessions (see
+\fBlttng-concepts\fR(7)
+to learn more about recording sessions)\&.
+.RE
 .sp
-Session daemons can coexist\&. You can have a session daemon running as user Alice that can be used to trace her applications alongside a root session daemon or a session daemon running as user Bob\&.
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Controls the various components (like tracers and consumer daemons) of LTTng\&.
+.RE
 .sp
-The LTTng session daemon manages trace data consumer daemons by spawning them when necessary\&. You do not need to manage the consumer daemons manually\&.
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Sends asynchronous notifications to user applications\&.
+.RE
+.sp
+A session daemon receives commands from the \fBlttng\fR(1) command\-line tool, as well as from any user application linked with the LTTng control library (\fBliblttng-ctl\fR)\&.
+.sp
+Each Unix user may have its own independent running session daemon\&. However, the \fBlttng\fR(1) tool must connect to the session daemon of the \fBroot\fR user (the root session daemon) to control Linux kernel tracing\&.
+.sp
+When you start \fBlttng-sessiond\fR as the \fBroot\fR Unix user, a non\-root Unix user can connect to it if it\(cqs part of the Unix tracing group\&. By default, the name of the tracing group is \fBtracing\fR\&. Override the tracing group name with the \fB--group\fR option\&.
+.sp
+See the \(lqSession daemon connection\(rq section of \fBlttng\fR(1) to learn how a user application connects to a session daemon\&.
+.sp
+A session daemon manages trace data consumer daemons, spawning them when necessary\&. You do NOT need to manage the consumer daemons yourself\&.
+.sp
+By default, \fBlttng-sessiond\fR doesn\(cqt start as a daemon\&. Make it a daemon with the \fB--daemonize\fR or \fB--background\fR option\&. With those options, \fBlttng-sessiond\fR ensures the daemon is ready to receive client commands before it exits\&.
 .if n \{\
 .sp
 .\}
-.RS 4
 .it 1 an-trap
 .nr an-no-space-flag 1
 .nr an-break-flag 1
@@ -73,15 +115,32 @@ The LTTng session daemon manages trace data consumer daemons by spawning them wh
 \fBNote\fR
 .ps -1
 .br
+.RS 4
 .sp
-It is highly recommended to start the session daemon at boot time for stable and long\-term tracing\&.
+The LTTng project recommends that you start the session daemon at boot time for stable and long\-term tracing\&.
 .sp .5v
 .RE
-.SS "Automatic loading of tracing session configurations"
+.if n \{\
 .sp
-When the session daemon starts, it automatically loads session configuration files\&.
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
 .sp
-The following directories are searched, non\-recursively, in this order for configuration files to load on launch:
+For an unprivileged Unix user running \fBlttng-sessiond\fR, the maximum number of file descriptors per process is usually 1024\&. This limits the number of traceable applications, since, for each instrumented application, there are two file descriptors per CPU as well as one socket for bidirectional communication\&.
+.sp
+For the \fBroot\fR user, the limit is usually 65,535\&.
+.sp .5v
+.RE
+.SS "Daemon configuration"
+.sp
+When you run \fBlttng-sessiond\fR, it configures itself from, in this order:
 .sp
 .RS 4
 .ie n \{\
@@ -91,10 +150,8 @@ The following directories are searched, non\-recursively, in this order for conf
 .sp -1
 .IP "  1." 4.2
 .\}
-\fB$LTTNG_HOME/.lttng/sessions/auto\fR
-(\fB$LTTNG_HOME\fR
-defaults to
-\fB$HOME\fR)
+The INI configuration file
+\fB/usr/local/etc/lttng/lttng.conf\fR, if any\&.
 .RE
 .sp
 .RS 4
@@ -105,102 +162,240 @@ defaults to
 .sp -1
 .IP "  2." 4.2
 .\}
-\fB/usr/local/etc/lttng/sessions/auto\fR
+The INI configuration file
+\fB$LTTNG_HOME/.lttng/lttng.conf\fR, if any\&.
+.sp
+\fB$LTTNG_HOME\fR
+defaults to
+\fB$HOME\fR\&.
 .RE
 .sp
-Note that both the directory containing the tracing session configurations \fIand\fR the session daemon binary \fImust\fR share the same UID for the configurations to be automatically loaded\&.
+.RS 4
+.ie n \{\
+\h'-04' 3.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  3." 4.2
+.\}
+With the
+\fB--config\fR=\fIPATH\fR
+option: the INI configuration file
+\fIPATH\fR\&.
+.RE
 .sp
-The \fB--load\fR option overrides the default directories \fIand\fR the UID check\&. The session daemon simply checks if the path is accessible and tries to load every tracing session configuration in it\&. When this option is specified, the default directories are NOT searched for configuration files\&. When the option is not specified, \fIboth\fR default directories are searched for configuration files\&.
+.RS 4
+.ie n \{\
+\h'-04' 4.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  4." 4.2
+.\}
+The command\-line options\&.
+.RE
 .sp
-If the \fB--load\fR option\(cqs argument is a directory, then all the tracing session configurations found in all the files in this directory are loaded\&. If the argument is a file, then all the tracing session configurations found in this file are loaded\&.
+Each step can override a previous configuration property\&.
+.sp
+In INI configuration files, the session daemon only reads the properties under the \fBsessiond\fR INI section\&. Each INI property is:
+.PP
+Key
+.RS 4
+The long name of a command\-line option to set (see the \(lqOPTIONS\(rq section below)\&.
+.RE
+.PP
+Value
+.RS 4
+.PP
+The selected command\-line option accepts an argument
+.RS 4
+Option argument (string)\&.
+.RE
+.PP
+The selected command\-line option is a switch
+.RS 4
+.PP
+\fBtrue\fR, \fByes\fR, \fBon\fR
+.RS 4
+Enable the option\&.
+.RE
+.PP
+\fBfalse\fR, \fBno\fR, \fBoff\fR
+.RS 4
+Disable the option\&.
+.RE
+.RE
+.RE
+.sp
+INI configuration file example:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+[sessiond]
+daemonize=yes
+extra\-kmod\-probes=my\-driver,other\-module
+.fi
+.if n \{\
+.RE
+.\}
+.SS "Recording session configuration loading"
+.sp
+When the session daemon starts, it loads recording session configurations from:
+.PP
+Without the \fB--load\fR option
+.RS 4
+In this order:
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 1.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  1." 4.2
+.\}
+All the files in
+\fB$LTTNG_HOME/.lttng/sessions/auto\fR\&.
+.sp
+\fB$LTTNG_HOME\fR
+defaults to
+\fB$HOME\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 2.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  2." 4.2
+.\}
+All the files in
+\fB/usr/local/etc/lttng/sessions/auto\fR\&.
+.RE
+.sp
+\fBlttng-sessiond\fR
+only loads recording session configuration files from the directories above if its UID and their UID are the same\&.
+.RE
+.PP
+With the \fB--load\fR=\fIPATH\fR option
+.RS 4
+.PP
+\fIPATH\fR is a directory
+.RS 4
+All the files in
+\fIPATH\fR\&.
+.RE
+.PP
+\fIPATH\fR is a file
+.RS 4
+The file
+\fIPATH\fR\&.
+.RE
+.RE
 .SH "OPTIONS"
-.SS "Daemon configuration"
+.SS "General daemon configuration"
 .PP
 \fB-b\fR, \fB--background\fR
 .RS 4
-Start as Unix daemon, but keep file descriptors (console) open\&. Use the
+Start as a Unix daemon, but keep file descriptors (console) open\&.
+.sp
+With this option,
+\fBlttng-sessiond\fR
+ensures the daemon is ready to receive client commands before it exits\&.
+.sp
+Use the
 \fB--daemonize\fR
 option instead to close the file descriptors\&.
 .RE
 .PP
 \fB-f\fR \fIPATH\fR, \fB--config\fR=\fIPATH\fR
 .RS 4
-Load session daemon configuration from path
-\fIPATH\fR\&.
+Configure the daemon using the INI configuration file
+\fIPATH\fR
+in addition to the default configuration files and the command\-line options\&.
+.sp
+See the \(lqDaemon configuration\(rq section above\&.
 .RE
 .PP
 \fB-d\fR, \fB--daemonize\fR
 .RS 4
-Start as Unix daemon, and close file descriptors (console)\&. Use the
+Start as a Unix daemon and close file descriptors (console)\&.
+.sp
+With this option,
+\fBlttng-sessiond\fR
+ensures the daemon is ready to receive client commands before it exits\&.
+.sp
+Use the
 \fB--background\fR
 option instead to keep the file descriptors open\&.
 .RE
 .PP
 \fB-g\fR \fIGROUP\fR, \fB--group\fR=\fIGROUP\fR
 .RS 4
-Use
+Set the Unix tracing group to
 \fIGROUP\fR
-as Unix tracing group (default:
-\fBtracing\fR)\&.
+instead of
+\fBtracing\fR\&.
+.sp
+This option is only meaningful when the
+\fBroot\fR
+Unix user starts
+\fBlttng-sessiond\fR\&.
+.sp
+Members of the Unix tracing group may connect to the root session daemon and, therefore, control LTTng kernel tracing\&.
 .RE
 .PP
 \fB-l\fR \fIPATH\fR, \fB--load\fR=\fIPATH\fR
 .RS 4
-Automatically load tracing session configurations from
+Load recording session configurations from
 \fIPATH\fR, either a directory or a file, instead of loading them from the default search directories\&.
+.sp
+See the \(lqRecording session configuration loading\(rq section above\&.
 .RE
 .PP
 \fB-S\fR, \fB--sig-parent\fR
 .RS 4
-Send
-\fBSIGUSR1\fR
-to parent process to notify readiness\&.
-.if n \{\
+Send the
+\fBUSR1\fR
+signal to the parent process to notify readiness\&.
 .sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-This is used by
-\fBlttng\fR(1)
-to get notified when the session daemon is ready to accept commands\&. When building a third party tool on liblttng\-ctl, this option can be very handy to synchronize the control tool and the session daemon\&.
-.sp .5v
-.RE
+You can also use the
+\fB--daemonize\fR
+or
+\fB--background\fR
+option, in which case
+\fBlttng-sessiond\fR
+ensures the daemon is ready to receive client commands before it exits\&.
 .RE
 .SS "Linux kernel tracing"
+.sp
+At most one of:
 .PP
 \fB--extra-kmod-probes\fR=\fIPROBE\fR[,\fIPROBE\fR]\&...
 .RS 4
-Load specific LTTng Linux kernel modules when kernel tracing is enabled (\fB--no-kernel\fR
-option is NOT specified), in addition to loading the default list of LTTng kernel modules\&.
+For each
+\fIPROBE\fR
+argument, load the LTTng kernel probe module named
+\fBlttng-probe-\fR\fIPROBE\fR\fB.ko\fR, in addition to loading the default LTTng kernel probe modules\&.
 .sp
-Only the name of the probe needs to be specified, without the
-\fBlttng-probe-\fR
-prefix and without the kernel module extension suffix\&. For example, specify
-\fBsched\fR
-to load the
-\fBlttng-probe-sched.ko\fR
-kernel module\&.
+See also the
+\fBLTTNG_EXTRA_KMOD_PROBES\fR
+environment variable\&.
 .RE
 .PP
 \fB--kmod-probes\fR=\fIPROBE\fR[,\fIPROBE\fR]\&...
 .RS 4
-Only load specific LTTng Linux kernel modules when kernel tracing is enabled (\fB--no-kernel\fR
-option is NOT specified)\&.
+Only load, for each
+\fIPROBE\fR
+argument, the LTTng kernel probe module named
+\fBlttng-probe-\fR\fIPROBE\fR\fB.ko\fR, instead of loading the default LTTng kernel probe modules\&.
 .sp
-Only the name of the probe needs to be specified, without the
-\fBlttng-probe-\fR
-prefix and without the kernel module extension suffix\&. For example, specify
-\fBsched\fR
-to load the
-\fBlttng-probe-sched.ko\fR
-kernel module\&.
+See also the
+\fBLTTNG_KMOD_PROBES\fR
+environment variable\&.
 .RE
 .PP
 \fB--no-kernel\fR
@@ -213,261 +408,164 @@ Disable Linux kernel tracing\&.
 .RS 4
 Listen on TCP port
 \fIPORT\fR
-for agent application registrations (default: a port within the range [5345,\ \&5354])\&.
+for agent application registration instead of a port within the range [5345,\ \&5354])\&.
 .RE
 .PP
 \fB-a\fR \fIPATH\fR, \fB--apps-sock\fR=\fIPATH\fR
 .RS 4
-Set application Unix socket path to
+Set the application Unix socket path to
 \fIPATH\fR\&.
 .RE
 .PP
 \fB-c\fR \fIPATH\fR, \fB--client-sock\fR=\fIPATH\fR
 .RS 4
-Set client Unix socket path to
+Set the client Unix socket path to
 \fIPATH\fR\&.
 .RE
 .PP
 \fB--consumerd32-libdir\fR=\fIPATH\fR
 .RS 4
-Set 32\-bit consumer daemon library directory to
+Set the 32\-bit consumer daemon library directory to
 \fIPATH\fR\&.
+.sp
+See also the
+\fBLTTNG_CONSUMERD32_LIBDIR\fR
+environment variable\&.
 .RE
 .PP
 \fB--consumerd32-path\fR=\fIPATH\fR
 .RS 4
-Set 32\-bit consumer daemon binary path to
+Set the 32\-bit consumer daemon binary path to
 \fIPATH\fR\&.
+.sp
+See also the
+\fBLTTNG_CONSUMERD32_BIN\fR
+environment variable\&.
 .RE
 .PP
 \fB--consumerd64-libdir\fR=\fIPATH\fR
 .RS 4
-Set 64\-bit consumer daemon library directory to
+Set the 64\-bit consumer daemon library directory to
 \fIPATH\fR\&.
+.sp
+See also the
+\fBLTTNG_CONSUMERD64_LIBDIR\fR
+environment variable\&.
 .RE
 .PP
 \fB--consumerd64-path\fR=\fIPATH\fR
 .RS 4
-Set 64\-bit consumer daemon binary path to
+Set the 64\-bit consumer daemon binary path to
 \fIPATH\fR\&.
+.sp
+See also the
+\fBLTTNG_CONSUMERD32_BIN\fR
+environment variable\&.
 .RE
 .PP
 \fB--kconsumerd-cmd-sock\fR=\fIPATH\fR
 .RS 4
-Set Linux kernel consumer daemon\(cqs command Unix socket path to
+Set the command Unix socket path of the Linux kernel consumer daemon to
 \fIPATH\fR\&.
 .RE
 .PP
 \fB--kconsumerd-err-sock\fR=\fIPATH\fR
 .RS 4
-Set Linux kernel consumer daemon\(cqs error Unix socket path to
+Set the error Unix socket path of the Linux kernel consumer daemon to
 \fIPATH\fR\&.
 .RE
 .PP
 \fB--ustconsumerd32-cmd-sock\fR=\fIPATH\fR
 .RS 4
-Set 32\-bit consumer daemon\(cqs command Unix socket path to
+Set the Unix socket path of the 32\-bit consumer daemon command to
 \fIPATH\fR\&.
 .RE
 .PP
 \fB--ustconsumerd64-cmd-sock\fR=\fIPATH\fR
 .RS 4
-Set 64\-bit consumer daemon\(cqs command Unix socket path to
+Set the Unix socket path of the 64\-bit consumer daemon command to
 \fIPATH\fR\&.
 .RE
 .PP
 \fB--ustconsumerd32-err-sock\fR=\fIPATH\fR
 .RS 4
-Set 32\-bit consumer daemon\(cqs error Unix socket path to
+Set the Unix socket path of the 32\-bit consumer daemon error to
 \fIPATH\fR\&.
 .RE
 .PP
 \fB--ustconsumerd64-err-sock\fR=\fIPATH\fR
 .RS 4
-Set 64\-bit consumer daemon\(cqs error Unix socket path to
+Set the Unix socket path of the 64\-bit consumer daemon error to
 \fIPATH\fR\&.
 .RE
+.SS "Buffer size of event notifier error counters"
+.PP
+\fB--event-notifier-error-buffer-size-kernel\fR=\fISLOTS\fR
+.RS 4
+Set the size of the kernel event notifier error counter buffers to
+\fISLOTS\fR\ \&slots\&.
+.RE
+.PP
+\fB--event-notifier-error-buffer-size-userspace\fR=\fISLOTS\fR
+.RS 4
+Set the size of the user space event notifier error counter buffers to
+\fISLOTS\fR\ \&slots\&.
+.RE
+.sp
+As of LTTng\ \&2\&.13\&.1, a \fIslot\fR is a 32\-bit counter, but this may change in the future\&.
 .SS "Verbosity"
 .PP
 \fB-q\fR, \fB--quiet\fR
 .RS 4
 Suppress all messages, including warnings and errors\&.
+.sp
+You may NOT use this option with the
+\fB--verbose\fR
+and
+\fB--verbose-consumer\fR
+options\&.
 .RE
 .PP
 \fB-v\fR, \fB--verbose\fR
 .RS 4
 Increase verbosity\&.
 .sp
-Three levels of verbosity are available, which are triggered by appending additional
-\fBv\fR
-letters to the option (that is,
-\fB-vv\fR
-and
-\fB-vvv\fR)\&.
+Specify this option up to three times to get more levels of verbosity\&.
+.sp
+You may NOT use this option with the
+\fB--quiet\fR
+option\&.
 .RE
 .PP
 \fB--verbose-consumer\fR
 .RS 4
-Increase verbosity of consumer daemons spawned by this session daemon\&.
+Increase the verbosity of the consumer daemons which this session daemon spawns\&.
+.sp
+You may NOT use this option with the
+\fB--quiet\fR
+option\&.
 .RE
 .SS "Program information"
 .PP
 \fB-h\fR, \fB--help\fR
 .RS 4
 Show help\&.
+.sp
+This option attempts to launch
+\fB/usr/bin/man\fR
+to view this manual page\&. Override the manual pager path with the
+\fBLTTNG_MAN_BIN_PATH\fR
+environment variable\&.
+.RE
+.PP
+\fB--list-options\fR
+.RS 4
+List available command options and quit\&.
 .RE
 .PP
 \fB-V\fR, \fB--version\fR
 .RS 4
-Show version\&.
-.RE
-.SH "ENVIRONMENT VARIABLES"
-.sp
-Note that command\-line options override their equivalent environment variable\&.
-.PP
-\fBLTTNG_ABORT_ON_ERROR\fR
-.RS 4
-Set to 1 to abort the process after the first error is encountered\&.
-.RE
-.PP
-\fBLTTNG_APP_SOCKET_TIMEOUT\fR
-.RS 4
-Application socket\(cqs timeout (seconds) when sending/receiving commands\&. After this period of time, the application is unregistered by the session daemon\&. A value of 0 or \-1 means an infinite timeout\&. Default value: 5\&.
-.RE
-.PP
-\fBLTTNG_CONSUMERD32_BIN\fR
-.RS 4
-32\-bit consumer daemon binary path\&.
-.sp
-The
-\fB--consumerd32-path\fR
-option overrides this variable\&.
-.RE
-.PP
-\fBLTTNG_CONSUMERD32_LIBDIR\fR
-.RS 4
-32\-bit consumer daemon library path\&.
-.sp
-The
-\fB--consumerd32-libdir\fR
-option overrides this variable\&.
-.RE
-.PP
-\fBLTTNG_CONSUMERD64_BIN\fR
-.RS 4
-64\-bit consumer daemon binary path\&.
-.sp
-The
-\fB--consumerd64-path\fR
-option overrides this variable\&.
-.RE
-.PP
-\fBLTTNG_CONSUMERD64_LIBDIR\fR
-.RS 4
-64\-bit consumer daemon library path\&.
-.sp
-The
-\fB--consumerd64-libdir\fR
-option overrides this variable\&.
-.RE
-.PP
-\fBLTTNG_DEBUG_NOCLONE\fR
-.RS 4
-Set to 1 to disable the use of
-\fBclone()\fR/\fBfork()\fR\&. Setting this variable is considered insecure, but it is required to allow debuggers to work with the session daemon on some operating systems\&.
-.RE
-.PP
-\fBLTTNG_EXTRA_KMOD_PROBES\fR
-.RS 4
-Load specific LTTng Linux kernel modules when kernel tracing is enabled (\fB--no-kernel\fR
-option is NOT specified), in addition to loading the default list of LTTng kernel modules\&.
-.sp
-The
-\fB--extra-kmod-probes\fR
-option overrides this variable\&.
-.RE
-.PP
-\fBLTTNG_KMOD_PROBES\fR
-.RS 4
-Only load specific LTTng Linux kernel modules when kernel tracing is enabled (\fB--no-kernel\fR
-option is NOT specified)\&.
-.sp
-The
-\fB--kmod-probes\fR
-option overrides this variable\&.
-.RE
-.PP
-\fBLTTNG_NETWORK_SOCKET_TIMEOUT\fR
-.RS 4
-Socket connection, receive and send timeout (milliseconds)\&. A value of 0 or \-1 uses the timeout of the operating system (default)\&.
-.RE
-.PP
-\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
-.RS 4
-Tracing session configuration XML schema definition (XSD) path\&.
-.RE
-.SH "FILES"
-.PP
-\fB$LTTNG_HOME/.lttng\fR
-.RS 4
-User LTTng runtime and configuration directory\&.
-.RE
-.PP
-\fB$LTTNG_HOME/lttng-traces\fR
-.RS 4
-Default output directory of LTTng traces\&. This can be overridden with the
-\fB--output\fR
-option of the
-\fBlttng-create\fR(1)
-command\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng/sessions/auto\fR
-.RS 4
-Directory from which user tracing configuration files are automatically loaded when the session daemon starts (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1)
-for saving and loading tracing sessions)\&.
-.RE
-.PP
-\fB/usr/local/etc/lttng/sessions/auto\fR
-.RS 4
-Directory from which system\-wide tracing configuration files are automatically loaded when the session daemon starts (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1)
-for saving and loading tracing sessions)\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng/lttng.conf\fR
-.RS 4
-Default location of the session daemon configuration file (see the
-\fB--config\fR
-option)\&.
-.RE
-.PP
-\fB/usr/local/etc/lttng/lttng.conf\fR
-.RS 4
-System\-wide location of the session daemon configuration file (see the
-\fB--config\fR
-option)\&.
-.RE
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-.sp
-\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR when not explicitly set\&.
-.sp .5v
+Show version and quit\&.
 .RE
 .SH "EXIT STATUS"
 .PP
@@ -485,14 +583,179 @@ Error
 .RS 4
 Fatal error
 .RE
-.SH "LIMITATIONS"
+.SH "ENVIRONMENT"
+.PP
+\fBLTTNG_ABORT_ON_ERROR\fR
+.RS 4
+Set to
+\fB1\fR
+to abort the process after the first error is encountered\&.
+.RE
+.PP
+\fBLTTNG_APP_SOCKET_TIMEOUT\fR
+.RS 4
+Timeout (in seconds) of the application socket when sending/receiving commands\&.
 .sp
-For an unprivileged user running \fBlttng-sessiond\fR, the maximum number of file descriptors per process is usually 1024\&. This limits the number of traceable applications, since for each instrumented application, there is two file descriptors per CPU and one more socket for bidirectional communication\&.
+After this period of time,
+\fBlttng-sessiond\fR
+unregisters the application\&.
 .sp
-For the root user, the limit is bumped to 65535\&. A future version will deal with this limitation\&.
-.SH "BUGS"
+Set to
+\fB0\fR
+or
+\fB-1\fR
+to set an infinite timeout\&.
 .sp
-If you encounter any issue or usability problem, please report it on the LTTng bug tracker <https://bugs.lttng.org/projects/lttng-tools>\&.
+Default:
+\fB5\fR\&.
+.RE
+.PP
+\fBLTTNG_CONSUMERD32_BIN\fR
+.RS 4
+32\-bit consumer daemon binary path\&.
+.sp
+The
+\fB--consumerd32-path\fR
+option overrides this environment variable\&.
+.RE
+.PP
+\fBLTTNG_CONSUMERD32_LIBDIR\fR
+.RS 4
+32\-bit consumer daemon library directory path\&.
+.sp
+The
+\fB--consumerd32-libdir\fR
+option overrides this environment variable\&.
+.RE
+.PP
+\fBLTTNG_CONSUMERD64_BIN\fR
+.RS 4
+64\-bit consumer daemon binary path\&.
+.sp
+The
+\fB--consumerd64-path\fR
+option overrides this environment variable\&.
+.RE
+.PP
+\fBLTTNG_CONSUMERD64_LIBDIR\fR
+.RS 4
+64\-bit consumer daemon library directory path\&.
+.sp
+The
+\fB--consumerd64-libdir\fR
+option overrides this environment variable\&.
+.RE
+.PP
+\fBLTTNG_DEBUG_NOCLONE\fR
+.RS 4
+Set to
+\fB1\fR
+to disable the use of
+\fBclone\fR(2)/\fBfork\fR(2)\&.
+.sp
+Setting this environment variable is considered insecure, but it\(cqs required to allow debuggers to work with
+\fBlttng-sessiond\fR
+on some operating systems\&.
+.RE
+.PP
+\fBLTTNG_EXTRA_KMOD_PROBES\fR
+.RS 4
+Extra LTTng kernel probe modules to load\&.
+.sp
+See the
+\fB--extra-kmod-probes\fR
+option which overrides this environment variable\&.
+.RE
+.PP
+\fBLTTNG_KMOD_PROBES\fR
+.RS 4
+Exclusive LTTng kernel probe modules to load\&.
+.sp
+See the
+\fB--kmod-probes\fR
+option which overrides this environment variable\&.
+.RE
+.PP
+\fBLTTNG_NETWORK_SOCKET_TIMEOUT\fR
+.RS 4
+Socket connection, receive, and send timeout (milliseconds)\&.
+.sp
+Set to
+\fB0\fR
+or
+\fB-1\fR
+to use the timeout of the operating system (default)\&.
+.RE
+.PP
+\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
+.RS 4
+Recording session configuration XML schema definition (XSD) path\&.
+.RE
+.SH "FILES"
+.PP
+\fB$LTTNG_HOME/.lttng\fR
+.RS 4
+Unix user\(cqs LTTng runtime and configuration directory\&.
+.RE
+.PP
+\fB$LTTNG_HOME/lttng-traces\fR
+.RS 4
+Default output directory of LTTng traces in local and snapshot modes\&.
+.sp
+Override this path with the
+\fB--output\fR
+option of the
+\fBlttng-create\fR(1)
+command\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng/sessions/auto\fR
+.RS 4
+Directory from which
+\fBlttng-sessiond\fR
+loads Unix user recording session configurations when starting\&.
+.sp
+See the \(lqRecording session configuration loading\(rq section above to learn more\&.
+.RE
+.PP
+\fB/usr/local/etc/lttng/sessions/auto\fR
+.RS 4
+Directory from which
+\fBlttng-sessiond\fR
+loads system\-wide recording session configurations when starting\&.
+.sp
+See the \(lqRecording session configuration loading\(rq section above to learn more\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng/lttng.conf\fR
+.RS 4
+Unix user\(cqs LTTng daemon INI configuration file\&.
+.sp
+See the \(lqDaemon configuration\(rq section above to learn more\&.
+.RE
+.PP
+\fB/usr/local/etc/lttng/lttng.conf\fR
+.RS 4
+System\-wide LTTng daemon INI configuration file\&.
+.sp
+See the \(lqDaemon configuration\(rq section above to learn more\&.
+.RE
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR\&.
+.sp .5v
+.RE
 .SH "RESOURCES"
 .sp
 .RS 4
@@ -525,7 +788,7 @@ LTTng documentation <https://lttng.org/docs>
 .sp -1
 .IP \(bu 2.3
 .\}
-Git repositories <http://git.lttng.org>
+LTTng bug tracker <https://bugs.lttng.org>
 .RE
 .sp
 .RS 4
@@ -536,7 +799,7 @@ Git repositories <http://git.lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-GitHub organization <http://github.com/lttng>
+Git repositories <https://git.lttng.org>
 .RE
 .sp
 .RS 4
@@ -547,7 +810,7 @@ GitHub organization <http://github.com/lttng>
 .sp -1
 .IP \(bu 2.3
 .\}
-Continuous integration <http://ci.lttng.org/>
+GitHub organization <https://github.com/lttng>
 .RE
 .sp
 .RS 4
@@ -558,7 +821,18 @@ Continuous integration <http://ci.lttng.org/>
 .sp -1
 .IP \(bu 2.3
 .\}
-Mailing list <http://lists.lttng.org>
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
 for support and development:
 \fBlttng-dev@lists.lttng.org\fR
 .RE
@@ -576,11 +850,11 @@ IRC channel <irc://irc.oftc.net/lttng>:
 on
 \fBirc.oftc.net\fR
 .RE
-.SH "COPYRIGHTS"
+.SH "COPYRIGHT"
 .sp
 This program is part of the LTTng\-tools project\&.
 .sp
-LTTng\-tools is distributed under the GNU General Public License version 2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
 .SH "THANKS"
 .sp
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
@@ -588,4 +862,4 @@ Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.p
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
 .SH "SEE ALSO"
 .sp
-\fBlttng\fR(1), \fBlttng-relayd\fR(8), \fBlttng-crash\fR(1), \fBlttng-ust\fR(3), \fBbabeltrace2\fR(1)
+\fBlttng\fR(1), \fBlttng-concepts\fR(7)

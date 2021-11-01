@@ -28,42 +28,7 @@ enum metadata_cache_update_version_status {
 	METADATA_CACHE_UPDATE_STATUS_VERSION_NOT_UPDATED,
 };
 
-extern struct lttng_consumer_global_data consumer_data;
-
-/*
- * Extend the allocated size of the metadata cache. Called only from
- * lttng_ustconsumer_write_metadata_cache.
- *
- * Return 0 on success, a negative value on error.
- */
-static int extend_metadata_cache(struct lttng_consumer_channel *channel,
-		unsigned int size)
-{
-	int ret = 0;
-	char *tmp_data_ptr;
-	unsigned int new_size, old_size;
-
-	assert(channel);
-	assert(channel->metadata_cache);
-
-	old_size = channel->metadata_cache->cache_alloc_size;
-	new_size = max_t(unsigned int, old_size + size, old_size << 1);
-	DBG("Extending metadata cache to %u", new_size);
-	tmp_data_ptr = realloc(channel->metadata_cache->data, new_size);
-	if (!tmp_data_ptr) {
-		ERR("Reallocating metadata cache");
-		free(channel->metadata_cache->data);
-		ret = -1;
-		goto end;
-	}
-	/* Zero newly allocated memory */
-	memset(tmp_data_ptr + old_size, 0, new_size - old_size);
-	channel->metadata_cache->data = tmp_data_ptr;
-	channel->metadata_cache->cache_alloc_size = new_size;
-
-end:
-	return ret;
-}
+extern struct lttng_consumer_global_data the_consumer_data;
 
 /*
  * Reset the metadata cache.
@@ -71,8 +36,9 @@ end:
 static
 void metadata_cache_reset(struct consumer_metadata_cache *cache)
 {
-	memset(cache->data, 0, cache->cache_alloc_size);
-	cache->max_offset = 0;
+	const int ret = lttng_dynamic_buffer_set_size(&cache->contents, 0);
+
+	assert(ret == 0);
 }
 
 /*
@@ -108,22 +74,18 @@ end:
  * various returned status codes.
  */
 enum consumer_metadata_cache_write_status
-consumer_metadata_cache_write(struct lttng_consumer_channel *channel,
+consumer_metadata_cache_write(struct consumer_metadata_cache *cache,
 		unsigned int offset, unsigned int len, uint64_t version,
-		char *data)
+		const char *data)
 {
 	int ret = 0;
-	struct consumer_metadata_cache *cache;
 	enum consumer_metadata_cache_write_status status;
 	bool cache_is_invalidated = false;
-	uint64_t original_max_offset;
+	uint64_t original_size;
 
-	assert(channel);
-	assert(channel->metadata_cache);
-
-	cache = channel->metadata_cache;
+	assert(cache);
 	ASSERT_LOCKED(cache->lock);
-	original_max_offset = cache->max_offset;
+	original_size = cache->contents.size;
 
 	if (metadata_cache_update_version(cache, version) ==
 			METADATA_CACHE_UPDATE_STATUS_VERSION_UPDATED) {
@@ -132,27 +94,25 @@ consumer_metadata_cache_write(struct lttng_consumer_channel *channel,
 	}
 
 	DBG("Writing %u bytes from offset %u in metadata cache", len, offset);
-
-	if (offset + len > cache->cache_alloc_size) {
-		ret = extend_metadata_cache(channel,
-				len - cache->cache_alloc_size + offset);
-		if (ret < 0) {
+	if (offset + len > cache->contents.size) {
+		ret = lttng_dynamic_buffer_set_size(
+				&cache->contents, offset + len);
+		if (ret) {
 			ERR("Extending metadata cache");
 			status = CONSUMER_METADATA_CACHE_WRITE_STATUS_ERROR;
 			goto end;
 		}
 	}
 
-	memcpy(cache->data + offset, data, len);
-	cache->max_offset = max(cache->max_offset, offset + len);
+	memcpy(cache->contents.data + offset, data, len);
 
 	if (cache_is_invalidated) {
 		status = CONSUMER_METADATA_CACHE_WRITE_STATUS_INVALIDATED;
-	} else if (cache->max_offset > original_max_offset) {
+	} else if (cache->contents.size > original_size) {
 		status = CONSUMER_METADATA_CACHE_WRITE_STATUS_APPENDED_CONTENT;
 	} else {
 		status = CONSUMER_METADATA_CACHE_WRITE_STATUS_NO_CHANGE;
-		assert(cache->max_offset == original_max_offset);
+		assert(cache->contents.size == original_size);
 	}
 
 end:
@@ -183,16 +143,20 @@ int consumer_metadata_cache_allocate(struct lttng_consumer_channel *channel)
 		goto end_free_cache;
 	}
 
-	channel->metadata_cache->cache_alloc_size = DEFAULT_METADATA_CACHE_SIZE;
-	channel->metadata_cache->data = zmalloc(
-			channel->metadata_cache->cache_alloc_size * sizeof(char));
-	if (!channel->metadata_cache->data) {
-		PERROR("zmalloc metadata cache data");
+	lttng_dynamic_buffer_init(&channel->metadata_cache->contents);
+	ret = lttng_dynamic_buffer_set_capacity(
+			&channel->metadata_cache->contents,
+			DEFAULT_METADATA_CACHE_SIZE);
+	if (ret) {
+		PERROR("Failed to pre-allocate metadata cache storage of %d bytes on creation",
+				DEFAULT_METADATA_CACHE_SIZE);
 		ret = -1;
 		goto end_free_mutex;
 	}
-	DBG("Allocated metadata cache of %" PRIu64 " bytes",
-			channel->metadata_cache->cache_alloc_size);
+
+	DBG("Allocated metadata cache: current capacity = %zu",
+			lttng_dynamic_buffer_get_capacity_left(
+					&channel->metadata_cache->contents));
 
 	ret = 0;
 	goto end;
@@ -217,7 +181,7 @@ void consumer_metadata_cache_destroy(struct lttng_consumer_channel *channel)
 	DBG("Destroying metadata cache");
 
 	pthread_mutex_destroy(&channel->metadata_cache->lock);
-	free(channel->metadata_cache->data);
+	lttng_dynamic_buffer_reset(&channel->metadata_cache->contents);
 	free(channel->metadata_cache);
 }
 

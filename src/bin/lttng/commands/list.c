@@ -18,8 +18,8 @@
 #include <common/mi-lttng.h>
 #include <common/time.h>
 #include <common/tracker.h>
-#include <lttng/constant.h>
-#include <lttng/tracker.h>
+#include <lttng/domain-internal.h>
+#include <lttng/lttng.h>
 
 #include "../command.h"
 
@@ -49,11 +49,11 @@ enum {
 	OPT_LIST_OPTIONS,
 };
 
-static struct lttng_handle *handle;
-static struct mi_writer *writer;
+static struct lttng_handle *the_handle;
+static struct mi_writer *the_writer;
 
 /* Only set when listing a single session. */
-static struct lttng_session listed_session;
+static struct lttng_session the_listed_session;
 
 static struct poptOption long_options[] = {
 	/* longName, shortName, argInfo, argPtr, value, descrip, argDesc */
@@ -359,14 +359,16 @@ static void print_events(struct lttng_event *event)
 	{
 		if (event->loglevel != -1) {
 			MSG("%s%s (loglevel%s %s (%d)) (type: tracepoint)%s%s%s",
-				indent6,
-				event->name,
-				logleveltype_string(event->loglevel_type),
-				mi_lttng_loglevel_string(event->loglevel, handle->domain.type),
-				event->loglevel,
-				enabled_string(event->enabled),
-				safe_string(exclusion_msg),
-				safe_string(filter_msg));
+					indent6, event->name,
+					logleveltype_string(
+							event->loglevel_type),
+					mi_lttng_loglevel_string(
+							event->loglevel,
+							the_handle->domain.type),
+					event->loglevel,
+					enabled_string(event->enabled),
+					safe_string(exclusion_msg),
+					safe_string(filter_msg));
 		} else {
 			MSG("%s%s (type: tracepoint)%s%s%s",
 				indent6,
@@ -474,19 +476,19 @@ static int mi_list_agent_ust_events(struct lttng_event *events, int count,
 	int pid_element_open = 0;
 
 	/* Open domains element */
-	ret = mi_lttng_domains_open(writer);
+	ret = mi_lttng_domains_open(the_writer);
 	if (ret) {
 		goto end;
 	}
 
 	/* Write domain */
-	ret = mi_lttng_domain(writer, domain, 1);
+	ret = mi_lttng_domain(the_writer, domain, 1);
 	if (ret) {
 		goto end;
 	}
 
 	/* Open pids element element */
-	ret = mi_lttng_pids_open(writer);
+	ret = mi_lttng_pids_open(the_writer);
 	if (ret) {
 		goto end;
 	}
@@ -495,7 +497,8 @@ static int mi_list_agent_ust_events(struct lttng_event *events, int count,
 		if (cur_pid != events[i].pid) {
 			if (pid_element_open) {
 				/* Close the previous events and pid element */
-				ret = mi_lttng_close_multi_element(writer, 2);
+				ret = mi_lttng_close_multi_element(
+						the_writer, 2);
 				if (ret) {
 					goto end;
 				}
@@ -511,13 +514,14 @@ static int mi_list_agent_ust_events(struct lttng_event *events, int count,
 
 			if (!pid_element_open) {
 				/* Open and write a pid element */
-				ret = mi_lttng_pid(writer, cur_pid, cmdline, 1);
+				ret = mi_lttng_pid(the_writer, cur_pid, cmdline,
+						1);
 				if (ret) {
 					goto error;
 				}
 
 				/* Open events element */
-				ret = mi_lttng_events_open(writer);
+				ret = mi_lttng_events_open(the_writer);
 				if (ret) {
 					goto error;
 				}
@@ -528,20 +532,21 @@ static int mi_list_agent_ust_events(struct lttng_event *events, int count,
 		}
 
 		/* Write an event */
-		ret = mi_lttng_event(writer, &events[i], 0, handle->domain.type);
+		ret = mi_lttng_event(the_writer, &events[i], 0,
+				the_handle->domain.type);
 		if (ret) {
 			goto end;
 		}
 	}
 
 	/* Close pids */
-	ret = mi_lttng_writer_close_element(writer);
+	ret = mi_lttng_writer_close_element(the_writer);
 	if (ret) {
 		goto end;
 	}
 
 	/* Close domain, domains */
-	ret = mi_lttng_close_multi_element(writer, 2);
+	ret = mi_lttng_close_multi_element(the_writer, 2);
 end:
 	return ret;
 error:
@@ -572,7 +577,7 @@ static int list_agent_events(void)
 		goto error;
 	}
 
-	agent_domain_str = get_domain_str(domain.type);
+	agent_domain_str = lttng_domain_type_str(domain.type);
 
 	DBG("Getting %s tracing events", agent_domain_str);
 
@@ -713,19 +718,19 @@ static int mi_list_ust_event_fields(struct lttng_event_field *fields, int count,
 	memset(&cur_event, 0, sizeof(cur_event));
 
 	/* Open domains element */
-	ret = mi_lttng_domains_open(writer);
+	ret = mi_lttng_domains_open(the_writer);
 	if (ret) {
 		goto end;
 	}
 
 	/* Write domain */
-	ret = mi_lttng_domain(writer, domain, 1);
+	ret = mi_lttng_domain(the_writer, domain, 1);
 	if (ret) {
 		goto end;
 	}
 
 	/* Open pids element */
-	ret = mi_lttng_pids_open(writer);
+	ret = mi_lttng_pids_open(the_writer);
 	if (ret) {
 		goto end;
 	}
@@ -735,14 +740,16 @@ static int mi_list_ust_event_fields(struct lttng_event_field *fields, int count,
 			if (pid_element_open) {
 				if (event_element_open) {
 					/* Close the previous field element and event. */
-					ret = mi_lttng_close_multi_element(writer, 2);
+					ret = mi_lttng_close_multi_element(
+							the_writer, 2);
 					if (ret) {
 						goto end;
 					}
 					event_element_open = 0;
 				}
 				/* Close the previous events, pid element */
-				ret = mi_lttng_close_multi_element(writer, 2);
+				ret = mi_lttng_close_multi_element(
+						the_writer, 2);
 				if (ret) {
 					goto end;
 				}
@@ -753,13 +760,14 @@ static int mi_list_ust_event_fields(struct lttng_event_field *fields, int count,
 			cmdline = get_cmdline_by_pid(cur_pid);
 			if (!pid_element_open) {
 				/* Open and write a pid element */
-				ret = mi_lttng_pid(writer, cur_pid, cmdline, 1);
+				ret = mi_lttng_pid(the_writer, cur_pid, cmdline,
+						1);
 				if (ret) {
 					goto error;
 				}
 
 				/* Open events element */
-				ret = mi_lttng_events_open(writer);
+				ret = mi_lttng_events_open(the_writer);
 				if (ret) {
 					goto error;
 				}
@@ -773,7 +781,8 @@ static int mi_list_ust_event_fields(struct lttng_event_field *fields, int count,
 		if (strcmp(cur_event.name, fields[i].event.name) != 0) {
 			if (event_element_open) {
 				/* Close the previous fields element and the previous event */
-				ret = mi_lttng_close_multi_element(writer, 2);
+				ret = mi_lttng_close_multi_element(
+						the_writer, 2);
 				if (ret) {
 					goto end;
 				}
@@ -785,14 +794,14 @@ static int mi_list_ust_event_fields(struct lttng_event_field *fields, int count,
 
 			if (!event_element_open) {
 				/* Open and write the event */
-				ret = mi_lttng_event(writer, &cur_event, 1,
-						handle->domain.type);
+				ret = mi_lttng_event(the_writer, &cur_event, 1,
+						the_handle->domain.type);
 				if (ret) {
 					goto end;
 				}
 
 				/* Open a fields element */
-				ret = mi_lttng_event_fields_open(writer);
+				ret = mi_lttng_event_fields_open(the_writer);
 				if (ret) {
 					goto end;
 				}
@@ -801,14 +810,14 @@ static int mi_list_ust_event_fields(struct lttng_event_field *fields, int count,
 		}
 
 		/* Print the event_field */
-		ret = mi_lttng_event_field(writer, &fields[i]);
+		ret = mi_lttng_event_field(the_writer, &fields[i]);
 		if (ret) {
 			goto end;
 		}
 	}
 
 	/* Close pids, domain, domains */
-	ret = mi_lttng_close_multi_element(writer, 3);
+	ret = mi_lttng_close_multi_element(the_writer, 3);
 end:
 	return ret;
 error:
@@ -906,32 +915,33 @@ static int mi_list_kernel_events(struct lttng_event *events, int count,
 	int ret, i;
 
 	/* Open domains element */
-	ret = mi_lttng_domains_open(writer);
+	ret = mi_lttng_domains_open(the_writer);
 	if (ret) {
 		goto end;
 	}
 
 	/* Write domain */
-	ret = mi_lttng_domain(writer, domain, 1);
+	ret = mi_lttng_domain(the_writer, domain, 1);
 	if (ret) {
 		goto end;
 	}
 
 	/* Open events */
-	ret = mi_lttng_events_open(writer);
+	ret = mi_lttng_events_open(the_writer);
 	if (ret) {
 		goto end;
 	}
 
 	for (i = 0; i < count; i++) {
-		ret = mi_lttng_event(writer, &events[i], 0, handle->domain.type);
+		ret = mi_lttng_event(the_writer, &events[i], 0,
+				the_handle->domain.type);
 		if (ret) {
 			goto end;
 		}
 	}
 
 	/* close events, domain and domains */
-	ret = mi_lttng_close_multi_element(writer, 3);
+	ret = mi_lttng_close_multi_element(the_writer, 3);
 	if (ret) {
 		goto end;
 	}
@@ -1006,20 +1016,21 @@ static int mi_list_syscalls(struct lttng_event *events, int count)
 	int ret, i;
 
 	/* Open events */
-	ret = mi_lttng_events_open(writer);
+	ret = mi_lttng_events_open(the_writer);
 	if (ret) {
 		goto end;
 	}
 
 	for (i = 0; i < count; i++) {
-		ret = mi_lttng_event(writer, &events[i], 0, handle->domain.type);
+		ret = mi_lttng_event(the_writer, &events[i], 0,
+				the_handle->domain.type);
 		if (ret) {
 			goto end;
 		}
 	}
 
 	/* Close events. */
-	ret = mi_lttng_writer_close_element(writer);
+	ret = mi_lttng_writer_close_element(the_writer);
 	if (ret) {
 		goto end;
 	}
@@ -1079,20 +1090,21 @@ static int mi_list_session_agent_events(struct lttng_event *events, int count)
 	int ret, i;
 
 	/* Open events element */
-	ret = mi_lttng_events_open(writer);
+	ret = mi_lttng_events_open(the_writer);
 	if (ret) {
 		goto end;
 	}
 
 	for (i = 0; i < count; i++) {
-		ret = mi_lttng_event(writer, &events[i], 0, handle->domain.type);
+		ret = mi_lttng_event(the_writer, &events[i], 0,
+				the_handle->domain.type);
 		if (ret) {
 			goto end;
 		}
 	}
 
 	/* Close events element */
-	ret = mi_lttng_writer_close_element(writer);
+	ret = mi_lttng_writer_close_element(the_writer);
 
 end:
 	return ret;
@@ -1108,7 +1120,7 @@ static int list_session_agent_events(void)
 	int ret = CMD_SUCCESS, count, i;
 	struct lttng_event *events = NULL;
 
-	count = lttng_list_events(handle, "", &events);
+	count = lttng_list_events(the_handle, "", &events);
 	if (count < 0) {
 		ret = CMD_ERROR;
 		ERR("%s", lttng_strerror(count));
@@ -1157,10 +1169,11 @@ static int list_session_agent_events(void)
 						event->name,
 						enabled_string(event->enabled),
 						logleveltype_string(
-							event->loglevel_type),
+								event->loglevel_type),
 						mi_lttng_loglevel_string(
-							event->loglevel,
-							handle->domain.type),
+								event->loglevel,
+								the_handle->domain
+										.type),
 						safe_string(filter_msg));
 			} else {
 				MSG("%s- %s%s%s", indent4, event->name,
@@ -1188,20 +1201,21 @@ static int mi_list_events(struct lttng_event *events, int count)
 	int ret, i;
 
 	/* Open events element */
-	ret = mi_lttng_events_open(writer);
+	ret = mi_lttng_events_open(the_writer);
 	if (ret) {
 		goto end;
 	}
 
 	for (i = 0; i < count; i++) {
-		ret = mi_lttng_event(writer, &events[i], 0, handle->domain.type);
+		ret = mi_lttng_event(the_writer, &events[i], 0,
+				the_handle->domain.type);
 		if (ret) {
 			goto end;
 		}
 	}
 
 	/* Close events element */
-	ret = mi_lttng_writer_close_element(writer);
+	ret = mi_lttng_writer_close_element(the_writer);
 
 end:
 	return ret;
@@ -1215,7 +1229,7 @@ static int list_events(const char *channel_name)
 	int ret = CMD_SUCCESS, count, i;
 	struct lttng_event *events = NULL;
 
-	count = lttng_list_events(handle, channel_name, &events);
+	count = lttng_list_events(the_handle, channel_name, &events);
 	if (count < 0) {
 		ret = CMD_ERROR;
 		ERR("%s", lttng_strerror(count));
@@ -1231,7 +1245,7 @@ static int list_events(const char *channel_name)
 		}
 	} else {
 		/* Pretty print */
-		MSG("\n%sEvent rules:", indent4);
+		MSG("\n%sRecording event rules:", indent4);
 		if (count == 0) {
 			MSG("%sNone\n", indent6);
 			goto end;
@@ -1341,7 +1355,7 @@ static void print_channel(struct lttng_channel *channel)
 	}
 
 	MSG("\n%sStatistics:", indent4);
-	if (listed_session.snapshot_mode) {
+	if (the_listed_session.snapshot_mode) {
 		/*
 		 * The lost packet count is omitted for sessions in snapshot
 		 * mode as it is misleading: it would indicate the number of
@@ -1380,7 +1394,7 @@ static int mi_list_channels(struct lttng_channel *channels, int count,
 	unsigned int chan_found = 0;
 
 	/* Open channels element */
-	ret = mi_lttng_channels_open(writer);
+	ret = mi_lttng_channels_open(the_writer);
 	if (ret) {
 		goto error;
 	}
@@ -1395,7 +1409,7 @@ static int mi_list_channels(struct lttng_channel *channels, int count,
 		}
 
 		/* Write channel element  and leave it open */
-		ret = mi_lttng_channel(writer, &channels[i], 1);
+		ret = mi_lttng_channel(the_writer, &channels[i], 1);
 		if (ret) {
 			goto error;
 		}
@@ -1407,7 +1421,7 @@ static int mi_list_channels(struct lttng_channel *channels, int count,
 		}
 
 		/* Closing the channel element we opened earlier */
-		ret = mi_lttng_writer_close_element(writer);
+		ret = mi_lttng_writer_close_element(the_writer);
 		if (ret) {
 			goto error;
 		}
@@ -1418,7 +1432,7 @@ static int mi_list_channels(struct lttng_channel *channels, int count,
 	}
 
 	/* Close channels element */
-	ret = mi_lttng_writer_close_element(writer);
+	ret = mi_lttng_writer_close_element(the_writer);
 	if (ret) {
 		goto error;
 	}
@@ -1440,7 +1454,7 @@ static int list_channels(const char *channel_name)
 
 	DBG("Listing channel(s) (%s)", channel_name ? : "<all>");
 
-	count = lttng_list_channels(handle, &channels);
+	count = lttng_list_channels(the_handle, &channels);
 	if (count < 0) {
 		switch (-count) {
 		case LTTNG_ERR_KERN_CHAN_NOT_FOUND:
@@ -1548,7 +1562,7 @@ static int handle_process_attr_status(enum lttng_process_attr process_attr,
 	case LTTNG_PROCESS_ATTR_TRACKER_HANDLE_STATUS_SESSION_DOES_NOT_EXIST:
 		ERR("Failed to get the inclusion set of the %s tracker: session `%s` no longer exists",
 				lttng_process_attr_to_string(process_attr),
-				handle->session_name);
+				the_handle->session_name);
 		ret = CMD_ERROR;
 		break;
 	default:
@@ -1565,12 +1579,12 @@ static int mi_output_empty_tracker(enum lttng_process_attr process_attr)
 {
 	int ret;
 
-	ret = mi_lttng_process_attribute_tracker_open(writer, process_attr);
+	ret = mi_lttng_process_attribute_tracker_open(the_writer, process_attr);
 	if (ret) {
 		goto end;
 	}
 
-	ret = mi_lttng_close_multi_element(writer, 2);
+	ret = mi_lttng_close_multi_element(the_writer, 2);
 end:
 	return ret;
 }
@@ -1596,8 +1610,8 @@ static int list_process_attr_tracker(enum lttng_process_attr process_attr)
 	const struct lttng_process_attr_values *values;
 	struct lttng_process_attr_tracker_handle *tracker_handle = NULL;
 
-	ret_code = lttng_session_get_tracker_handle(handle->session_name,
-			handle->domain.type, process_attr, &tracker_handle);
+	ret_code = lttng_session_get_tracker_handle(the_handle->session_name,
+			the_handle->domain.type, process_attr, &tracker_handle);
 	if (ret_code != LTTNG_OK) {
 		ERR("Failed to get process attribute tracker handle: %s",
 				lttng_strerror(ret_code));
@@ -1635,7 +1649,7 @@ static int list_process_attr_tracker(enum lttng_process_attr process_attr)
 	case LTTNG_TRACKING_POLICY_INCLUDE_SET:
 		break;
 	case LTTNG_TRACKING_POLICY_EXCLUDE_ALL:
-		if (writer) {
+		if (the_writer) {
 			mi_output_empty_tracker(process_attr);
 		}
 		MSG("none");
@@ -1648,7 +1662,7 @@ static int list_process_attr_tracker(enum lttng_process_attr process_attr)
 	default:
 		ERR("Unknown tracking policy encoutered while listing the %s process attribute tracker of session `%s`",
 				lttng_process_attr_to_string(process_attr),
-				handle->session_name);
+				the_handle->session_name);
 		ret = CMD_FATAL;
 		goto end;
 	}
@@ -1657,14 +1671,14 @@ static int list_process_attr_tracker(enum lttng_process_attr process_attr)
 	if (values_status != LTTNG_PROCESS_ATTR_VALUES_STATUS_OK) {
 		ERR("Failed to get the count of values in the inclusion set of the %s process attribute tracker of session `%s`",
 				lttng_process_attr_to_string(process_attr),
-				handle->session_name);
+				the_handle->session_name);
 		ret = CMD_FATAL;
 		goto end;
 	}
 
 	if (count == 0) {
 		/* Functionally equivalent to the 'exclude all' policy. */
-		if (writer) {
+		if (the_writer) {
 			mi_output_empty_tracker(process_attr);
 		}
 		MSG("none");
@@ -1673,10 +1687,10 @@ static int list_process_attr_tracker(enum lttng_process_attr process_attr)
 	}
 
 	/* Mi tracker_id element */
-	if (writer) {
+	if (the_writer) {
 		/* Open tracker_id and targets elements */
 		ret = mi_lttng_process_attribute_tracker_open(
-				writer, process_attr);
+				the_writer, process_attr);
 		if (ret) {
 			goto end;
 		}
@@ -1750,17 +1764,16 @@ static int list_process_attr_tracker(enum lttng_process_attr process_attr)
 		}
 
 		/* Mi */
-		if (writer) {
+		if (the_writer) {
 			ret = is_value_type_name(value_type) ?
 					      mi_lttng_string_process_attribute_value(
-							      writer,
-							      process_attr,
-							      name, false) :
+							the_writer,
+							process_attr, name,
+							false) :
 					      mi_lttng_integral_process_attribute_value(
-							      writer,
-							      process_attr,
-							      integral_value,
-							      false);
+							the_writer,
+							process_attr,
+							integral_value, false);
 			if (ret) {
 				goto end;
 			}
@@ -1769,8 +1782,8 @@ static int list_process_attr_tracker(enum lttng_process_attr process_attr)
 	MSG("");
 
 	/* Mi close tracker_id and targets */
-	if (writer) {
-		ret = mi_lttng_close_multi_element(writer, 2);
+	if (the_writer) {
+		ret = mi_lttng_close_multi_element(the_writer, 2);
 		if (ret) {
 			goto end;
 		}
@@ -1790,7 +1803,7 @@ static int list_trackers(const struct lttng_domain *domain)
 	MSG("Tracked process attributes");
 	/* Trackers listing */
 	if (lttng_opt_mi) {
-		ret = mi_lttng_trackers_open(writer);
+		ret = mi_lttng_trackers_open(the_writer);
 		if (ret) {
 			goto end;
 		}
@@ -1858,7 +1871,7 @@ static int list_trackers(const struct lttng_domain *domain)
 	MSG();
 	if (lttng_opt_mi) {
 		/* Close trackers element */
-		ret = mi_lttng_writer_close_element(writer);
+		ret = mi_lttng_writer_close_element(the_writer);
 		if (ret) {
 			goto end;
 		}
@@ -1960,7 +1973,7 @@ static enum cmd_error_code list_rotate_settings(const char *session_name)
 
 	MSG("Automatic rotation schedules:");
 	if (lttng_opt_mi) {
-		ret = mi_lttng_writer_open_element(writer,
+		ret = mi_lttng_writer_open_element(the_writer,
 				mi_lttng_element_rotation_schedules);
 		if (ret) {
 			cmd_ret = CMD_ERROR;
@@ -1980,7 +1993,7 @@ static enum cmd_error_code list_rotate_settings(const char *session_name)
 		}
 
 		if (lttng_opt_mi) {
-			ret = mi_lttng_rotation_schedule(writer, schedule);
+			ret = mi_lttng_rotation_schedule(the_writer, schedule);
 			if (ret) {
 				tmp_ret = CMD_ERROR;
 			}
@@ -1998,7 +2011,7 @@ static enum cmd_error_code list_rotate_settings(const char *session_name)
 	_MSG("\n");
 	if (lttng_opt_mi) {
 		/* Close the rotation_schedules element. */
-		ret = mi_lttng_writer_close_element(writer);
+		ret = mi_lttng_writer_close_element(the_writer);
 		if (ret) {
 			cmd_ret = CMD_ERROR;
 			goto end;
@@ -2030,7 +2043,7 @@ static int mi_list_session(const char *session_name,
 			/* We need to leave it open to append other informations
 			 * like domain, channel, events etc.*/
 			session_found = 1;
-			ret = mi_lttng_session(writer, &sessions[i], 1);
+			ret = mi_lttng_session(the_writer, &sessions[i], 1);
 			if (ret) {
 				goto end;
 			}
@@ -2057,21 +2070,21 @@ static int mi_list_sessions(struct lttng_session *sessions, int count)
 	int ret, i;
 
 	/* Opening sessions element */
-	ret = mi_lttng_sessions_open(writer);
+	ret = mi_lttng_sessions_open(the_writer);
 	if (ret) {
 		goto end;
 	}
 
 	/* Listing sessions */
 	for (i = 0; i < count; i++) {
-		ret = mi_lttng_session(writer, &sessions[i], 0);
+		ret = mi_lttng_session(the_writer, &sessions[i], 0);
 		if (ret) {
 			goto end;
 		}
 	}
 
 	/* Closing sessions element */
-	ret = mi_lttng_writer_close_element(writer);
+	ret = mi_lttng_writer_close_element(the_writer);
 	if (ret) {
 		goto end;
 	}
@@ -2116,26 +2129,27 @@ static int list_sessions(const char *session_name)
 	} else {
 		/* Pretty print */
 		if (count == 0) {
-			MSG("Currently no available tracing session");
+			MSG("Currently no available recording session");
 			goto end;
 		}
 
 		if (session_name == NULL) {
-			MSG("Available tracing sessions:");
+			MSG("Available recording sessions:");
 		}
 
 		for (i = 0; i < count; i++) {
 			if (session_name != NULL) {
 				if (strncmp(sessions[i].name, session_name, NAME_MAX) == 0) {
 					session_found = 1;
-					MSG("Tracing session %s: [%s%s]", session_name,
+					MSG("Recording session %s: [%s%s]", session_name,
 							active_string(sessions[i].enabled),
 							snapshot_string(sessions[i].snapshot_mode));
 					if (*sessions[i].path) {
 						MSG("%sTrace output: %s\n", indent4, sessions[i].path);
 					}
-					memcpy(&listed_session, &sessions[i],
-							sizeof(listed_session));
+					memcpy(&the_listed_session,
+							&sessions[i],
+							sizeof(the_listed_session));
 					break;
 				}
 			} else {
@@ -2180,20 +2194,20 @@ static int mi_list_domains(struct lttng_domain *domains, int count)
 {
 	int i, ret;
 	/* Open domains element */
-	ret = mi_lttng_domains_open(writer);
+	ret = mi_lttng_domains_open(the_writer);
 	if (ret) {
 		goto end;
 	}
 
 	for (i = 0; i < count; i++) {
-		ret = mi_lttng_domain(writer, &domains[i] , 0);
+		ret = mi_lttng_domain(the_writer, &domains[i], 0);
 		if (ret) {
 			goto end;
 		}
 	}
 
 	/* Closing domains element */
-	ret = mi_lttng_writer_close_element(writer);
+	ret = mi_lttng_writer_close_element(the_writer);
 	if (ret) {
 		goto end;
 	}
@@ -2302,23 +2316,24 @@ int cmd_list(int argc, const char **argv)
 
 	/* Mi check */
 	if (lttng_opt_mi) {
-		writer = mi_lttng_writer_create(fileno(stdout), lttng_opt_mi);
-		if (!writer) {
+		the_writer = mi_lttng_writer_create(
+				fileno(stdout), lttng_opt_mi);
+		if (!the_writer) {
 			ret = CMD_ERROR;
 			goto end;
 		}
 
 		/* Open command element */
-		ret = mi_lttng_writer_command_open(writer,
-				mi_lttng_element_command_list);
+		ret = mi_lttng_writer_command_open(
+				the_writer, mi_lttng_element_command_list);
 		if (ret) {
 			ret = CMD_ERROR;
 			goto end;
 		}
 
 		/* Open output element */
-		ret = mi_lttng_writer_open_element(writer,
-				mi_lttng_element_command_output);
+		ret = mi_lttng_writer_open_element(
+				the_writer, mi_lttng_element_command_output);
 		if (ret) {
 			ret = CMD_ERROR;
 			goto end;
@@ -2357,8 +2372,8 @@ int cmd_list(int argc, const char **argv)
 	}
 
 	if (opt_kernel || opt_userspace || opt_jul || opt_log4j || opt_python) {
-		handle = lttng_create_handle(session_name, &domain);
-		if (handle == NULL) {
+		the_handle = lttng_create_handle(session_name, &domain);
+		if (the_handle == NULL) {
 			ret = CMD_FATAL;
 			goto end;
 		}
@@ -2406,7 +2421,7 @@ int cmd_list(int argc, const char **argv)
 		if (lttng_opt_mi) {
 			/* Open element sessions
 			 * Present for xml consistency */
-			ret = mi_lttng_sessions_open(writer);
+			ret = mi_lttng_sessions_open(the_writer);
 			if (ret) {
 				goto end;
 			}
@@ -2434,14 +2449,14 @@ int cmd_list(int argc, const char **argv)
 				/* Add of domains and domain element for xml
 				 * consistency and validation
 				 */
-				ret = mi_lttng_domains_open(writer);
+				ret = mi_lttng_domains_open(the_writer);
 				if (ret) {
 					goto end;
 				}
 
 				/* Open domain and leave it open for
 				 * nested channels printing */
-				ret = mi_lttng_domain(writer, &domain, 1);
+				ret = mi_lttng_domain(the_writer, &domain, 1);
 				if (ret) {
 					goto end;
 				}
@@ -2463,7 +2478,8 @@ int cmd_list(int argc, const char **argv)
 
 			if (lttng_opt_mi) {
 				/* Close domain and domain element */
-				ret = mi_lttng_close_multi_element(writer, 2);
+				ret = mi_lttng_close_multi_element(
+						the_writer, 2);
 			}
 			if (ret) {
 				goto end;
@@ -2482,7 +2498,7 @@ int cmd_list(int argc, const char **argv)
 			}
 
 			if (lttng_opt_mi) {
-				ret = mi_lttng_domains_open(writer);
+				ret = mi_lttng_domains_open(the_writer);
 				if (ret) {
 					ret = CMD_ERROR;
 					goto end;
@@ -2515,7 +2531,8 @@ int cmd_list(int argc, const char **argv)
 				}
 
 				if (lttng_opt_mi) {
-					ret = mi_lttng_domain(writer, &domains[i], 1);
+					ret = mi_lttng_domain(the_writer,
+							&domains[i], 1);
 					if (ret) {
 						ret = CMD_ERROR;
 						goto end;
@@ -2523,12 +2540,13 @@ int cmd_list(int argc, const char **argv)
 				}
 
 				/* Clean handle before creating a new one */
-				if (handle) {
-					lttng_destroy_handle(handle);
+				if (the_handle) {
+					lttng_destroy_handle(the_handle);
 				}
 
-				handle = lttng_create_handle(session_name, &domains[i]);
-				if (handle == NULL) {
+				the_handle = lttng_create_handle(
+						session_name, &domains[i]);
+				if (the_handle == NULL) {
 					ret = CMD_FATAL;
 					goto end;
 				}
@@ -2564,7 +2582,8 @@ int cmd_list(int argc, const char **argv)
 next_domain:
 				if (lttng_opt_mi) {
 					/* Close domain element */
-					ret = mi_lttng_writer_close_element(writer);
+					ret = mi_lttng_writer_close_element(
+							the_writer);
 					if (ret) {
 						ret = CMD_ERROR;
 						goto end;
@@ -2574,7 +2593,8 @@ next_domain:
 			}
 			if (lttng_opt_mi) {
 				/* Close the domains, session and sessions element */
-				ret = mi_lttng_close_multi_element(writer, 3);
+				ret = mi_lttng_close_multi_element(
+						the_writer, 3);
 				if (ret) {
 					ret = CMD_ERROR;
 					goto end;
@@ -2586,14 +2606,14 @@ next_domain:
 	/* Mi closing */
 	if (lttng_opt_mi) {
 		/* Close  output element */
-		ret = mi_lttng_writer_close_element(writer);
+		ret = mi_lttng_writer_close_element(the_writer);
 		if (ret) {
 			ret = CMD_ERROR;
 			goto end;
 		}
 
 		/* Command element close */
-		ret = mi_lttng_writer_command_close(writer);
+		ret = mi_lttng_writer_command_close(the_writer);
 		if (ret) {
 			ret = CMD_ERROR;
 			goto end;
@@ -2601,14 +2621,14 @@ next_domain:
 	}
 end:
 	/* Mi clean-up */
-	if (writer && mi_lttng_writer_destroy(writer)) {
+	if (the_writer && mi_lttng_writer_destroy(the_writer)) {
 		/* Preserve original error code */
 		ret = ret ? ret : -LTTNG_ERR_MI_IO_FAIL;
 	}
 
 	free(domains);
-	if (handle) {
-		lttng_destroy_handle(handle);
+	if (the_handle) {
+		lttng_destroy_handle(the_handle);
 	}
 
 	poptFreeContext(pc);

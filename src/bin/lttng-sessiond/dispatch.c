@@ -36,45 +36,50 @@ static void update_ust_app(int app_sock)
 {
 	struct ltt_session *sess, *stmp;
 	const struct ltt_session_list *session_list = session_get_list();
+	struct ust_app *app;
 
 	/* Consumer is in an ERROR state. Stop any application update. */
-	if (uatomic_read(&ust_consumerd_state) == CONSUMER_ERROR) {
+	if (uatomic_read(&the_ust_consumerd_state) == CONSUMER_ERROR) {
 		/* Stop the update process since the consumer is dead. */
 		return;
 	}
 
+	rcu_read_lock();
+	assert(app_sock >= 0);
+	app = ust_app_find_by_sock(app_sock);
+	if (app == NULL) {
+		/*
+		 * Application can be unregistered before so
+		 * this is possible hence simply stopping the
+		 * update.
+		 */
+		DBG3("UST app update failed to find app sock %d",
+			app_sock);
+		goto unlock_rcu;
+	}
+
+	/* Update all event notifiers for the app. */
+	ust_app_global_update_event_notifier_rules(app);
+
 	/* For all tracing session(s) */
 	cds_list_for_each_entry_safe(sess, stmp, &session_list->head, list) {
-		struct ust_app *app;
-
 		if (!session_get(sess)) {
 			continue;
 		}
 		session_lock(sess);
-		if (!sess->active || !sess->ust_session) {
+		if (!sess->active || !sess->ust_session ||
+				!sess->ust_session->active) {
 			goto unlock_session;
 		}
 
-		rcu_read_lock();
-		assert(app_sock >= 0);
-		app = ust_app_find_by_sock(app_sock);
-		if (app == NULL) {
-			/*
-			 * Application can be unregistered before so
-			 * this is possible hence simply stopping the
-			 * update.
-			 */
-			DBG3("UST app update failed to find app sock %d",
-				app_sock);
-			goto unlock_rcu;
-		}
 		ust_app_global_update(sess->ust_session, app);
-	unlock_rcu:
-		rcu_read_unlock();
 	unlock_session:
 		session_unlock(sess);
 		session_put(sess);
 	}
+
+unlock_rcu:
+	rcu_read_unlock();
 }
 
 /*
@@ -231,7 +236,8 @@ static void *thread_dispatch_ust_registration(void *data)
 
 	rcu_register_thread();
 
-	health_register(health_sessiond, HEALTH_SESSIOND_TYPE_APP_REG_DISPATCH);
+	health_register(the_health_sessiond,
+			HEALTH_SESSIOND_TYPE_APP_REG_DISPATCH);
 
 	if (testpoint(sessiond_thread_app_reg_dispatch)) {
 		goto error_testpoint;
@@ -284,7 +290,7 @@ static void *thread_dispatch_ust_registration(void *data)
 					ust_cmd->sock, ust_cmd->reg_msg.name,
 					ust_cmd->reg_msg.major, ust_cmd->reg_msg.minor);
 
-			if (ust_cmd->reg_msg.type == USTCTL_SOCKET_CMD) {
+			if (ust_cmd->reg_msg.type == LTTNG_UST_CTL_SOCKET_CMD) {
 				wait_node = zmalloc(sizeof(*wait_node));
 				if (!wait_node) {
 					PERROR("zmalloc wait_node dispatch");
@@ -386,6 +392,8 @@ static void *thread_dispatch_ust_registration(void *data)
 				/* Set app version. This call will print an error if needed. */
 				(void) ust_app_version(app);
 
+				(void) ust_app_setup_event_notifier_group(app);
+
 				/* Send notify socket through the notify pipe. */
 				ret = send_socket_to_thread(
 						notifiers->apps_cmd_notify_pipe_write_fd,
@@ -480,7 +488,7 @@ error_testpoint:
 		health_error();
 		ERR("Health error occurred in %s", __func__);
 	}
-	health_unregister(health_sessiond);
+	health_unregister(the_health_sessiond);
 	rcu_unregister_thread();
 	return NULL;
 }

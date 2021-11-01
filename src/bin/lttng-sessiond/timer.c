@@ -346,7 +346,7 @@ void *thread_timer(void *data)
 	rcu_register_thread();
 	rcu_thread_online();
 
-	health_register(health_sessiond, HEALTH_SESSIOND_TYPE_TIMER);
+	health_register(the_health_sessiond, HEALTH_SESSIOND_TYPE_TIMER);
 	health_code_update();
 
 	/* Only self thread will receive signal mask. */
@@ -394,13 +394,13 @@ void *thread_timer(void *data)
 			 * still fire.
 			 */
 		} else {
-			ERR("Unexpected signal %d\n", info.si_signo);
+			ERR("Unexpected signal %d", info.si_signo);
 		}
 	}
 
 end:
-	DBG("[timer-thread] Exit");
-	health_unregister(health_sessiond);
+	DBG("Thread exit");
+	health_unregister(the_health_sessiond);
 	rcu_thread_offline();
 	rcu_unregister_thread();
 	return NULL;

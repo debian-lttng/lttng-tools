@@ -1,0 +1,938 @@
+'\" t
+.\"     Title: lttng-add-trigger
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
+.\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
+.\"      Date: 14 June 2021
+.\"    Manual: LTTng Manual
+.\"    Source: LTTng 2.13.1
+.\"  Language: English
+.\"
+.TH "LTTNG\-ADD\-TRIGGER" "1" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+lttng-add-trigger \- Add an LTTng trigger
+.SH "SYNOPSIS"
+.sp
+.nf
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBadd\-trigger\fR [\fB--name\fR=\fINAME\fR] [\fB--owner-uid\fR=\fIUID\fR]
+      \fB--condition\fR=\fICONDTYPE\fR [\fICONDARGS\fR]
+      \fB--action\fR=\fIACTTYPE\fR [\fIACTARGS\fR] [\fB--action\fR=\fIACTTYPE\fR [\fIACTARGS\fR]]\&...
+.fi
+.SH "DESCRIPTION"
+.sp
+The \fBlttng add-trigger\fR command creates and adds an LTTng \fItrigger\fR to the connected session daemon (see \fBlttng-sessiond\fR(8))\&.
+.sp
+See \fBlttng-concepts\fR(7) to learn more about LTTng triggers\&.
+.sp
+By default, the \fBadd-trigger\fR command automatically assigns a name, unique for a given session daemon and Unix user, to the added trigger\&. Assign a custom name with the \fB--name\fR\&.
+.sp
+The \fBadd-trigger\fR command adds a trigger for your Unix user\&. If your Unix user is \fBroot\fR, you may add the trigger as another user with the \fB--owner-uid\fR option\&.
+.sp
+Specify the condition of the trigger to add with a condition specifier and its actions with one or more action specifiers\&. The order of the action specifiers is significant: LTTng attempts to execute the actions of a firing trigger in this order\&.
+.sp
+See the \(lqEXAMPLES\(rq section below for usage examples\&.
+.sp
+List the triggers of your Unix user, or of all users if your Unix user is \fBroot\fR, with the \fBlttng-list-triggers\fR(1) command\&.
+.sp
+Remove a trigger with the \fBlttng-remove-trigger\fR(1) command\&.
+.SS "Condition specifier"
+.sp
+Synopsis:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\fB--condition\fR=\fICONDTYPE\fR [\fICONDARGS\fR]
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+A condition specifier is the \fB--condition\fR option, which specifies the type of condition \fICONDTYPE\fR, followed, depending on \fICONDTYPE\fR, with zero or more arguments \fICONDARGS\fR\&.
+.sp
+The available condition types are:
+.PP
+\fBevent-rule-matches\fR
+.RS 4
+Synopsis:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\fB--condition\fR=\fBevent\-rule\-matches\fR [\fB--capture\fR=\fICDESCR\fR]\&... \fIERSPEC\fR
+\ \&
+.fi
+.if n \{\
+.RE
+.\}
+An
+\fBevent-rule-matches\fR
+condition is considered satisfied when the event rule specified with
+\fIERSPEC\fR
+matches an event\&.
+.sp
+See
+\fBlttng-event-rule\fR(7)
+to learn how to specify an event rule (\fIERSPEC\fR
+part)\&.
+.sp
+Capture event record and context fields with one or more
+\fB--capture\fR
+options (see the \(lqCapture descriptor\(rq section below to learn more)\&. When an
+\fBevent-rule-matches\fR
+condition with capture descriptors is satisfied, the captured field values are available in the evaluation object of the condition using the liblttng\-ctl C\ \&API\&.
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBImportant\fR
+.ps -1
+.br
+.RS 4
+Make sure to
+\fBsingle\-quote\fR
+\fICDESCR\fR
+when you run the
+\fBadd-trigger\fR
+command from a shell, as capture descriptors can include characters having a special meaning for most shells\&.
+.sp .5v
+.RE
+.RE
+.SS "Capture descriptor"
+.sp
+A capture descriptor is a textual expression which describes how to read an event record or context field\&.
+.sp
+The argument of a \fB--capture\fR option, when using an \(lqevent rule matches\(rq condition specifier (\fBevent-rule-matches\fR), is a capture descriptor\&.
+.sp
+A capture descriptor expression is one of:
+.PP
+\fINAME\fR
+.RS 4
+An event record field named
+\fINAME\fR\&.
+.sp
+The supported event record field types are:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Integer
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Enumeration (integral value)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Floating point number
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Static array of integers
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Dynamic array (\(lqsequence\(rq) of integers
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Text string
+.RE
+.sp
+Examples:
+\fBmy_field\fR,
+\fBtarget_cpu\fR,
+\fBip\fR\&.
+.RE
+.PP
+\fB$ctx.\fR\fINAME\fR
+.RS 4
+A statically\-known context field named
+\fINAME\fR\&.
+.sp
+List the available statically\-known context field names with
+\fBlttng-add-context\fR(1)\&.
+.sp
+Examples:
+\fB$ctx.prio\fR,
+\fB$ctx.preemptible\fR,
+\fB$ctx.perf:cpu:stalled-cycles-frontend\fR\&.
+.RE
+.PP
+\fB$app.\fR\fIPROVIDER\fR\fB.\fR\fINAME\fR
+.RS 4
+An application\-specific context field named
+\fINAME\fR
+from the provider
+\fIPROVIDER\fR\&.
+.sp
+See
+\fBlttng-add-context\fR(1)
+to learn more about application\-specific context fields\&.
+.sp
+Example:
+\fB$app.server:cur_user\fR\&.
+.RE
+.PP
+\fIEXPR\fR\fB[\fR\fIINDEX\fR\fB]\fR
+.RS 4
+The element at index
+\fIINDEX\fR
+of the array field (static or dynamic) identified by the expression
+\fIEXPR\fR\&.
+.sp
+\fIINDEX\fR
+must be a constant, positive integral value\&.
+.sp
+Examples:
+\fBip[3]\fR,
+\fBuser_ids[15]\fR\&.
+.RE
+.sp
+If, when an event rule matches, a given capture descriptor doesn\(cqt identify an existing event or context field, then the captured value is reported as being unavailable\&. This applies to:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A nonexistent event record field name\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A nonexistent statically\-known context field name\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A nonexistent application\-specific context field name\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An out\-of\-bounds array field index\&.
+.RE
+.SS "Action specifier"
+.sp
+Synopsis:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\fB--action\fR=\fIACTTYPE\fR [\fIACTARGS\fR]
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+An action specifier is the \fB--action\fR option, which specifies the type of action \fIACTTYPE\fR, followed, depending on \fIACTTYPE\fR, with zero or more arguments \fIACTARGS\fR\&.
+.sp
+The available action types are:
+.PP
+Notify
+.RS 4
+Synopsis:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\fB--action\fR=\fBnotify\fR [\fB--rate-policy\fR=\fIPOLICY\fR]
+\ \&
+.fi
+.if n \{\
+.RE
+.\}
+Sends a notification through the notification mechanism of the session daemon (see
+\fBlttng-session\fR(8))\&.
+.sp
+The session daemon sends details about the condition evaluation along with the notification\&.
+.sp
+As of LTTng\ \&2\&.13\&.1, you can write a C/C++ program to receive LTTng notifications (see the liblttng\-ctl C\ \&headers)\&.
+.sp
+See below for the
+\fB--rate-policy\fR
+option\&.
+.RE
+.PP
+Start a recording session
+.RS 4
+Synopsis:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\fB--action\fR=\fBstart\-session\fR \fISESSION\fR [\fB--rate-policy\fR=\fIPOLICY\fR]
+\ \&
+.fi
+.if n \{\
+.RE
+.\}
+Starts the recording session named
+\fISESSION\fR
+like
+\fBlttng-start\fR(1)
+would\&.
+.sp
+If no recording session has the name
+\fISESSION\fR
+when LTTng is ready to execute the action, LTTng does nothing\&.
+.sp
+See below for the
+\fB--rate-policy\fR
+option\&.
+.RE
+.PP
+Stop a recording session
+.RS 4
+Synopsis:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\fB--action\fR=\fBstop\-session\fR \fISESSION\fR [\fB--rate-policy\fR=\fIPOLICY\fR]
+\ \&
+.fi
+.if n \{\
+.RE
+.\}
+Stops the recording session named
+\fISESSION\fR
+like
+\fBlttng-stop\fR(1)
+would\&.
+.sp
+If no recording session has the name
+\fISESSION\fR
+when LTTng is ready to execute the action, LTTng does nothing\&.
+.sp
+See below for the
+\fB--rate-policy\fR
+option\&.
+.RE
+.PP
+Rotate a recording session
+.RS 4
+Synopsis:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\fB--action\fR=\fBrotate\-session\fR \fISESSION\fR [\fB--rate-policy\fR=\fIPOLICY\fR]
+\ \&
+.fi
+.if n \{\
+.RE
+.\}
+Archives the current trace chunk of the recording session named
+\fISESSION\fR
+like
+\fBlttng-rotate\fR(1)
+would\&.
+.sp
+If no recording session has the name
+\fISESSION\fR
+when LTTng is ready to execute the action, LTTng does nothing\&.
+.sp
+See below for the
+\fB--rate-policy\fR
+option\&.
+.RE
+.PP
+Take a recording session snapshot
+.RS 4
+Synopsis:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\fB--action\fR=\fBsnapshot\-session\fR \fISESSION\fR [\fB--rate-policy\fR=\fIPOLICY\fR]
+\ \&
+.fi
+.if n \{\
+.RE
+.\}
+Takes a snapshot of the recording session named
+\fISESSION\fR
+like
+\fBlttng-snapshot\fR(1)
+would\&.
+.sp
+When the condition of the trigger is satisfied, the recording session named
+\fISESSION\fR, if any, must be a snapshot\-mode recording session (see
+\fBlttng-create\fR(1))\&.
+.sp
+If no recording session has the name
+\fISESSION\fR
+when LTTng is ready to execute the action, LTTng does nothing\&.
+.sp
+See below for the
+\fB--rate-policy\fR
+option\&.
+.RE
+.sp
+Common action options (as of LTTng\ \&2\&.13\&.1):
+.PP
+\fB--rate-policy\fR=\fIPOLICY\fR
+.RS 4
+Set the rate policy of the action to
+\fIPOLICY\fR
+instead of
+\fBevery:1\fR
+(always execute)\&.
+.sp
+A trigger which \(lqfires\(rq (its condition is satisfied) leads to an execution request for each of its actions, in order\&. An execution request of a given action\ \&\fIA\fR
+first increments the execution request count\ \&\fIC\fR
+of\ \&\fIA\fR\&. An execution request can then become an actual execution when\ \&\fIC\fR
+satisfies the rate policy of\ \&\fIA\fR\&.
+.sp
+\fIPOLICY\fR
+is one of:
+.PP
+\fBonce-after:\fR\fICOUNT\fR
+.RS 4
+Only execute\ \&\fIA\fR
+when\ \&\fIC\fR
+is equal to
+\fICOUNT\fR\&.
+.sp
+In other words, execute\ \&\fIA\fR
+a single time after
+\fICOUNT\fR
+execution requests\&.
+.RE
+.PP
+\fBevery:\fR\fICOUNT\fR
+.RS 4
+Only execute\ \&\fIA\fR
+when\ \&\fIC\fR
+is a multiple of
+\fICOUNT\fR\&.
+.sp
+In other words, execute\ \&\fIA\fR
+every
+\fICOUNT\fR
+execution requests\&.
+.RE
+.sp
+\fICOUNT\fR
+must be an integer greater than\ \&0\&.
+.sp
+As of LTTng\ \&2\&.13\&.1, you can use this option with any action type, but new action types in the future may not support it\&.
+.RE
+.SH "OPTIONS"
+.SS "Identification"
+.PP
+\fB--name\fR=\fINAME\fR
+.RS 4
+Set the unique name of the trigger to add to
+\fINAME\fR
+instead of the
+\fBadd-trigger\fR
+command automatically assigning one\&.
+.RE
+.PP
+\fB--owner-uid\fR=\fIUID\fR
+.RS 4
+Add the trigger as the Unix user having the user ID
+\fIUID\fR\&.
+.sp
+You may only use this option if your Unix user is
+\fBroot\fR\&.
+.RE
+.SS "Specifier"
+.PP
+\fB--condition\fR=\fICONDTYPE\fR
+.RS 4
+Introductory option for a condition specifier of type
+\fICONDTYPE\fR\&.
+.sp
+See the \(lqCondition specifier\(rq section above to learn more\&.
+.RE
+.PP
+\fB--action\fR=\fIACTTYPE\fR
+.RS 4
+Introductory option for an action specifier of type
+\fIACTTYPE\fR\&.
+.sp
+See the \(lqAction specifier\(rq section above to learn more\&.
+.RE
+.SS "Program information"
+.PP
+\fB-h\fR, \fB--help\fR
+.RS 4
+Show help\&.
+.sp
+This option attempts to launch
+\fB/usr/bin/man\fR
+to view this manual page\&. Override the manual pager path with the
+\fBLTTNG_MAN_BIN_PATH\fR
+environment variable\&.
+.RE
+.PP
+\fB--list-options\fR
+.RS 4
+List available command options and quit\&.
+.RE
+.SH "EXIT STATUS"
+.PP
+\fB0\fR
+.RS 4
+Success
+.RE
+.PP
+\fB1\fR
+.RS 4
+Command error
+.RE
+.PP
+\fB2\fR
+.RS 4
+Undefined command
+.RE
+.PP
+\fB3\fR
+.RS 4
+Fatal error
+.RE
+.PP
+\fB4\fR
+.RS 4
+Command warning (something went wrong during the command)
+.RE
+.SH "ENVIRONMENT"
+.PP
+\fBLTTNG_ABORT_ON_ERROR\fR
+.RS 4
+Set to
+\fB1\fR
+to abort the process after the first error is encountered\&.
+.RE
+.PP
+\fBLTTNG_HOME\fR
+.RS 4
+Path to the LTTng home directory\&.
+.sp
+Defaults to
+\fB$HOME\fR\&.
+.sp
+Useful when the Unix user running the commands has a non\-writable home directory\&.
+.RE
+.PP
+\fBLTTNG_MAN_BIN_PATH\fR
+.RS 4
+Absolute path to the manual pager to use to read the LTTng command\-line help (with
+\fBlttng-help\fR(1)
+or with the
+\fB--help\fR
+option) instead of
+\fB/usr/bin/man\fR\&.
+.RE
+.PP
+\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
+.RS 4
+Path to the directory containing the
+\fBsession.xsd\fR
+recording session configuration XML schema\&.
+.RE
+.PP
+\fBLTTNG_SESSIOND_PATH\fR
+.RS 4
+Absolute path to the LTTng session daemon binary (see
+\fBlttng-sessiond\fR(8)) to spawn from the
+\fBlttng-create\fR(1)
+command\&.
+.sp
+The
+\fB--sessiond-path\fR
+general option overrides this environment variable\&.
+.RE
+.SH "FILES"
+.PP
+\fB$LTTNG_HOME/.lttngrc\fR
+.RS 4
+Unix user\(cqs LTTng runtime configuration\&.
+.sp
+This is where LTTng stores the name of the Unix user\(cqs current recording session between executions of
+\fBlttng\fR(1)\&.
+\fBlttng-create\fR(1)
+and
+\fBlttng-set-session\fR(1)
+set the current recording session\&.
+.RE
+.PP
+\fB$LTTNG_HOME/lttng-traces\fR
+.RS 4
+Default output directory of LTTng traces in local and snapshot modes\&.
+.sp
+Override this path with the
+\fB--output\fR
+option of the
+\fBlttng-create\fR(1)
+command\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng\fR
+.RS 4
+Unix user\(cqs LTTng runtime and configuration directory\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng/sessions\fR
+.RS 4
+Default directory containing the Unix user\(cqs saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.PP
+\fB/usr/local/etc/lttng/sessions\fR
+.RS 4
+Directory containing the system\-wide saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+\fB$LTTNG_HOME\fR defaults to the value of the \fBHOME\fR environment variable\&.
+.sp .5v
+.RE
+.SH "EXAMPLES"
+.PP
+\fBExample\ \&1.\ \&Add an \(lqevent rule matches\(rq trigger of which the action is to send a notification\&.\fR
+.RS 4
+.sp
+The \fBevent-rule-matches\fR trigger condition below specifies an event rule which matches any Linux system call entry event with a name starting with \fBexec\fR\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng add\-trigger \-\-condition=event\-rule\-matches \e
+                    \-\-type=syscall:entry \e
+                    \-\-name=\*(Aqexec*\*(Aq \-\-action=notify
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&2.\ \&Add an \(lqevent rule matches\(rq trigger of which the action is to stop a recording session and then rotate it\&.\fR
+.RS 4
+.sp
+The \fBevent-rule-matches\fR trigger condition below specifies an event rule which matches any user space tracepoint event with a name starting with \fBmy_app:\fR and with a log level at least as severe as a warning\&.
+.sp
+The order of the \fB--action\fR options below is significant\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng add\-trigger \-\-condition=event\-rule\-matches \e
+                    \-\-type=user \-\-name=\*(Aqmy_app:*\*(Aq \e
+                    \-\-log\-level=TRACE_WARNING\&.\&. \e
+                    \-\-action=stop\-session my\-session \e
+                    \-\-action=rotate\-session my\-session
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+See \fBlttng-concepts\fR(7) to learn more about recording sessions and rotations\&.
+.RE
+.PP
+\fBExample\ \&3.\ \&Add an \(lqevent rule matches\(rq trigger with a specific name\&.\fR
+.RS 4
+.sp
+The \fBevent-rule-matches\fR trigger condition below specifies an event rule which matches events which LTTng creates from the \fBmy-logger\fR Python logger\&.
+.sp
+The added trigger is named \fBmy-trigger\fR, a unique name for your Unix user\&.
+.sp
+See the \fB--name\fR option\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng add\-trigger \-\-name=my\-trigger \e
+                    \-\-condition=event\-rule\-matches \e
+                    \-\-type=python \-\-name=my\-logger \e
+                    \-\-action=snapshot\-session my\-session
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&4.\ \&Add an \(lqevent rule matches\(rq trigger as another Unix user\&.\fR
+.RS 4
+.sp
+The command line below adds a trigger as the \fBmireille\fR Unix user\&.
+.sp
+Your Unix user must be \fBroot\fR to use the \fB--owner-uid\fR option\&.
+.sp
+The condition of the trigger specifies an event rule which matches LTTng kernel tracepoint events with a name which starts with \fBsched\fR\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+# lttng add\-trigger \-\-owner\-uid=$(id \-\-user mireille) \e
+                    \-\-condition=event\-rule\-matches \e
+                    \-\-type=kernel \-\-name=\*(Aqsched*\*(Aq \e
+                    \-\-action=notify
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&5.\ \&Add an \(lqevent rule matches\(rq trigger with a notification action to be executed every 10\ \&times\&.\fR
+.RS 4
+.sp
+The \fBevent-rule-matches\fR trigger condition below specifies an event rule which matches all user space tracepoint events\&.
+.sp
+See the \fB--rate-policy\fR option above\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng add\-trigger \-\-condition=event\-rule\-matches \e
+                    \-\-type=user \-\-action=notify \e
+                    \-\-rate\-policy=every:10
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&6.\ \&Add an \(lqevent rule matches\(rq trigger with a recording session starting action to be executed a single time after 40\ \&times\&.\fR
+.RS 4
+.sp
+The \fBevent-rule-matches\fR trigger condition below specifies an event rule which matches any Linux system call event (entry and exit) of which the \fBfd\fR event record field is less than\ \&3\&.
+.sp
+See the \fB--rate-policy\fR option above\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng add\-trigger \-\-condition=event\-rule\-matches \e
+                    \-\-type=syscall \-\-filter=\*(Aqfd < 3\*(Aq \e
+                    \-\-action=start\-session my\-session \e
+                    \-\-rate\-policy=once\-after:40
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.SH "RESOURCES"
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng project website <https://lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng documentation <https://lttng.org/docs>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng bug tracker <https://bugs.lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Git repositories <https://git.lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+GitHub organization <https://github.com/lttng>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
+for support and development:
+\fBlttng-dev@lists.lttng.org\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+IRC channel <irc://irc.oftc.net/lttng>:
+\fB#lttng\fR
+on
+\fBirc.oftc.net\fR
+.RE
+.SH "COPYRIGHT"
+.sp
+This program is part of the LTTng\-tools project\&.
+.sp
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+.SH "THANKS"
+.sp
+Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
+.sp
+Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
+.SH "SEE ALSO"
+.sp
+\fBlttng\fR(1), \fBlttng-list-triggers\fR(1), \fBlttng-remove-trigger\fR(1), \fBlttng-concepts\fR(7)

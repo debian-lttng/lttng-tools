@@ -59,6 +59,8 @@ static void update_agent_app(const struct agent_app *app)
 {
 	struct ltt_session *session, *stmp;
 	struct ltt_session_list *list;
+	struct agent *trigger_agent;
+	struct lttng_ht_iter iter;
 
 	list = session_get_list();
 	assert(list);
@@ -82,6 +84,17 @@ static void update_agent_app(const struct agent_app *app)
 		session_unlock(session);
 		session_put(session);
 	}
+
+	rcu_read_lock();
+	/*
+	 * We are protected against the addition of new events by the session
+	 * list lock being held.
+	 */
+	cds_lfht_for_each_entry(the_trigger_agents_ht_by_domain->ht,
+			&iter.iter, trigger_agent, node.node) {
+		agent_update(trigger_agent, app);
+	}
+	rcu_read_unlock();
 }
 
 /*
@@ -101,13 +114,13 @@ static struct lttcomm_sock *init_tcp_socket(void)
 	 */
 	ret = uri_parse(default_reg_uri, &uri);
 	assert(ret);
-	assert(config.agent_tcp_port.begin > 0);
-	uri->port = config.agent_tcp_port.begin;
+	assert(the_config.agent_tcp_port.begin > 0);
+	uri->port = the_config.agent_tcp_port.begin;
 
 	sock = lttcomm_alloc_sock_from_uri(uri);
 	uri_free(uri);
 	if (sock == NULL) {
-		ERR("[agent-thread] agent allocating TCP socket");
+		ERR("agent allocating TCP socket");
 		goto error;
 	}
 
@@ -116,15 +129,15 @@ static struct lttcomm_sock *init_tcp_socket(void)
 		goto error;
 	}
 
-	for (port = config.agent_tcp_port.begin;
-			port <= config.agent_tcp_port.end; port++) {
+	for (port = the_config.agent_tcp_port.begin;
+			port <= the_config.agent_tcp_port.end; port++) {
 		ret = lttcomm_sock_set_port(sock, (uint16_t) port);
 		if (ret) {
-			ERR("[agent-thread] Failed to set port %u on socket",
+			ERR("Failed to set port %u on socket",
 					port);
 			goto error;
 		}
-		DBG3("[agent-thread] Trying to bind on port %u", port);
+		DBG3("Trying to bind on port %u", port);
 		ret = sock->ops->bind(sock);
 		if (!ret) {
 			bind_succeeded = true;
@@ -141,16 +154,17 @@ static struct lttcomm_sock *init_tcp_socket(void)
 	}
 
 	if (!bind_succeeded) {
-		if (config.agent_tcp_port.begin == config.agent_tcp_port.end) {
+		if (the_config.agent_tcp_port.begin ==
+				the_config.agent_tcp_port.end) {
 			WARN("Another process is already using the agent port %i. "
-					"Agent support will be deactivated.",
-					config.agent_tcp_port.begin);
+			     "Agent support will be deactivated.",
+					the_config.agent_tcp_port.begin);
 			goto error;
 		} else {
 			WARN("All ports in the range [%i, %i] are already in use. "
-					"Agent support will be deactivated.",
-					config.agent_tcp_port.begin,
-					config.agent_tcp_port.end);
+			     "Agent support will be deactivated.",
+					the_config.agent_tcp_port.begin,
+					the_config.agent_tcp_port.end);
 			goto error;
 		}
 	}
@@ -160,7 +174,7 @@ static struct lttcomm_sock *init_tcp_socket(void)
 		goto error;
 	}
 
-	DBG("[agent-thread] Listening on TCP port %u and socket %d",
+	DBG("Listening on TCP port %u and socket %d",
 			port, sock->fd);
 
 	return sock;
@@ -184,11 +198,11 @@ static void destroy_tcp_socket(struct lttcomm_sock *sock)
 
 	ret = lttcomm_sock_get_port(sock, &port);
 	if (ret) {
-		ERR("[agent-thread] Failed to get port of agent TCP socket");
+		ERR("Failed to get port of agent TCP socket");
 		port = 0;
 	}
 
-	DBG3("[agent-thread] Destroy TCP socket on port %" PRIu16,
+	DBG3("Destroy TCP socket on port %" PRIu16,
 			port);
 
 	/* This will return gracefully if fd is invalid. */
@@ -317,8 +331,8 @@ bool agent_tracing_is_enabled(void)
  */
 static int write_agent_port(uint16_t port)
 {
-	return utils_create_pid_file((pid_t) port,
-			config.agent_port_file_path.value);
+	return utils_create_pid_file(
+			(pid_t) port, the_config.agent_port_file_path.value);
 }
 
 static
@@ -349,13 +363,13 @@ static void *thread_agent_management(void *data)
 	const int quit_pipe_read_fd = lttng_pipe_get_readfd(
 			notifiers->quit_pipe);
 
-	DBG("[agent-thread] Manage agent application registration.");
+	DBG("Manage agent application registration.");
 
 	rcu_register_thread();
 	rcu_thread_online();
 
 	/* Agent initialization call MUST be called before starting the thread. */
-	assert(agent_apps_ht_by_sock);
+	assert(the_agent_apps_ht_by_sock);
 
 	/* Create pollset with size 2, quit pipe and registration socket. */
 	ret = lttng_poll_create(&events, 2, LTTNG_CLOEXEC);
@@ -373,11 +387,12 @@ static void *thread_agent_management(void *data)
 	if (reg_sock) {
 		uint16_t port;
 
-		assert(lttcomm_sock_get_port(reg_sock, &port) == 0);
+		ret = lttcomm_sock_get_port(reg_sock, &port);
+		assert(ret == 0);
 
 		ret = write_agent_port(port);
 		if (ret) {
-			ERR("[agent-thread] Failed to create agent port file: agent tracing will be unavailable");
+			ERR("Failed to create agent port file: agent tracing will be unavailable");
 			/* Don't prevent the launch of the sessiond on error. */
 			mark_thread_as_ready(notifiers);
 			goto error;
@@ -403,12 +418,12 @@ static void *thread_agent_management(void *data)
 	}
 
 	while (1) {
-		DBG3("[agent-thread] Manage agent polling");
+		DBG3("Manage agent polling");
 
 		/* Inifinite blocking call, waiting for transmission */
 restart:
 		ret = lttng_poll_wait(&events, -1);
-		DBG3("[agent-thread] Manage agent return from poll on %d fds",
+		DBG3("Manage agent return from poll on %d fds",
 				LTTNG_POLL_GETNB(&events));
 		if (ret < 0) {
 			/*
@@ -420,7 +435,7 @@ restart:
 			goto error;
 		}
 		nb_fd = ret;
-		DBG3("[agent-thread] %d fd ready", nb_fd);
+		DBG3("%d fd ready", nb_fd);
 
 		for (i = 0; i < nb_fd; i++) {
 			/* Fetch once the poll data */
@@ -528,7 +543,7 @@ error_tcp_socket:
 	lttng_poll_clean(&events);
 error_poll_create:
 	uatomic_set(&agent_tracing_enabled, 0);
-	DBG("[agent-thread] Cleaning up and stopping.");
+	DBG("Cleaning up and stopping.");
 	rcu_thread_offline();
 	rcu_unregister_thread();
 	return NULL;

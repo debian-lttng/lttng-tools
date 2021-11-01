@@ -9,6 +9,8 @@
 #define _LTTNG_UTILS_H
 
 #include <popt.h>
+#include <common/argpar/argpar.h>
+#include <common/dynamic-array.h>
 
 #include <lttng/lttng.h>
 
@@ -23,6 +25,7 @@ char *get_session_name(void);
 char *get_session_name_quiet(void);
 void list_commands(struct cmd_struct *commands, FILE *ofp);
 void list_cmd_options(FILE *ofp, struct poptOption *options);
+void list_cmd_options_argpar(FILE *ofp, const struct argpar_opt_descr *options);
 
 /*
  * Return the minimum order for which x <= (1UL << order).
@@ -42,7 +45,6 @@ int get_count_order_u64(uint64_t x);
  */
 int get_count_order_ulong(unsigned long x);
 
-const char *get_domain_str(enum lttng_domain_type domain);
 const char *get_event_type_str(enum lttng_event_type event_type);
 
 int print_missing_or_multiple_domains(unsigned int domain_count,
@@ -57,5 +59,8 @@ int show_cmd_help(const char *cmd_name, const char *help_msg);
 int print_trace_archive_location(
 		const struct lttng_trace_archive_location *location,
 		const char *session_name);
+
+int validate_exclusion_list(const char *event_name,
+		const struct lttng_dynamic_pointer_array *exclusions);
 
 #endif /* _LTTNG_UTILS_H */

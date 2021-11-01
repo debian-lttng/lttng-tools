@@ -17,7 +17,7 @@
 #include <common/time.h>
 #include <common/hashtable/utils.h>
 #include <common/kernel-ctl/kernel-ctl.h>
-#include <sys/eventfd.h>
+#include <common/credentials.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <signal.h>
@@ -46,6 +46,10 @@ int subscribe_session_consumed_size_rotation(struct ltt_session *session, uint64
 	enum lttng_condition_status condition_status;
 	enum lttng_notification_channel_status nc_status;
 	struct lttng_action *action;
+	const struct lttng_credentials session_creds = {
+		.uid = LTTNG_OPTIONAL_INIT_VALUE(session->uid),
+		.gid = LTTNG_OPTIONAL_INIT_VALUE(session->gid),
+	};
 
 	session->rotate_condition = lttng_condition_session_consumed_size_create();
 	if (!session->rotate_condition) {
@@ -88,6 +92,11 @@ int subscribe_session_consumed_size_rotation(struct ltt_session *session, uint64
 		goto end;
 	}
 
+	/* Ensure this trigger is not visible to external users. */
+	lttng_trigger_set_hidden(session->rotate_trigger);
+	lttng_trigger_set_credentials(
+			session->rotate_trigger, &session_creds);
+
 	nc_status = lttng_notification_channel_subscribe(
 			rotate_notification_channel, session->rotate_condition);
 	if (nc_status != LTTNG_NOTIFICATION_CHANNEL_STATUS_OK) {
@@ -97,7 +106,8 @@ int subscribe_session_consumed_size_rotation(struct ltt_session *session, uint64
 	}
 
 	ret = notification_thread_command_register_trigger(
-			notification_thread_handle, session->rotate_trigger);
+			notification_thread_handle, session->rotate_trigger,
+			true);
 	if (ret < 0 && ret != -LTTNG_ERR_TRIGGER_EXISTS) {
 		ERR("Register trigger, %s", lttng_strerror(ret));
 		ret = -1;

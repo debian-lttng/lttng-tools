@@ -2,12 +2,12 @@
 .\"     Title: lttng-view
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 28 November 2016
+.\"      Date: 14 June 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.12.3
+.\"    Source: LTTng 2.13.1
 .\"  Language: English
 .\"
-.TH "LTTNG\-VIEW" "1" "28 November 2016" "LTTng 2\&.12\&.3" "LTTng Manual"
+.TH "LTTNG\-VIEW" "1" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -28,152 +28,88 @@
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
 .SH "NAME"
-lttng-view \- View the traces of an LTTng tracing session
+lttng-view \- Launch an LTTng trace reader
 .SH "SYNOPSIS"
 .sp
 .nf
-\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBview\fR [\fB--viewer\fR=\fICMD\fR] [\fB--trace-path\fR=\fIPATH\fR | \fISESSION\fR]
+\fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBview\fR [\fB--viewer\fR=\fIREADER\fR]
+      [\fISESSION\fR | \fB--trace-path\fR=\fIDIR\fR]
 .fi
 .SH "DESCRIPTION"
 .sp
-The \fBlttng view\fR command launches an external trace viewer to view the current trace of a tracing session\&.
-.sp
-If \fISESSION\fR is omitted, the viewer is launched for the current tracing session (see \fBlttng-create\fR(1) for more information about the current tracing session)\&. Otherwise, it is launched for the existing tracing session named \fISESSION\fR\&. \fBlttng list\fR outputs all the existing tracing sessions (see \fBlttng-list\fR(1))\&.
-.sp
-By default, the \fBbabeltrace2\fR(1) trace viewer is launched\&. If it is not found on the system, the \fBbabeltrace\fR(1) trace viewer is used\&. Another trace viewer command can be specified using the \fB--viewer\fR option\&.
-.sp
-By default, the trace path of the chosen tracing session is given as the first positional argument to the trace viewer\&. This path can be overridden using the \fB--trace-path\fR option\&.
-.SH "OPTIONS"
-.sp
-General options are described in \fBlttng\fR(1)\&.
+The \fBlttng view\fR command launches an external trace reader to read the current traces of:
 .PP
-\fB-t\fR \fIPATH\fR, \fB--trace-path\fR=\fIPATH\fR
+With the \fB--session\fR=\fISESSION\fR option
 .RS 4
-View trace at path
-\fIPATH\fR
-instead of using the chosen tracing session\(cqs trace path\&.
+The recording session named
+\fISESSION\fR\&.
 .RE
 .PP
-\fB-e\fR \fICMD\fR, \fB--viewer\fR=\fICMD\fR
+With the \fB--trace-path\fR=\fIDIR\fR option
 .RS 4
-Use
-\fICMD\fR
-as the trace viewer\&.
+The local file system directory
+\fIDIR\fR\&.
+.RE
+.PP
+Otherwise
+.RS 4
+The current recording session (see
+\fBconcepts\fR(1)
+to learn more about the current recording session)\&.
+.RE
+.sp
+With the \fB--session\fR option or without the \fB--trace-path\fR option, the mode of the selected recording session may NOT be network streaming or live\&.
+.sp
+By default, the \fBview\fR command attempts to launch \fBbabeltrace2\fR(1) or, if it\(cqs not available, \fBbabeltrace\fR(1)\&. Override which trace reader to launch with the \fB--viewer\fR option\&.
+.sp
+See the \(lqEXAMPLES\(rq section below for usage examples\&.
+.SH "OPTIONS"
+.sp
+See \fBlttng\fR(1) for \fIGENERAL OPTIONS\fR\&.
+.PP
+\fB-t\fR \fIDIR\fR, \fB--trace-path\fR=\fIDIR\fR
+.RS 4
+Pass
+\fIDIR\fR
+as the last argument of the trace reader command instead of the output directory of the selected recording session\&.
+.RE
+.PP
+\fB-e\fR \fIREADER\fR, \fB--viewer\fR=\fIREADER\fR
+.RS 4
+Use the trace reader
+\fIREADER\fR
+to read the traces\&.
+.sp
+\fIREADER\fR
+is the absolute path to the reader command to use, and it can contain command arguments as well\&. The
+\fBview\fR
+command passes the trace directory path to read to the
+\fIREADER\fR
+command as its last argument\&.
+.sp
+Without this option, the
+\fBview\fR
+command uses
+\fBbabeltrace2\fR(1)
+if it\(cqs available\&. Otherwise, it tries to use
+\fBbabeltrace\fR(1)\&.
 .RE
 .SS "Program information"
 .PP
 \fB-h\fR, \fB--help\fR
 .RS 4
-Show command help\&.
+Show help\&.
 .sp
-This option, like
-\fBlttng-help\fR(1), attempts to launch
+This option attempts to launch
 \fB/usr/bin/man\fR
-to view the command\(cqs man page\&. The path to the man pager can be overridden by the
+to view this manual page\&. Override the manual pager path with the
 \fBLTTNG_MAN_BIN_PATH\fR
 environment variable\&.
 .RE
 .PP
 \fB--list-options\fR
 .RS 4
-List available command options\&.
-.RE
-.SH "ENVIRONMENT VARIABLES"
-.PP
-\fBLTTNG_ABORT_ON_ERROR\fR
-.RS 4
-Set to 1 to abort the process after the first error is encountered\&.
-.RE
-.PP
-\fBLTTNG_HOME\fR
-.RS 4
-Overrides the
-\fB$HOME\fR
-environment variable\&. Useful when the user running the commands has a non\-writable home directory\&.
-.RE
-.PP
-\fBLTTNG_MAN_BIN_PATH\fR
-.RS 4
-Absolute path to the man pager to use for viewing help information about LTTng commands (using
-\fBlttng-help\fR(1)
-or
-\fBlttng COMMAND --help\fR)\&.
-.RE
-.PP
-\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
-.RS 4
-Path in which the
-\fBsession.xsd\fR
-session configuration XML schema may be found\&.
-.RE
-.PP
-\fBLTTNG_SESSIOND_PATH\fR
-.RS 4
-Full session daemon binary path\&.
-.sp
-The
-\fB--sessiond-path\fR
-option has precedence over this environment variable\&.
-.RE
-.sp
-Note that the \fBlttng-create\fR(1) command can spawn an LTTng session daemon automatically if none is running\&. See \fBlttng-sessiond\fR(8) for the environment variables influencing the execution of the session daemon\&.
-.SH "FILES"
-.PP
-\fB$LTTNG_HOME/.lttngrc\fR
-.RS 4
-User LTTng runtime configuration\&.
-.sp
-This is where the per\-user current tracing session is stored between executions of
-\fBlttng\fR(1)\&. The current tracing session can be set with
-\fBlttng-set-session\fR(1)\&. See
-\fBlttng-create\fR(1)
-for more information about tracing sessions\&.
-.RE
-.PP
-\fB$LTTNG_HOME/lttng-traces\fR
-.RS 4
-Default output directory of LTTng traces\&. This can be overridden with the
-\fB--output\fR
-option of the
-\fBlttng-create\fR(1)
-command\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng\fR
-.RS 4
-User LTTng runtime and configuration directory\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng/sessions\fR
-.RS 4
-Default location of saved user tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.PP
-\fB/usr/local/etc/lttng/sessions\fR
-.RS 4
-System\-wide location of saved tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-.sp
-\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR when not explicitly set\&.
-.sp .5v
+List available command options and quit\&.
 .RE
 .SH "EXIT STATUS"
 .PP
@@ -201,9 +137,146 @@ Fatal error
 .RS 4
 Command warning (something went wrong during the command)
 .RE
-.SH "BUGS"
+.SH "ENVIRONMENT"
+.PP
+\fBLTTNG_ABORT_ON_ERROR\fR
+.RS 4
+Set to
+\fB1\fR
+to abort the process after the first error is encountered\&.
+.RE
+.PP
+\fBLTTNG_HOME\fR
+.RS 4
+Path to the LTTng home directory\&.
 .sp
-If you encounter any issue or usability problem, please report it on the LTTng bug tracker <https://bugs.lttng.org/projects/lttng-tools>\&.
+Defaults to
+\fB$HOME\fR\&.
+.sp
+Useful when the Unix user running the commands has a non\-writable home directory\&.
+.RE
+.PP
+\fBLTTNG_MAN_BIN_PATH\fR
+.RS 4
+Absolute path to the manual pager to use to read the LTTng command\-line help (with
+\fBlttng-help\fR(1)
+or with the
+\fB--help\fR
+option) instead of
+\fB/usr/bin/man\fR\&.
+.RE
+.PP
+\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
+.RS 4
+Path to the directory containing the
+\fBsession.xsd\fR
+recording session configuration XML schema\&.
+.RE
+.PP
+\fBLTTNG_SESSIOND_PATH\fR
+.RS 4
+Absolute path to the LTTng session daemon binary (see
+\fBlttng-sessiond\fR(8)) to spawn from the
+\fBlttng-create\fR(1)
+command\&.
+.sp
+The
+\fB--sessiond-path\fR
+general option overrides this environment variable\&.
+.RE
+.SH "FILES"
+.PP
+\fB$LTTNG_HOME/.lttngrc\fR
+.RS 4
+Unix user\(cqs LTTng runtime configuration\&.
+.sp
+This is where LTTng stores the name of the Unix user\(cqs current recording session between executions of
+\fBlttng\fR(1)\&.
+\fBlttng-create\fR(1)
+and
+\fBlttng-set-session\fR(1)
+set the current recording session\&.
+.RE
+.PP
+\fB$LTTNG_HOME/lttng-traces\fR
+.RS 4
+Default output directory of LTTng traces in local and snapshot modes\&.
+.sp
+Override this path with the
+\fB--output\fR
+option of the
+\fBlttng-create\fR(1)
+command\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng\fR
+.RS 4
+Unix user\(cqs LTTng runtime and configuration directory\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng/sessions\fR
+.RS 4
+Default directory containing the Unix user\(cqs saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.PP
+\fB/usr/local/etc/lttng/sessions\fR
+.RS 4
+Directory containing the system\-wide saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+\fB$LTTNG_HOME\fR defaults to the value of the \fBHOME\fR environment variable\&.
+.sp .5v
+.RE
+.SH "EXAMPLES"
+.PP
+\fBExample\ \&1.\ \&Read the traces of the current recording session with Babeltrace\&.\fR
+.RS 4
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng view
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&2.\ \&Read the traces of a specific recording session with a custom trace reader\&.\fR
+.RS 4
+.sp
+See the \fB--viewer\fR option\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng view \-\-viewer=\*(Aq/usr/bin/my\-reader \-zK \-\-details=3\*(Aq \e
+             my\-session
+.fi
+.if n \{\
+.RE
+.\}
+.RE
 .SH "RESOURCES"
 .sp
 .RS 4
@@ -236,7 +309,7 @@ LTTng documentation <https://lttng.org/docs>
 .sp -1
 .IP \(bu 2.3
 .\}
-Git repositories <http://git.lttng.org>
+LTTng bug tracker <https://bugs.lttng.org>
 .RE
 .sp
 .RS 4
@@ -247,7 +320,7 @@ Git repositories <http://git.lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-GitHub organization <http://github.com/lttng>
+Git repositories <https://git.lttng.org>
 .RE
 .sp
 .RS 4
@@ -258,7 +331,7 @@ GitHub organization <http://github.com/lttng>
 .sp -1
 .IP \(bu 2.3
 .\}
-Continuous integration <http://ci.lttng.org/>
+GitHub organization <https://github.com/lttng>
 .RE
 .sp
 .RS 4
@@ -269,7 +342,18 @@ Continuous integration <http://ci.lttng.org/>
 .sp -1
 .IP \(bu 2.3
 .\}
-Mailing list <http://lists.lttng.org>
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
 for support and development:
 \fBlttng-dev@lists.lttng.org\fR
 .RE
@@ -287,11 +371,11 @@ IRC channel <irc://irc.oftc.net/lttng>:
 on
 \fBirc.oftc.net\fR
 .RE
-.SH "COPYRIGHTS"
+.SH "COPYRIGHT"
 .sp
 This program is part of the LTTng\-tools project\&.
 .sp
-LTTng\-tools is distributed under the GNU General Public License version 2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
 .SH "THANKS"
 .sp
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
@@ -299,4 +383,4 @@ Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.p
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
 .SH "SEE ALSO"
 .sp
-\fBlttng\fR(1)
+\fBbabeltrace2\fR(1), \fBlttng\fR(1)

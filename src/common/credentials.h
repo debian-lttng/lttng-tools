@@ -9,10 +9,32 @@
 #define LTTNG_CREDENTIALS_H
 
 #include <sys/types.h>
+#include <stdbool.h>
+#include "macros.h"
+
+#include "optional.h"
 
 struct lttng_credentials {
-	uid_t uid;
-	gid_t gid;
+	LTTNG_OPTIONAL(uid_t) uid;
+	LTTNG_OPTIONAL(gid_t) gid;
 };
+
+LTTNG_HIDDEN
+uid_t lttng_credentials_get_uid(const struct lttng_credentials *creds);
+
+LTTNG_HIDDEN
+gid_t lttng_credentials_get_gid(const struct lttng_credentials *creds);
+
+LTTNG_HIDDEN
+bool lttng_credentials_is_equal_uid(const struct lttng_credentials *a,
+		const struct lttng_credentials *b);
+
+LTTNG_HIDDEN
+bool lttng_credentials_is_equal_gid(const struct lttng_credentials *a,
+		const struct lttng_credentials *b);
+
+LTTNG_HIDDEN
+bool lttng_credentials_is_equal(const struct lttng_credentials *a,
+		const struct lttng_credentials *b);
 
 #endif /* LTTNG_CREDENTIALS_H */

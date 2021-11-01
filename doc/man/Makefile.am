@@ -36,26 +36,35 @@ MAN1_NAMES = \
 	lttng-rotate \
 	lttng-enable-rotation \
 	lttng-disable-rotation \
-	lttng-clear
+	lttng-clear \
+	lttng-add-trigger \
+	lttng-remove-trigger \
+	lttng-list-triggers
 MAN3_NAMES =
+MAN7_NAMES = lttng-event-rule lttng-concepts
 MAN8_NAMES = lttng-sessiond lttng-relayd
 MAN1_NO_ASCIIDOC_NAMES =
 MAN3_NO_ASCIIDOC_NAMES = lttng-health-check
+MAN7_NO_ASCIIDOC_NAMES =
 MAN8_NO_ASCIIDOC_NAMES =
 
 # AsciiDoc sources and outputs
 MAN1_TXT = $(call manaddsuffix,.1.txt,$(MAN1_NAMES))
 MAN3_TXT = $(call manaddsuffix,.3.txt,$(MAN3_NAMES))
+MAN7_TXT = $(call manaddsuffix,.7.txt,$(MAN7_NAMES))
 MAN8_TXT = $(call manaddsuffix,.8.txt,$(MAN8_NAMES))
-MAN_TXT = $(MAN1_TXT) $(MAN3_TXT) $(MAN8_TXT)
+MAN_TXT = $(MAN1_TXT) $(MAN3_TXT) $(MAN7_TXT) $(MAN8_TXT)
 MAN_XML = $(patsubst $(srcdir)/%.txt,%.xml,$(MAN_TXT))
 
 # common AsciiDoc source files
 COMMON_TXT = \
 	$(srcdir)/common-footer.txt \
-	$(srcdir)/common-cmd-footer.txt \
-	$(srcdir)/common-cmd-options-head.txt \
-	$(srcdir)/common-cmd-help-options.txt
+	$(srcdir)/common-lttng-cmd-after-options.txt \
+	$(srcdir)/common-lttng-cmd-options-head.txt \
+	$(srcdir)/common-lttng-cmd-help-options.txt \
+	$(srcdir)/common-help-option.txt \
+	$(srcdir)/common-intro.txt \
+	$(srcdir)/common-daemon-cfg.txt
 
 # config
 ASCIIDOC_CONF = $(srcdir)/asciidoc.conf
@@ -68,11 +77,13 @@ COMMON_DEPS = $(ASCIIDOC_CONF) $(COMMON_TXT)
 # man pages destinations
 MAN1 = $(addsuffix .1,$(MAN1_NAMES))
 MAN3 = $(addsuffix .3,$(MAN3_NAMES))
+MAN7 = $(addsuffix .7,$(MAN7_NAMES))
 MAN8 = $(addsuffix .8,$(MAN8_NAMES))
 MAN1_NO_ASCIIDOC = $(addsuffix .1,$(MAN1_NO_ASCIIDOC_NAMES))
 MAN3_NO_ASCIIDOC = $(addsuffix .3,$(MAN3_NO_ASCIIDOC_NAMES))
+MAN7_NO_ASCIIDOC = $(addsuffix .7,$(MAN7_NO_ASCIIDOC_NAMES))
 MAN8_NO_ASCIIDOC = $(addsuffix .8,$(MAN8_NO_ASCIIDOC_NAMES))
-MAN = $(MAN1) $(MAN3) $(MAN8)
+MAN = $(MAN1) $(MAN3) $(MAN7) $(MAN8)
 
 # initially empty
 CLEANFILES =
@@ -142,6 +153,12 @@ COMMON_DEPS += $(ASCIIDOC_ATTRS_CONF)
 %.3: %.3.xml $(XSL_FILE)
 	$(XTO) $< 2>/dev/null
 
+%.7.xml: $(srcdir)/%.7.txt $(COMMON_DEPS)
+	$(ADOC_DOCBOOK) -o $@ $<
+
+%.7: %.7.xml $(XSL_FILE)
+	$(XTO) $< 2>/dev/null
+
 %.8.xml: $(srcdir)/%.8.txt $(COMMON_DEPS)
 	$(ADOC_DOCBOOK) -o $@ $<
 
@@ -164,6 +181,10 @@ ERR_MSG += "Make sure both tools are installed and run the configure script agai
 	@echo $(ERR_MSG)
 	@false
 
+%.7: $(srcdir)/%.7.txt $(COMMON_DEPS)
+	@echo $(ERR_MSG)
+	@false
+
 %.8: $(srcdir)/%.8.txt $(COMMON_DEPS)
 	@echo $(ERR_MSG)
 	@false
@@ -173,12 +194,14 @@ endif # MAN_PAGES_OPT
 # those are always installed since they are directly written in troff
 dist_man1_MANS = $(MAN1_NO_ASCIIDOC)
 dist_man3_MANS = $(MAN3_NO_ASCIIDOC)
+dist_man7_MANS = $(MAN7_NO_ASCIIDOC)
 dist_man8_MANS = $(MAN8_NO_ASCIIDOC)
 
 if MAN_PAGES_OPT
 # building man pages: we can install and distribute them
 dist_man1_MANS += $(MAN1)
 dist_man3_MANS += $(MAN3)
+dist_man7_MANS += $(MAN7)
 dist_man8_MANS += $(MAN8)
 endif # MAN_PAGES_OPT
 
@@ -193,4 +216,4 @@ EXTRA_DIST = $(MAN_TXT) $(COMMON_TXT) $(XSL_FILE) \
 	$(ASCIIDOC_CONF) $(ASCIIDOC_ATTRS_CONF).in
 
 # keep generated man pages that can be considered intermediate files
-.PRECIOUS: %.1 %.3 %.8
+.PRECIOUS: %.1 %.3 %.7 %.8
