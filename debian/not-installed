@@ -1,0 +1,5 @@
+usr/lib/*/*.la
+usr/lib/python*/dist-packages/*.a
+usr/lib/python*/dist-packages/*.la
+usr/lib/python*/dist-packages/__pycache__/
+usr/share/doc/lttng-tools/LICENSE

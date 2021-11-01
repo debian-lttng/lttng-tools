@@ -1,1 +1,9 @@
-README.adoc
+usr/share/doc/lttng-tools/ChangeLog
+usr/share/doc/lttng-tools/live-reading-howto.txt
+usr/share/doc/lttng-tools/live-reading-protocol.txt
+usr/share/doc/lttng-tools/python-howto.txt
+usr/share/doc/lttng-tools/quickstart.txt
+usr/share/doc/lttng-tools/README.adoc
+usr/share/doc/lttng-tools/snapshot-howto.txt
+usr/share/doc/lttng-tools/streaming-howto.txt
+usr/share/doc/lttng-tools/valgrind-howto.txt

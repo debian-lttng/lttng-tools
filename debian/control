@@ -3,7 +3,7 @@ Section: libs
 Priority: optional
 Maintainer: Jon Bernard <jbernard@debian.org>
 Uploaders: Michael Jeanson <mjeanson@debian.org>
-Build-Depends: debhelper (>= 10~),
+Build-Depends: debhelper-compat (= 12),
   asciidoc,
   bash-completion,
   bison,
@@ -18,8 +18,9 @@ Build-Depends: debhelper (>= 10~),
   python3-all-dev,
   swig (>= 2.0),
   xmlto
-Standards-Version: 4.4.1
+Standards-Version: 4.6.0.1
 Rules-Requires-Root: no
+X-Python3-Version: >= 3.0
 Vcs-Git: https://salsa.debian.org/debian/ltt-control.git
 Vcs-Browser: https://salsa.debian.org/debian/ltt-control
 Homepage: https://lttng.org/
@@ -27,6 +28,7 @@ Homepage: https://lttng.org/
 Package: lttng-tools
 Section: utils
 Architecture: linux-any
+Pre-Depends: ${misc:Pre-Depends}
 Depends: ${shlibs:Depends}, ${misc:Depends}, lsb-base (>= 3.0-6)
 Recommends: babeltrace
 Suggests: lttng-modules-dkms
@@ -72,6 +74,7 @@ Section: python
 Architecture: linux-any
 Depends: ${shlibs:Depends}, ${misc:Depends}, ${python3:Depends},
   liblttng-ctl0 (= ${binary:Version})
+Provides: ${python3:Provides}
 Description: LTTng control and utility Python bindings
  The LTTng project aims at providing highly efficient tracing tools for Linux.
  Its tracers help tracking down performance issues and debugging problems
