@@ -13,8 +13,8 @@ STATS_BIN="$TESTDIR/utils/babelstats.pl"
 SESSION_NAME="valid_filter"
 NR_ITER=100
 NUM_GLOBAL_TESTS=2
-NUM_UST_TESTS=1110
-NUM_KERNEL_TESTS=1044
+NUM_UST_TESTS=1122
+NUM_KERNEL_TESTS=1056
 NUM_TESTS=$(($NUM_UST_TESTS+$NUM_KERNEL_TESTS+$NUM_GLOBAL_TESTS))
 
 source $TESTDIR/utils/utils.sh
@@ -94,10 +94,9 @@ function test_valid_filter
 	event_name="$3"
 	filter="$4"
 	validator="$5"
+	local trace_path=$(mktemp --tmpdir -d tmp.test_filtering_invalid_filters_trace_path.XXXXXX)
 
 	diag "Test valid $domain_name filter: $filter"
-
-	trace_path=$(mktemp -d)
 
 	# Create session
 	create_lttng_session_ok $SESSION_NAME $trace_path
@@ -833,6 +832,16 @@ UST_FILTERS=(
 	has_no_event
 	"0 == \$ctx.vtid.blah"
 
+	# check that bytecode linker refuses to link against a
+	# non-string array.
+	has_no_event
+	'arrfield1 != "dontmatch"'
+
+	# check that bytecode linker refuses to link against a
+	# non-string sequence.
+	has_no_event
+	'seqfield1 != "dontmatch"'
+
 	END
 )
 
@@ -1425,6 +1434,16 @@ KERNEL_FILTERS=(
 
 	has_no_event
 	'stringfield == "test\*"'
+
+	# check that bytecode linker refuses to link against a
+	# non-string array.
+	has_no_event
+	'arrfield1 != "dontmatch"'
+
+	# check that bytecode linker refuses to link against a
+	# non-string sequence.
+	has_no_event
+	'seqfield1 != "dontmatch"'
 
 	${KIRK_KRAUSS_TESTS[@]}
 

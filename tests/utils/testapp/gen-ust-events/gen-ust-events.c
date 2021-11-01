@@ -38,6 +38,7 @@ static struct option long_options[] =
 	{"sync-before-last-event-touch", required_argument, 0, 'c'},
 	{"sync-before-exit", required_argument, 0, 'd'},
 	{"sync-before-exit-touch", required_argument, 0, 'e'},
+	{"emit-end-event", no_argument, 0, 'f'},
 	{0, 0, 0, 0}
 };
 
@@ -48,8 +49,10 @@ int main(int argc, char **argv)
 	int option;
 	long values[] = { 1, 2, 3 };
 	char text[10] = "test";
+	char escape[10] = "\\*";
 	double dbl = 2.0;
 	float flt = 2222.0;
+	uint32_t net_values[] = { 1, 2, 3 };
 	int nr_iter = 100, ret = 0, first_event_file_created = 0;
 	useconds_t nr_usec = 0;
 	char *after_first_event_file_path = NULL;
@@ -63,9 +66,15 @@ int main(int argc, char **argv)
 	char *before_exit_file_path_touch = NULL;
 	/* Wait on file before exiting */
 	char *before_exit_file_path = NULL;
+	/* Emit an end event */
+	bool emit_end_event = false;
 
-	while ((option = getopt_long(argc, argv, "i:w:a:b:c:d:",
-			long_options, &option_index)) != -1) {
+	for (i = 0; i < 3; i++) {
+		net_values[i] = htonl(net_values[i]);
+	}
+
+	while ((option = getopt_long(argc, argv, "i:w:a:b:c:d:e:f",
+				long_options, &option_index)) != -1) {
 		switch (option) {
 		case 'a':
 			after_first_event_file_path = strdup(optarg);
@@ -81,6 +90,9 @@ int main(int argc, char **argv)
 			break;
 		case 'e':
 			before_exit_file_path_touch = strdup(optarg);
+			break;
+		case 'f':
+			emit_end_event = true;
 			break;
 		case 'i':
 			nr_iter = atoi(optarg);
@@ -141,7 +153,7 @@ int main(int argc, char **argv)
 		}
 		netint = htonl(i);
 		tracepoint(tp, tptest, i, netint, values, text,
-			strlen(text), dbl, flt);
+			strlen(text), escape, net_values, dbl, flt);
 
 		/*
 		 * First loop we create the file if asked to indicate
@@ -166,6 +178,10 @@ int main(int argc, char **argv)
 		if (should_quit) {
 			break;
 		}
+	}
+
+	if (emit_end_event) {
+		tracepoint(tp, end);
 	}
 
 	if (before_exit_file_path_touch) {

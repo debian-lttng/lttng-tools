@@ -23,12 +23,13 @@ enum health_type_sessiond {
 	HEALTH_SESSIOND_TYPE_NOTIFICATION	= 8,
 	HEALTH_SESSIOND_TYPE_ROTATION		= 9,
 	HEALTH_SESSIOND_TYPE_TIMER		= 10,
+	HEALTH_SESSIOND_TYPE_ACTION_EXECUTOR	= 11,
 
 	NR_HEALTH_SESSIOND_TYPES,
 };
 
 /* Application health monitoring */
-extern struct health_app *health_sessiond;
+extern struct health_app *the_health_sessiond;
 
 bool launch_health_management_thread(void);
 

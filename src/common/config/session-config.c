@@ -223,6 +223,7 @@ LTTNG_HIDDEN const char * const config_event_context_ipc_ns = "IPC_NS";
 LTTNG_HIDDEN const char * const config_event_context_mnt_ns = "MNT_NS";
 LTTNG_HIDDEN const char * const config_event_context_net_ns = "NET_NS";
 LTTNG_HIDDEN const char * const config_event_context_pid_ns = "PID_NS";
+LTTNG_HIDDEN const char * const config_event_context_time_ns = "TIME_NS";
 LTTNG_HIDDEN const char * const config_event_context_user_ns = "USER_NS";
 LTTNG_HIDDEN const char * const config_event_context_uts_ns = "UTS_NS";
 LTTNG_HIDDEN const char * const config_event_context_uid = "UID";
@@ -639,6 +640,32 @@ int config_writer_write_element_bool(struct config_writer *writer,
 }
 
 LTTNG_HIDDEN
+int config_writer_write_element_double(struct config_writer *writer,
+		const char *element_name,
+		double value)
+{
+	int ret;
+	xmlChar *encoded_element_name;
+
+	if (!writer || !writer->writer || !element_name || !element_name[0]) {
+		ret = -1;
+		goto end;
+	}
+
+	encoded_element_name = encode_string(element_name);
+	if (!encoded_element_name) {
+		ret = -1;
+		goto end;
+	}
+
+	ret = xmlTextWriterWriteFormatElement(
+			writer->writer, encoded_element_name, "%f", value);
+	xmlFree(encoded_element_name);
+end:
+	return ret >= 0 ? 0 : ret;
+}
+
+LTTNG_HIDDEN
 int config_writer_write_element_string(struct config_writer *writer,
 		const char *element_name, const char *value)
 {
@@ -711,7 +738,7 @@ void fini_session_config_validation_ctx(
 }
 
 static
-char *get_session_config_xsd_path()
+char *get_session_config_xsd_path(void)
 {
 	char *xsd_path;
 	const char *base_path = lttng_secure_getenv(DEFAULT_SESSION_CONFIG_XSD_PATH_ENV);
@@ -842,12 +869,14 @@ int parse_bool(xmlChar *str, int *val)
 		goto end;
 	}
 
-	if (!strcmp((const char *) str, config_xml_true)) {
+	if (!strcmp((const char *) str, config_xml_true) ||
+			!strcmp((const char *) str, "1")) {
 		*val = 1;
-	} else if (!strcmp((const char *) str, config_xml_false)) {
+	} else if (!strcmp((const char *) str, config_xml_false) ||
+			!strcmp((const char *) str, "0")) {
 		*val = 0;
 	} else {
-		WARN("Invalid boolean value encoutered (%s).",
+		WARN("Invalid boolean value encountered (%s).",
 			(const char *) str);
 		ret = -1;
 	}
@@ -1094,6 +1123,9 @@ int get_context_type(xmlChar *context_type)
 	} else if (!strcmp((char *) context_type,
 		config_event_context_pid_ns)) {
 		ret = LTTNG_EVENT_CONTEXT_PID_NS;
+	} else if (!strcmp((char *) context_type,
+		config_event_context_time_ns)) {
+		ret = LTTNG_EVENT_CONTEXT_TIME_NS;
 	} else if (!strcmp((char *) context_type,
 		config_event_context_user_ns)) {
 		ret = LTTNG_EVENT_CONTEXT_USER_NS;
@@ -4013,16 +4045,17 @@ int config_load_session(const char *path, const char *session_name,
 		/* Try home path */
 		home_path = utils_get_home_dir();
 		if (home_path) {
-			char path[PATH_MAX];
+			char path_buf[PATH_MAX];
 
 			/*
 			 * Try user session configuration path. Ignore error here so we can
 			 * continue loading the system wide sessions.
 			 */
 			if (autoload) {
-				ret = snprintf(path, sizeof(path),
-						DEFAULT_SESSION_HOME_CONFIGPATH "/"
-						DEFAULT_SESSION_CONFIG_AUTOLOAD, home_path);
+				ret = snprintf(path_buf, sizeof(path_buf),
+						DEFAULT_SESSION_HOME_CONFIGPATH
+						"/" DEFAULT_SESSION_CONFIG_AUTOLOAD,
+						home_path);
 				if (ret < 0) {
 					PERROR("snprintf session autoload home config path");
 					ret = -LTTNG_ERR_INVALID;
@@ -4034,19 +4067,20 @@ int config_load_session(const char *path, const char *session_name,
 				 * avoid any user session daemon to try to load kernel sessions
 				 * automatically and failing all the times.
 				 */
-				ret = validate_path_creds(path);
+				ret = validate_path_creds(path_buf);
 				if (ret) {
-					path_ptr = path;
+					path_ptr = path_buf;
 				}
 			} else {
-				ret = snprintf(path, sizeof(path),
-						DEFAULT_SESSION_HOME_CONFIGPATH, home_path);
+				ret = snprintf(path_buf, sizeof(path_buf),
+						DEFAULT_SESSION_HOME_CONFIGPATH,
+						home_path);
 				if (ret < 0) {
 					PERROR("snprintf session home config path");
 					ret = -LTTNG_ERR_INVALID;
 					goto end;
 				}
-				path_ptr = path;
+				path_ptr = path_buf;
 			}
 			if (path_ptr) {
 				ret = load_session_from_path(path_ptr, session_name,

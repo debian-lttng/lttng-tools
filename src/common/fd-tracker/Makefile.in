@@ -120,6 +120,8 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
 	$(top_srcdir)/m4/lttng_check_sdt_works.m4 \
+	$(top_srcdir)/m4/lttng_pthread_getname_np.m4 \
+	$(top_srcdir)/m4/lttng_pthread_setname_np.m4 \
 	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
 	$(top_srcdir)/m4/pprint.m4 \
 	$(top_srcdir)/m4/rw_prog_cxx_works.m4 \
@@ -133,12 +135,8 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 libfd_tracker_la_LIBADD =
-am__libfd_tracker_la_SOURCES_DIST = fd-tracker.h fd-tracker.c utils.h \
-	utils.c inode.h inode.c utils-poll.c utils-epoll.c
-@COMPAT_EPOLL_FALSE@am__objects_1 = utils-poll.lo
-@COMPAT_EPOLL_TRUE@am__objects_1 = utils-epoll.lo
 am_libfd_tracker_la_OBJECTS = fd-tracker.lo utils.lo inode.lo \
-	$(am__objects_1)
+	utils-poll.lo
 libfd_tracker_la_OBJECTS = $(am_libfd_tracker_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -179,7 +177,7 @@ am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(libfd_tracker_la_SOURCES)
-DIST_SOURCES = $(am__libfd_tracker_la_SOURCES_DIST)
+DIST_SOURCES = $(libfd_tracker_la_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -226,6 +224,7 @@ CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_ADD_TRIGGER = @CMD_DESCR_ADD_TRIGGER@
 CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
@@ -237,8 +236,10 @@ CMD_DESCR_ENABLE_EVENT = @CMD_DESCR_ENABLE_EVENT@
 CMD_DESCR_ENABLE_ROTATION = @CMD_DESCR_ENABLE_ROTATION@
 CMD_DESCR_HELP = @CMD_DESCR_HELP@
 CMD_DESCR_LIST = @CMD_DESCR_LIST@
+CMD_DESCR_LIST_TRIGGERS = @CMD_DESCR_LIST_TRIGGERS@
 CMD_DESCR_LOAD = @CMD_DESCR_LOAD@
 CMD_DESCR_REGENERATE = @CMD_DESCR_REGENERATE@
+CMD_DESCR_REMOVE_TRIGGER = @CMD_DESCR_REMOVE_TRIGGER@
 CMD_DESCR_ROTATE = @CMD_DESCR_ROTATE@
 CMD_DESCR_SAVE = @CMD_DESCR_SAVE@
 CMD_DESCR_SET_SESSION = @CMD_DESCR_SET_SESSION@
@@ -270,6 +271,7 @@ DEFAULT_APP_SOCKET_RW_TIMEOUT = @DEFAULT_APP_SOCKET_RW_TIMEOUT@
 DEFAULT_CHANNEL_SUBBUF_SIZE = @DEFAULT_CHANNEL_SUBBUF_SIZE@
 DEFAULT_CHANNEL_TRACEFILE_COUNT = @DEFAULT_CHANNEL_TRACEFILE_COUNT@
 DEFAULT_CHANNEL_TRACEFILE_SIZE = @DEFAULT_CHANNEL_TRACEFILE_SIZE@
+DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE = @DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE@
 DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT = @DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT@
 DEFAULT_KERNEL_CHANNEL_LIVE_TIMER = @DEFAULT_KERNEL_CHANNEL_LIVE_TIMER@
 DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER = @DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER@
@@ -359,6 +361,7 @@ NMEDIT = @NMEDIT@
 OBJCOPY = @OBJCOPY@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
+OSTYPE = @OSTYPE@
 OTOOL = @OTOOL@
 OTOOL64 = @OTOOL64@
 PACKAGE = @PACKAGE@
@@ -399,6 +402,12 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
+URCU_BP_CFLAGS = @URCU_BP_CFLAGS@
+URCU_BP_LIBS = @URCU_BP_LIBS@
+URCU_CDS_CFLAGS = @URCU_CDS_CFLAGS@
+URCU_CDS_LIBS = @URCU_CDS_LIBS@
+URCU_CFLAGS = @URCU_CFLAGS@
+URCU_LIBS = @URCU_LIBS@
 UST_CFLAGS = @UST_CFLAGS@
 UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
 UST_CTL_LIBS = @UST_CTL_LIBS@
@@ -450,6 +459,7 @@ localedir = @localedir@
 localstatedir = @localstatedir@
 lttngactionincludedir = @lttngactionincludedir@
 lttngconditionincludedir = @lttngconditionincludedir@
+lttngeventruleincludedir = @lttngeventruleincludedir@
 lttngincludedir = @lttngincludedir@
 lttnglibexecdir = @lttnglibexecdir@
 lttngnotificationincludedir = @lttngnotificationincludedir@
@@ -482,12 +492,10 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 noinst_LTLIBRARIES = libfd-tracker.la
-@COMPAT_EPOLL_FALSE@COMPAT = utils-poll.c
-@COMPAT_EPOLL_TRUE@COMPAT = utils-epoll.c
 libfd_tracker_la_SOURCES = fd-tracker.h fd-tracker.c \
                            utils.h utils.c \
                            inode.h inode.c \
-                           $(COMPAT)
+                           utils-poll.c
 
 all: all-am
 
@@ -545,7 +553,6 @@ distclean-compile:
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fd-tracker.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/inode.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utils-epoll.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utils-poll.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utils.Plo@am__quote@
 

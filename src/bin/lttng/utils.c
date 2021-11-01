@@ -26,11 +26,6 @@
 #include "utils.h"
 #include "command.h"
 
-static const char *str_kernel = "Kernel";
-static const char *str_ust = "UST";
-static const char *str_jul = "JUL";
-static const char *str_log4j = "LOG4J";
-static const char *str_python = "Python";
 static const char *str_all = "ALL";
 static const char *str_tracepoint = "Tracepoint";
 static const char *str_syscall = "Syscall";
@@ -124,6 +119,24 @@ void list_cmd_options(FILE *ofp, struct poptOption *options)
 
 		if (isprint(option->shortName)) {
 			fprintf(ofp, "-%c\n", option->shortName);
+		}
+	}
+}
+
+/*
+ * Same as list_cmd_options, but for options specified for argpar.
+ */
+void list_cmd_options_argpar(FILE *ofp, const struct argpar_opt_descr *options)
+{
+	int i;
+
+	for (i = 0; options[i].long_name != NULL; i++) {
+		const struct argpar_opt_descr *option = &options[i];
+
+		fprintf(ofp, "--%s\n", option->long_name);
+
+		if (isprint(option->short_name)) {
+			fprintf(ofp, "-%c\n", option->short_name);
 		}
 	}
 }
@@ -278,34 +291,6 @@ int get_count_order_ulong(unsigned long x)
 		return -1;
 
 	return fls_ulong(x - 1);
-}
-
-const char *get_domain_str(enum lttng_domain_type domain)
-{
-	const char *str_dom;
-
-	switch (domain) {
-	case LTTNG_DOMAIN_KERNEL:
-		str_dom = str_kernel;
-		break;
-	case LTTNG_DOMAIN_UST:
-		str_dom = str_ust;
-		break;
-	case LTTNG_DOMAIN_JUL:
-		str_dom = str_jul;
-		break;
-	case LTTNG_DOMAIN_LOG4J:
-		str_dom = str_log4j;
-		break;
-	case LTTNG_DOMAIN_PYTHON:
-		str_dom = str_python;
-		break;
-	default:
-		/* Should not have an unknown domain or else define it. */
-		assert(0);
-	}
-
-	return str_dom;
 }
 
 const char *get_event_type_str(enum lttng_event_type type)
@@ -468,8 +453,8 @@ void print_session_stats(const char *session_name)
 int get_session_stats_str(const char *session_name, char **out_str)
 {
 	int count, nb_domains, domain_idx, channel_idx, session_idx, ret;
-	struct lttng_domain *domains;
-	struct lttng_channel *channels;
+	struct lttng_domain *domains = NULL;
+	struct lttng_channel *channels = NULL;
 	uint64_t discarded_events_total = 0, lost_packets_total = 0;
 	struct lttng_session *sessions = NULL;
 	const struct lttng_session *selected_session = NULL;
@@ -511,6 +496,8 @@ int get_session_stats_str(const char *session_name, char **out_str)
 			goto end;
 		}
 
+		free(channels);
+		channels = NULL;
 		count = lttng_list_channels(handle, &channels);
 		for (channel_idx = 0; channel_idx < count; channel_idx++) {
 			uint64_t discarded_events = 0, lost_packets = 0;
@@ -572,6 +559,8 @@ int get_session_stats_str(const char *session_name, char **out_str)
 	}
 end:
 	free(sessions);
+	free(channels);
+	free(domains);
 	return ret;
 }
 

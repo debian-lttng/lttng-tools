@@ -15,6 +15,19 @@ LTTNG_BIN="lttng"
 BABELTRACE_BIN="babeltrace"
 OUTPUT_DEST=/dev/null
 ERROR_OUTPUT_DEST=/dev/null
+MI_XSD_MAJOR_VERSION=4
+MI_XSD_MINOR_VERSION=1
+MI_XSD_PATH="$TESTDIR/../src/common/mi-lttng-${MI_XSD_MAJOR_VERSION}.${MI_XSD_MINOR_VERSION}.xsd"
+MI_VALIDATE="$TESTDIR/utils/xml-utils/validate_xml ${MI_XSD_PATH}"
+
+XML_PRETTY="$TESTDIR/utils/xml-utils/pretty_xml"
+XML_EXTRACT="$TESTDIR/utils/xml-utils/extract_xml"
+XML_NODE_CHECK="${XML_EXTRACT} -e"
+
+# To match 20201127-175802
+date_time_pattern="[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]"
+# The size of a long on this system
+system_long_bit_size=$(getconf LONG_BIT)
 
 # Minimal kernel version supported for session daemon tests
 KERNEL_MAJOR_VERSION=2
@@ -40,23 +53,58 @@ if [ -z ${LTTNG_TEST_TEARDOWN_TIMEOUT+x} ]; then
 	LTTNG_TEST_TEARDOWN_TIMEOUT=60
 fi
 
-function full_cleanup ()
+# Enable job monitor mode.
+# Here we are mostly interested in the following from the monitor mode:
+#    All processes run in a separate process group.
+# This allows us to ensure that all subprocesses from all background tasks are
+# cleaned up correctly using signal to process group id.
+set -m
+
+kill_background_jobs ()
+{
+	local pids
+	pids=$(jobs -p)
+
+	if [ -z "$pids" ]; then
+		# Empty
+		return 0
+	fi
+
+	while read -r pid;
+	do
+		# Use negative number to send the signal to the process group.
+		# This ensure that any subprocesses receive the signal.
+		# /dev/null is used since there is an acceptable race between
+		# the moments the pids are listed and the moment we send a
+		# signal.
+		kill -SIGTERM -- "-$pid" 2>/dev/null
+	done <<< "$pids"
+}
+
+function cleanup ()
 {
 	# Try to kill daemons gracefully
-	stop_lttng_relayd_notap SIGTERM $LTTNG_TEST_TEARDOWN_TIMEOUT
-	stop_lttng_sessiond_notap SIGTERM $LTTNG_TEST_TEARDOWN_TIMEOUT
+	stop_lttng_relayd_cleanup SIGTERM $LTTNG_TEST_TEARDOWN_TIMEOUT
+	stop_lttng_sessiond_cleanup SIGTERM $LTTNG_TEST_TEARDOWN_TIMEOUT
 
 	# If daemons are still present, forcibly kill them
-	stop_lttng_relayd_notap SIGKILL $LTTNG_TEST_TEARDOWN_TIMEOUT
-	stop_lttng_sessiond_notap SIGKILL $LTTNG_TEST_TEARDOWN_TIMEOUT
-	stop_lttng_consumerd_notap SIGKILL $LTTNG_TEST_TEARDOWN_TIMEOUT
+	stop_lttng_relayd_cleanup SIGKILL $LTTNG_TEST_TEARDOWN_TIMEOUT
+	stop_lttng_sessiond_cleanup SIGKILL $LTTNG_TEST_TEARDOWN_TIMEOUT
+	stop_lttng_consumerd_cleanup SIGKILL $LTTNG_TEST_TEARDOWN_TIMEOUT
 
-	# Disable trap for SIGTERM since the following kill to the
-	# pidgroup will be SIGTERM. Otherwise it loops.
-	# The '-' before the pid number ($$) indicates 'kill' to signal the
-	# whole process group.
-	trap - SIGTERM && kill -- -$$
+	kill_background_jobs
+}
+
+function full_cleanup ()
+{
+	cleanup
 	exit 1
+}
+
+function LTTNG_BAIL_OUT ()
+{
+	cleanup
+	BAIL_OUT "$@"
 }
 
 function null_pipes ()
@@ -73,6 +121,42 @@ trap full_cleanup SIGINT SIGTERM
 # to allow those trap handlers to proceed.
 
 trap null_pipes SIGPIPE
+
+# Check pgrep from env, default to pgrep if none
+if [ -z "$PGREP" ]; then
+	PGREP=pgrep
+fi
+
+# Due to the renaming of threads we need to use the full command (pgrep -f) to
+# identify the pids for multiple lttng related processes. The problem with "pgrep
+# -f" is that it ends up also looking at the arguments. We use a two stage
+# lookup. The first one is using "pgrep -f" yielding potential candidate.
+# The second on perform grep on the basename of the first field of the
+# /proc/pid/cmdline of the previously identified pids. The first field
+# correspond to the actual command.
+function lttng_pgrep ()
+{
+	local pattern=$1
+	local possible_pids
+	local full_command_no_argument
+	local command_basename
+
+	possible_pids=$($PGREP -f "$pattern")
+	if [ -z "$possible_pids" ]; then
+		return 0
+	fi
+
+	while IFS= read -r pid ; do
+		# /proc/pid/cmdline is null separated.
+		if full_command_no_argument=$(cut -d '' -f 1 2>/dev/null < /proc/"$pid"/cmdline); then
+			command_basename=$(basename "$full_command_no_argument")
+			if grep -q "$pattern" <<< "$command_basename"; then
+				echo "$pid"
+			fi
+		fi
+	done <<< "$possible_pids"
+	return 0
+}
 
 function print_ok ()
 {
@@ -151,7 +235,7 @@ function validate_lttng_modules_present ()
 		return 0
 	fi
 
-	BAIL_OUT "LTTng modules not detected."
+	LTTNG_BAIL_OUT "LTTng modules not detected."
 }
 
 function enable_kernel_lttng_event
@@ -289,6 +373,28 @@ function lttng_disable_kernel_syscall_fail()
 	lttng_disable_kernel_syscall 1 "$@"
 }
 
+function lttng_enable_kernel_function_event ()
+{
+	local expected_to_fail="$1"
+	local sess_name="$2"
+	local target="$3"
+	local event_name="$4"
+
+	"$TESTDIR/../src/bin/lttng/$LTTNG_BIN" enable-event --kernel --function="$target" "$event_name" -s "$sess_name" > "$OUTPUT_DEST" 2> "$ERROR_OUTPUT_DEST"
+	ret=$?
+	if [[ $expected_to_fail -eq "1" ]]; then
+		test $ret -ne "0"
+		ok $? "Enable kernel function event for session $sess_name failed as expected"
+	else
+		ok $ret "Enable kernel function event for session $sess_name"
+	fi
+}
+
+function lttng_enable_kernel_function_event_ok ()
+{
+	lttng_enable_kernel_function_event 0 "$@"
+}
+
 function lttng_enable_kernel_userspace_probe_event ()
 {
 	local expected_to_fail="$1"
@@ -401,7 +507,7 @@ function start_lttng_relayd_opt()
 
 	DIR=$(readlink -f "$TESTDIR")
 
-	if [ -z $(pgrep $RELAYD_MATCH) ]; then
+	if [ -z $(lttng_pgrep "$RELAYD_MATCH") ]; then
 		# shellcheck disable=SC2086
 		$DIR/../src/bin/lttng-relayd/$RELAYD_BIN $process_mode $opt 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 		#$DIR/../src/bin/lttng-relayd/$RELAYD_BIN $opt -vvv >>/tmp/relayd.log 2>&1 &
@@ -433,27 +539,32 @@ function start_lttng_relayd_notap()
 function stop_lttng_relayd_opt()
 {
 	local withtap=$1
-	local signal=$2
+	local is_cleanup=$2
+	local signal=$3
+	local timeout_s=$4
+	local dtimeleft_s=
+	local retval=0
+	local pids
 
 	if [ -z "$signal" ]; then
 		signal="SIGTERM"
 	fi
 
-	local timeout_s=$3
-	local dtimeleft_s=
 
 	# Multiply time by 2 to simplify integer arithmetic
 	if [ -n "$timeout_s" ]; then
 		dtimeleft_s=$((timeout_s * 2))
 	fi
 
-	local retval=0
-	local pids=
 
-	pids=$(pgrep "$RELAYD_MATCH")
+	pids=$(lttng_pgrep "$RELAYD_MATCH")
 	if [ -z "$pids" ]; then
-		if [ "$withtap" -eq "1" ]; then
-			pass "No relay daemon to kill"
+		if [ "$is_cleanup" -eq 1 ]; then
+			:
+		elif [ "$withtap" -eq "1" ]; then
+			fail "No relay daemon to kill"
+		else
+			LTTNG_BAIL_OUT "No relay daemon to kill"
 		fi
 		return 0
 	fi
@@ -469,7 +580,7 @@ function stop_lttng_relayd_opt()
 	else
 		out=1
 		while [ -n "$out" ]; do
-			out=$(pgrep "$RELAYD_MATCH")
+			out=$(lttng_pgrep "$RELAYD_MATCH")
 			if [ -n "$dtimeleft_s" ]; then
 				if [ $dtimeleft_s -lt 0 ]; then
 					out=
@@ -492,12 +603,17 @@ function stop_lttng_relayd_opt()
 
 function stop_lttng_relayd()
 {
-	stop_lttng_relayd_opt 1 "$@"
+	stop_lttng_relayd_opt 1 0 "$@"
 }
 
 function stop_lttng_relayd_notap()
 {
-	stop_lttng_relayd_opt 0 "$@"
+	stop_lttng_relayd_opt 0 0 "$@"
+}
+
+function stop_lttng_relayd_cleanup()
+{
+	stop_lttng_relayd_opt 0 1 "$@"
 }
 
 #First arg: show tap output
@@ -506,6 +622,9 @@ function start_lttng_sessiond_opt()
 {
 	local withtap=$1
 	local load_path=$2
+
+	# The rest of the arguments will be passed directly to lttng-sessiond.
+	shift 2
 
 	local env_vars=""
 	local consumerd=""
@@ -541,20 +660,20 @@ function start_lttng_sessiond_opt()
 
 	if ! validate_kernel_version; then
 	    fail "Start session daemon"
-	    BAIL_OUT "*** Kernel too old for session daemon tests ***"
+	    LTTNG_BAIL_OUT "*** Kernel too old for session daemon tests ***"
 	fi
 
 	: "${LTTNG_SESSION_CONFIG_XSD_PATH="${DIR}/../src/common/config/"}"
 	export LTTNG_SESSION_CONFIG_XSD_PATH
 
-	if [ -z "$(pgrep "${SESSIOND_MATCH}")" ]; then
+	if [ -z "$(lttng_pgrep "${SESSIOND_MATCH}")" ]; then
 		# Have a load path ?
 		if [ -n "$load_path" ]; then
 			# shellcheck disable=SC2086
-			env $env_vars --load "$load_path" --background "$consumerd"
+			env $env_vars --load "$load_path" --background "$consumerd" "$@"
 		else
 			# shellcheck disable=SC2086
-			env $env_vars --background "$consumerd"
+			env $env_vars --background "$consumerd" "$@"
 		fi
 		#$DIR/../src/bin/lttng-sessiond/$SESSIOND_BIN --background --consumerd32-path="$DIR/../src/bin/lttng-consumerd/lttng-consumerd" --consumerd64-path="$DIR/../src/bin/lttng-consumerd/lttng-consumerd" --verbose-consumer >>/tmp/sessiond.log 2>&1
 		status=$?
@@ -577,14 +696,17 @@ function start_lttng_sessiond_notap()
 function stop_lttng_sessiond_opt()
 {
 	local withtap=$1
-	local signal=$2
+	local is_cleanup=$2
+	local signal=$3
+	local timeout_s=$4
+	local dtimeleft_s=
+	local retval=0
+	local runas_pids
+	local pids
 
 	if [ -z "$signal" ]; then
 		signal=SIGTERM
 	fi
-
-	local timeout_s=$3
-	local dtimeleft_s=
 
 	# Multiply time by 2 to simplify integer arithmetic
 	if [ -n "$timeout_s" ]; then
@@ -596,21 +718,20 @@ function stop_lttng_sessiond_opt()
 		return 0
 	fi
 
-	local retval=0
-
-	local runas_pids=
-	runas_pids=$(pgrep "$RUNAS_MATCH")
-
-	local pids=
-	pids=$(pgrep "$SESSIOND_MATCH")
+	runas_pids=$(lttng_pgrep "$RUNAS_MATCH")
+	pids=$(lttng_pgrep "$SESSIOND_MATCH")
 
 	if [ -n "$runas_pids" ]; then
 		pids="$pids $runas_pids"
 	fi
 
 	if [ -z "$pids" ]; then
-		if [ "$withtap" -eq "1" ]; then
-			pass "No session daemon to kill"
+		if [ "$is_cleanup" -eq 1 ]; then
+			:
+		elif [ "$withtap" -eq "1" ]; then
+			fail "No session daemon to kill"
+		else
+			LTTNG_BAIL_OUT "No session daemon to kill"
 		fi
 		return 0
 	fi
@@ -626,7 +747,7 @@ function stop_lttng_sessiond_opt()
 	else
 		out=1
 		while [ -n "$out" ]; do
-			out=$(pgrep "${SESSIOND_MATCH}")
+			out=$(lttng_pgrep "${SESSIOND_MATCH}")
 			if [ -n "$dtimeleft_s" ]; then
 				if [ $dtimeleft_s -lt 0 ]; then
 					out=
@@ -638,7 +759,7 @@ function stop_lttng_sessiond_opt()
 		done
 		out=1
 		while [ -n "$out" ]; do
-			out=$(pgrep "$CONSUMERD_MATCH")
+			out=$(lttng_pgrep "$CONSUMERD_MATCH")
 			if [ -n "$dtimeleft_s" ]; then
 				if [ $dtimeleft_s -lt 0 ]; then
 					out=
@@ -674,44 +795,50 @@ function stop_lttng_sessiond_opt()
 
 function stop_lttng_sessiond()
 {
-	stop_lttng_sessiond_opt 1 "$@"
+	stop_lttng_sessiond_opt 1 0 "$@"
 }
 
 function stop_lttng_sessiond_notap()
 {
-	stop_lttng_sessiond_opt 0 "$@"
+	stop_lttng_sessiond_opt 0 0 "$@"
+}
+
+function stop_lttng_sessiond_cleanup()
+{
+	stop_lttng_sessiond_opt 0 1 "$@"
 }
 
 function sigstop_lttng_sessiond_opt()
 {
 	local withtap=$1
 	local signal=SIGSTOP
+	local pids
 
 	if [ -n "$TEST_NO_SESSIOND" ] && [ "$TEST_NO_SESSIOND" == "1" ]; then
 		# Env variable requested no session daemon
 		return
 	fi
 
-	PID_SESSIOND="$(pgrep "${SESSIOND_MATCH}") $(pgrep "$RUNAS_MATCH")"
+	pids="$(lttng_pgrep "${SESSIOND_MATCH}") $(lttng_pgrep "$RUNAS_MATCH")"
 
 	if [ "$withtap" -eq "1" ]; then
-		diag "Sending SIGSTOP to lt-$SESSIOND_BIN and $SESSIOND_BIN pids: $(echo "$PID_SESSIOND" | tr '\n' ' ')"
+		diag "Sending SIGSTOP to lt-$SESSIOND_BIN and $SESSIOND_BIN pids: $(echo "$pids" | tr '\n' ' ')"
 	fi
 
 	# shellcheck disable=SC2086
-	if ! kill -s $signal $PID_SESSIOND 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST; then
+	if ! kill -s $signal $pids 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST; then
 		if [ "$withtap" -eq "1" ]; then
 			fail "Sending SIGSTOP to session daemon"
 		fi
 	else
 		out=1
 		while [ $out -ne 0 ]; do
-			pid="$(pgrep "$SESSIOND_MATCH")"
+			pids="$(lttng_pgrep "$SESSIOND_MATCH")"
 
 			# Wait until state becomes stopped for session
 			# daemon(s).
 			out=0
-			for sessiond_pid in $pid; do
+			for sessiond_pid in $pids; do
 				state="$(ps -p "$sessiond_pid" -o state= )"
 				if [[ -n "$state" && "$state" != "T" ]]; then
 					out=1
@@ -738,35 +865,39 @@ function sigstop_lttng_sessiond_notap()
 function stop_lttng_consumerd_opt()
 {
 	local withtap=$1
-	local signal=$2
+	local is_cleanup=$2
+	local signal=$3
+	local timeout_s=$4
+	local dtimeleft_s=
+	local retval=0
+	local pids
 
 	if [ -z "$signal" ]; then
 		signal=SIGTERM
 	fi
-
-	local timeout_s=$3
-	local dtimeleft_s=
 
 	# Multiply time by 2 to simplify integer arithmetic
 	if [ -n "$timeout_s" ]; then
 		dtimeleft_s=$((timeout_s * 2))
 	fi
 
-	local retval=0
+	pids="$(lttng_pgrep "$CONSUMERD_MATCH")"
 
-	PID_CONSUMERD="$(pgrep "$CONSUMERD_MATCH")"
-
-	if [ -z "$PID_CONSUMERD" ]; then
-		if [ "$withtap" -eq "1" ]; then
-			pass "No consumer daemon to kill"
+	if [ -z "$pids" ]; then
+		if [ "$is_cleanup" -eq 1 ]; then
+			:
+		elif [ "$withtap" -eq "1" ]; then
+			fail "No consumerd daemon to kill"
+		else
+			LTTNG_BAIL_OUT "No consumerd daemon to kill"
 		fi
 		return 0
 	fi
 
-	diag "Killing (signal $signal) $CONSUMERD_BIN pids: $(echo "$PID_CONSUMERD" | tr '\n' ' ')"
+	diag "Killing (signal $signal) $CONSUMERD_BIN pids: $(echo "$pids" | tr '\n' ' ')"
 
 	# shellcheck disable=SC2086
-	if ! kill -s $signal $PID_CONSUMERD 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST; then
+	if ! kill -s $signal $pids 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST; then
 		retval=1
 		if [ "$withtap" -eq "1" ]; then
 			fail "Kill consumer daemon"
@@ -774,12 +905,12 @@ function stop_lttng_consumerd_opt()
 	else
 		out=1
 		while [ $out -ne 0 ]; do
-			pid="$(pgrep "$CONSUMERD_MATCH")"
+			pids="$(lttng_pgrep "$CONSUMERD_MATCH")"
 
 			# If consumerds are still present check their status.
 			# A zombie status qualifies the consumerd as *killed*
 			out=0
-			for consumer_pid in $pid; do
+			for consumer_pid in $pids; do
 				state="$(ps -p "$consumer_pid" -o state= )"
 				if [[ -n "$state" && "$state" != "Z" ]]; then
 					out=1
@@ -808,25 +939,31 @@ function stop_lttng_consumerd_opt()
 
 function stop_lttng_consumerd()
 {
-	stop_lttng_consumerd_opt 1 "$@"
+	stop_lttng_consumerd_opt 1 0 "$@"
 }
 
 function stop_lttng_consumerd_notap()
 {
-	stop_lttng_consumerd_opt 0 "$@"
+	stop_lttng_consumerd_opt 0 0 "$@"
+}
+
+function stop_lttng_consumerd_cleanup()
+{
+	stop_lttng_consumerd_opt 0 1 "$@"
 }
 
 function sigstop_lttng_consumerd_opt()
 {
 	local withtap=$1
 	local signal=SIGSTOP
+	local pids
 
-	PID_CONSUMERD="$(pgrep "$CONSUMERD_MATCH")"
+	pids="$(lttng_pgrep "$CONSUMERD_MATCH")"
 
-	diag "Sending SIGSTOP to $CONSUMERD_BIN pids: $(echo "$PID_CONSUMERD" | tr '\n' ' ')"
+	diag "Sending SIGSTOP to $CONSUMERD_BIN pids: $(echo "$pids" | tr '\n' ' ')"
 
 	# shellcheck disable=SC2086
-	kill -s $signal $PID_CONSUMERD 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	kill -s $signal $pids 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	retval=$?
 
 	if [ $retval -eq 1 ]; then
@@ -837,12 +974,12 @@ function sigstop_lttng_consumerd_opt()
 	else
 		out=1
 		while [ $out -ne 0 ]; do
-			pid="$(pgrep "$CONSUMERD_MATCH")"
+			pids="$(lttng_pgrep "$CONSUMERD_MATCH")"
 
 			# Wait until state becomes stopped for all
 			# consumers.
 			out=0
-			for consumer_pid in $pid; do
+			for consumer_pid in $pids; do
 				state="$(ps -p "$consumer_pid" -o state= )"
 				if [[ -n "$state" && "$state" != "T" ]]; then
 					out=1
@@ -1427,8 +1564,9 @@ function lttng_snapshot_del_output_fail ()
 function lttng_snapshot_record ()
 {
 	local sess_name=$1
+	local trace_path=$2
 
-	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot record -s $sess_name $trace_path 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN snapshot record -s "$sess_name" "$trace_path" 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ok $? "Snapshot recorded"
 }
 
@@ -1653,7 +1791,7 @@ function validate_metadata_event ()
 	local nr_event_id=$2
 	local trace_path=$3
 
-	local metadata_file=$(find $trace_path | grep metadata)
+	local metadata_file=$(find $trace_path -name "metadata")
 	local metadata_path=$(dirname $metadata_file)
 
 	which $BABELTRACE_BIN >/dev/null
@@ -1977,7 +2115,7 @@ function rotate_session_fail ()
 
 function destructive_tests_enabled ()
 {
-	if [ ${LTTNG_ENABLE_DESTRUCTIVE_TESTS} = "will-break-my-system" ]; then
+	if [ "$LTTNG_ENABLE_DESTRUCTIVE_TESTS" = "will-break-my-system" ]; then
 		return 0
 	else
 		return 1
@@ -2065,4 +2203,332 @@ function lttng_clear_all ()
 {
 	$TESTDIR/../src/bin/lttng/$LTTNG_BIN clear --all 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
 	ok $? "Clear all lttng sessions"
+}
+
+function lttng_add_trigger()
+{
+	local expected_to_fail="$1"
+	local trigger_name="$2"
+	shift 2
+	local args=("$@")
+
+	diag "$TESTDIR/../src/bin/lttng/$LTTNG_BIN add-trigger --name $trigger_name ${args[*]}"
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN add-trigger --name "$trigger_name" "${args[@]}" 1> /dev/null 2> /dev/null
+	ret=$?
+	if [[ $expected_to_fail -eq "1" ]]; then
+		test "$ret" -ne "0"
+		ok $? "Add trigger $trigger_name failed as expected"
+	else
+		ok $ret "Add trigger $trigger_name"
+	fi
+}
+
+function lttng_remove_trigger()
+{
+	local expected_to_fail="$1"
+	local trigger_name="$2"
+	shift 2
+
+	diag "$TESTDIR/../src/bin/lttng/$LTTNG_BIN remove-trigger $trigger_name $*"
+	"$TESTDIR/../src/bin/lttng/$LTTNG_BIN" remove-trigger "$trigger_name" "$@" 1> /dev/null 2> /dev/null
+	ret=$?
+	if [[ $expected_to_fail -eq "1" ]]; then
+		test "$ret" -ne "0"
+		ok $? "Remove trigger $trigger_name failed as expected"
+	else
+		ok $ret "Remove trigger $trigger_name"
+	fi
+}
+
+function lttng_add_trigger_ok()
+{
+	lttng_add_trigger 0 "$@"
+}
+
+function lttng_add_trigger_fail()
+{
+	lttng_add_trigger 1 "$@"
+}
+
+function lttng_remove_trigger_ok()
+{
+	lttng_remove_trigger 0 "$@"
+}
+
+function list_triggers_matches_ok ()
+{
+	local tmp_stdout=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stdout.XXXXXX")
+	local tmp_stderr=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stderr.XXXXXX")
+
+	local test_name="$1"
+	local expected_stdout_file="$2"
+
+	diag "$TESTDIR/../src/bin/lttng/$LTTNG_BIN list-triggers"
+
+	"$TESTDIR/../src/bin/lttng/$LTTNG_BIN" list-triggers > "${tmp_stdout}" 2> "${tmp_stderr}"
+	ok $? "${test_name}: exit code is 0"
+
+	diff -u "${expected_stdout_file}" "${tmp_stdout}"
+	ok $? "${test_name}: expected stdout"
+
+	diff -u /dev/null "${tmp_stderr}"
+	ok $? "${test_name}: expected stderr"
+
+	rm -f "${tmp_stdout}"
+	rm -f "${tmp_stderr}"
+}
+
+function list_triggers_matches_mi_ok ()
+{
+	local tmp_stdout
+	local tmp_stdout_raw
+	local tmp_stderr
+
+	local test_name="$1"
+	local expected_stdout_file="$2"
+
+	tmp_stdout_raw=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stdout.XXXXXX")
+	tmp_stdout=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stdout.XXXXXX")
+	tmp_stderr=$(mktemp --tmpdir -t "tmp.${FUNCNAME[0]}_stderr.XXXXXX")
+
+	diag "$TESTDIR/../src/bin/lttng/$LTTNG_BIN --mi xml list-triggers"
+
+	"$TESTDIR/../src/bin/lttng/$LTTNG_BIN" --mi=xml list-triggers > "${tmp_stdout_raw}" 2> "${tmp_stderr}"
+	ok $? "${test_name}: exit code is 0"
+
+	# Pretty-fy xml before further test.
+	$XML_PRETTY < "${tmp_stdout_raw}" > "${tmp_stdout}"
+
+	$MI_VALIDATE "${tmp_stdout}"
+	ok $? "list-trigger mi is valid"
+
+	diff -u "${expected_stdout_file}" "${tmp_stdout}"
+	ok $? "${test_name}: expected stdout"
+
+	diff -u /dev/null "${tmp_stderr}"
+	ok $? "${test_name}: expected stderr"
+
+	rm -f "${tmp_stdout}"
+	rm -f "${tmp_stdout_raw}"
+	rm -f "${tmp_stderr}"
+}
+
+function validate_path_pattern ()
+{
+	local message=$1
+	local pattern=$2
+	# Base path is only used in error case and is used to list the content
+	# of the base path.
+	local base_path=$3
+
+
+	[ -f $pattern ]
+	ret=$?
+	ok $ret "$message"
+
+	if [ "$ret" -ne "0" ]; then
+		diag "Path pattern expected: $pattern"
+		# List the tracepath for more info. We use find as a recursive
+		# directory lister.
+		diag "The base path content:"
+		find "$base_path" -print
+	fi
+}
+
+function validate_trace_path_ust_uid ()
+{
+	local trace_path=$1
+	local session_name=$2
+	local uid=$UID
+	local pattern="$trace_path/$session_name-$date_time_pattern/ust/uid/$uid/${system_long_bit_size}-bit/metadata"
+
+	validate_path_pattern "UST per-uid trace path is valid" "$pattern" "$trace_path"
+}
+
+function validate_trace_path_ust_uid_network ()
+{
+	local trace_path=$1
+	local session_name=$2
+	local base_path=$3
+	local uid=$UID
+	local hostname=$HOSTNAME
+	local pattern
+	local ret
+
+	# If the session was given a network base path (e.g
+	# 127.0.0.1/my/custom/path on creation, there is no session name
+	# component to the path on the relayd side. Caller can simply not pass a
+	# session name for this scenario.
+	if [ -n "$session_name" ]; then
+		session_name="$session_name-$date_time_pattern"
+		if [ -n "$base_path" ]; then
+			fail "Session name and base path are mutually exclusive"
+			return
+		fi
+	fi
+
+	pattern="$trace_path/$hostname/$base_path/$session_name/ust/uid/$uid/${system_long_bit_size}-bit/metadata"
+
+	validate_path_pattern "UST per-uid network trace path is valid" "$pattern" "$trace_path"
+}
+
+function validate_trace_path_ust_uid_snapshot_network ()
+{
+	local trace_path=$1
+	local session_name=$2
+	local snapshot_name=$3
+	local snapshot_number=$4
+	local base_path=$5
+	local hostname=$HOSTNAME
+	local uid=$UID
+	local pattern
+	local ret
+
+	# If the session/output was given a network base path (e.g
+	# 127.0.0.1/my/custom/path on creation, there is no session name
+	# component to the path on the relayd side. Caller can simply not pass a
+	# session name for this scenario.
+	if [ -n "$session_name" ]; then
+		session_name="$session_name-$date_time_pattern"
+		if [ -n "$base_path" ]; then
+			fail "Session name and base path are mutually exclusive"
+			return
+		fi
+	fi
+
+	pattern="$trace_path/$hostname/$base_path/$session_name/$snapshot_name-$date_time_pattern-$snapshot_number/ust/uid/$uid/${system_long_bit_size}-bit/metadata"
+
+	validate_path_pattern "UST per-uid network snapshot trace path is valid" "$pattern" "$trace_path"
+}
+
+function validate_trace_path_ust_uid_snapshot ()
+{
+	local trace_path=$1
+	local session_name=$2
+	local snapshot_name=$3
+	local snapshot_number=$4
+	local base_path=$5
+	local uid=$UID
+	local pattern
+	local ret
+
+	# If the session/output was given a network base path (e.g
+	# 127.0.0.1/my/custom/path) on creation, there is no session name
+	# component to the path on the relayd side. Caller can simply not pass a
+	# session name for this scenario.
+	if [ -n "$session_name" ]; then
+		session_name="$session_name-$date_time_pattern"
+		if [ -n "$base_path" ]; then
+			fail "Session name and base path are mutually exclusive"
+			return
+		fi
+	fi
+
+	pattern="$trace_path/$base_path/$session_name/$snapshot_name-$date_time_pattern-$snapshot_number/ust/uid/$uid/${system_long_bit_size}-bit/metadata"
+
+	validate_path_pattern "UST per-uid snapshot trace path is valid" "$pattern" "$trace_path"
+}
+
+function validate_trace_path_ust_pid ()
+{
+	local trace_path=$1
+	local session_name=$2
+	local app_string=$3
+	local pid=$4
+	local pattern
+	local ret
+
+	# If the session was given a trace path on creation, there is no session
+	# name component to the path. Caller can simply not pass a session name
+	# for this scenario.
+	if [ -n "$session_name" ]; then
+		session_name="$session_name-$date_time_pattern"
+	fi
+
+	pattern="$trace_path/$session_name/ust/pid/$pid/$app_string-*-$date_time_pattern/metadata"
+
+	validate_path_pattern "UST per-pid trace path is valid" "$pattern" "$trace_path"
+}
+
+function validate_trace_path_kernel ()
+{
+	local trace_path=$1
+	local session_name=$2
+	local pattern
+
+	# If the session was given a trace path on creation, there is no session
+	# name component to the path. Caller can simply not pass a session name
+	# for this scenario.
+	if [ -n "$session_name" ]; then
+		session_name="$session_name-$date_time_pattern"
+	fi
+
+	pattern="$trace_path/$session_name/kernel/metadata"
+
+	validate_path_pattern "Kernel trace path is valid" "$pattern" "$trace_path"
+}
+
+function validate_trace_path_kernel_network ()
+{
+	local trace_path=$1
+	local session_name=$2
+	local hostname=$HOSTNAME
+	local pattern="$trace_path/$hostname/$session_name-$date_time_pattern/kernel/metadata"
+
+	validate_path_pattern "Kernel network trace path is valid" "$pattern" "$trace_path"
+}
+
+function validate_trace_path_kernel_snapshot ()
+{
+	local trace_path=$1
+	local session_name=$2
+	local snapshot_name=$3
+	local snapshot_number=$4
+	local base_path=$5
+	local pattern
+	local ret
+
+	# If the session/output was given a network base path (e.g
+	# 127.0.0.1/my/custom/path on creation, there is no session name
+	# component to the path on the relayd side. Caller can simply not pass a
+	# session name for this scenario.
+	if [ -n "$session_name" ]; then
+		session_name="$session_name-$date_time_pattern"
+		if [ -n "$base_path" ]; then
+			fail "Session name and base path are mutually exclusive"
+			return
+		fi
+	fi
+
+	pattern="$trace_path/$base_path/$session_name/$snapshot_name-$date_time_pattern-$snapshot_number/kernel/metadata"
+
+	validate_path_pattern "Kernel snapshot trace path is valid" "$pattern" "$trace_path"
+}
+
+function validate_trace_path_kernel_snapshot_network ()
+{
+	local trace_path=$1
+	local session_name=$2
+	local snapshot_name=$3
+	local snapshot_number=$4
+	local base_path=$5
+	local hostname=$HOSTNAME
+	local pattern
+	local ret
+
+	# If the session/output was given a network base path (e.g
+	# 127.0.0.1/my/custom/path on creation, there is no session name
+	# component to the path on the relayd side. Caller can simply not pass a
+	# session name for this scenario.
+	if [ -n "$session_name" ]; then
+		session_name="$session_name-$date_time_pattern"
+		if [ -n "$base_path" ]; then
+			fail "Session name and base path are mutually exclusive"
+			return
+		fi
+	fi
+
+	pattern="$trace_path/$hostname/$base_path/$session_name/$snapshot_name-$date_time_pattern-$snapshot_number/kernel/metadata"
+
+	validate_path_pattern "Kernel network snapshot trace path is valid" "$pattern" "$trace_path"
 }

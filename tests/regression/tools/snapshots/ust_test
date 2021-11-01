@@ -16,27 +16,27 @@ TESTAPP_NAME="gen-ust-events"
 TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
 APPS_PID=
 
-NUM_TESTS=100
+NUM_TESTS=105
 
-TRACE_PATH=$(mktemp -d)
+TRACE_PATH=$(mktemp --tmpdir -d tmp.test_snapshots_ust_trace_path.XXXXXX)
 
 source $TESTDIR/utils/utils.sh
 
 if [ ! -x "$TESTAPP_BIN" ]; then
-	BAIL_OUT "No UST events binary detected."
+	BAIL_OUT "No UST events binary detected"
 fi
 
 # Need the number of snapshot to do.
 if [ -z $1 ]; then
-	BAIL_OUT "A number of snapshot is needed."
+	BAIL_OUT "A number of snapshot is needed"
 fi
 NR_SNAPSHOT=$1
 
-NUM_TESTS=$(($NUM_TESTS + ($NR_SNAPSHOT * 2)))
+NUM_TESTS=$(($NUM_TESTS + ($NR_SNAPSHOT * 3)))
 
 function start_test_app()
 {
-	local tmp_file=$(mktemp -u)
+	local tmp_file=$(mktemp --tmpdir -u "tmp.${FUNCNAME[0]}_tmp_file.XXXXXX")
 
 	# Start application with a temporary file.
 	$TESTAPP_BIN -i $NR_ITER -w $NR_USEC_WAIT --sync-after-first-event $tmp_file &
@@ -193,6 +193,7 @@ function test_ust_local_snapshot ()
 	destroy_lttng_session_ok $SESSION_NAME
 
 	# Validate test
+	validate_trace_path_ust_uid_snapshot "$TRACE_PATH" "" "snapshot-1" 0
 	validate_trace $EVENT_NAME $TRACE_PATH/
 	if [ $? -eq 0 ]; then
 		# Only delete if successful
@@ -237,9 +238,9 @@ function test_ust_local_snapshot_small_discard_buffers ()
 	rm -rf $TRACE_PATH/
 
 	if [ x"$FIRST_LINE" != x"$FIRST_LINE_2" ]; then
-		fail "First snapshot event do not match."
+		fail "First snapshot event do not match"
 	else
-		pass "First snapshot event match."
+		pass "First snapshot event match"
 	fi
 
 	stop_lttng_tracing_ok $SESSION_NAME
@@ -282,9 +283,9 @@ function test_ust_local_snapshot_small_overwrite_buffers ()
 	rm -rf $TRACE_PATH/
 
 	if [ x"$FIRST_LINE" != x"$FIRST_LINE_2" ]; then
-		pass "First snapshot event do not match."
+		pass "First snapshot event do not match"
 	else
-		fail "First snapshot event match."
+		fail "First snapshot event match"
 	fi
 
 	stop_lttng_tracing_ok $SESSION_NAME
@@ -335,6 +336,7 @@ function test_ust_local_snapshot_max_size ()
 	destroy_lttng_session_ok $SESSION_NAME
 
 	# Validate test
+	validate_trace_path_ust_uid_snapshot "$TRACE_PATH" "" "snapshot-1" 0
 	validate_trace $EVENT_NAME $TRACE_PATH/
 
 	if [ $? -eq 0 ]; then
@@ -365,6 +367,7 @@ function test_ust_local_snapshot_large_metadata ()
 	destroy_lttng_session_ok $SESSION_NAME
 
 	# Validate test
+	validate_trace_path_ust_uid_snapshot "$TRACE_PATH" "" "snapshot-1" 0
 	validate_trace $LM_EVENT $TRACE_PATH/
 	if [ $? -eq 0 ]; then
 		# Only delete if successful
@@ -400,6 +403,7 @@ function test_ust_per_uid_local_snapshot ()
 	destroy_lttng_session_ok $SESSION_NAME
 
 	# Validate test
+	validate_trace_path_ust_uid_snapshot "$TRACE_PATH" "" "snapshot-1" 0
 	validate_trace $EVENT_NAME $TRACE_PATH/
 	if [ $? -eq 0 ]; then
 		# Only delete if successful
@@ -430,6 +434,7 @@ function test_ust_per_uid_local_snapshot_post_mortem ()
 	destroy_lttng_session_ok $SESSION_NAME
 
 	# Validate test
+	validate_trace_path_ust_uid_snapshot "$TRACE_PATH" "" "snapshot-1" 0
 	validate_trace $EVENT_NAME $TRACE_PATH/
 	if [ $? -eq 0 ]; then
 		# Only delete if successful
@@ -457,6 +462,7 @@ function test_ust_local_snapshots ()
 		rm -rf $TRACE_PATH/snapshot/* 2>/dev/null
 		lttng_snapshot_record $SESSION_NAME
 		# Validate test
+		validate_trace_path_ust_uid_snapshot "$TRACE_PATH" "" "snapshot-1" $((i - 1))
 		validate_trace $EVENT_NAME $TRACE_PATH/
 		if [ $? -eq 0 ]; then
 			# Only delete if successful

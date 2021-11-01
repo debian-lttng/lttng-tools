@@ -107,7 +107,8 @@ target_triplet = @target@
 # building man pages: we can install and distribute them
 @MAN_PAGES_OPT_TRUE@am__append_4 = $(MAN1)
 @MAN_PAGES_OPT_TRUE@am__append_5 = $(MAN3)
-@MAN_PAGES_OPT_TRUE@am__append_6 = $(MAN8)
+@MAN_PAGES_OPT_TRUE@am__append_6 = $(MAN7)
+@MAN_PAGES_OPT_TRUE@am__append_7 = $(MAN8)
 subdir = doc/man
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
@@ -137,6 +138,8 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
 	$(top_srcdir)/m4/lttng_check_sdt_works.m4 \
+	$(top_srcdir)/m4/lttng_pthread_getname_np.m4 \
+	$(top_srcdir)/m4/lttng_pthread_setname_np.m4 \
 	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
 	$(top_srcdir)/m4/pprint.m4 \
 	$(top_srcdir)/m4/rw_prog_cxx_works.m4 \
@@ -196,14 +199,15 @@ am__uninstall_files_from_dir = { \
   }
 man1dir = $(mandir)/man1
 am__installdirs = "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man3dir)" \
-	"$(DESTDIR)$(man8dir)"
+	"$(DESTDIR)$(man7dir)" "$(DESTDIR)$(man8dir)"
 man3dir = $(mandir)/man3
+man7dir = $(mandir)/man7
 man8dir = $(mandir)/man8
 NROFF = nroff
-MANS = $(dist_man1_MANS) $(dist_man3_MANS) $(dist_man8_MANS)
+MANS = $(dist_man1_MANS) $(dist_man3_MANS) $(dist_man7_MANS) $(dist_man8_MANS)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 am__DIST_COMMON = $(dist_man1_MANS) $(dist_man3_MANS) \
-	$(dist_man8_MANS) $(srcdir)/Makefile.in \
+	$(dist_man7_MANS) $(dist_man8_MANS) $(srcdir)/Makefile.in \
 	$(srcdir)/asciidoc-attrs.conf.in
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 ACLOCAL = @ACLOCAL@
@@ -226,6 +230,7 @@ CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_ADD_TRIGGER = @CMD_DESCR_ADD_TRIGGER@
 CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
@@ -237,8 +242,10 @@ CMD_DESCR_ENABLE_EVENT = @CMD_DESCR_ENABLE_EVENT@
 CMD_DESCR_ENABLE_ROTATION = @CMD_DESCR_ENABLE_ROTATION@
 CMD_DESCR_HELP = @CMD_DESCR_HELP@
 CMD_DESCR_LIST = @CMD_DESCR_LIST@
+CMD_DESCR_LIST_TRIGGERS = @CMD_DESCR_LIST_TRIGGERS@
 CMD_DESCR_LOAD = @CMD_DESCR_LOAD@
 CMD_DESCR_REGENERATE = @CMD_DESCR_REGENERATE@
+CMD_DESCR_REMOVE_TRIGGER = @CMD_DESCR_REMOVE_TRIGGER@
 CMD_DESCR_ROTATE = @CMD_DESCR_ROTATE@
 CMD_DESCR_SAVE = @CMD_DESCR_SAVE@
 CMD_DESCR_SET_SESSION = @CMD_DESCR_SET_SESSION@
@@ -270,6 +277,7 @@ DEFAULT_APP_SOCKET_RW_TIMEOUT = @DEFAULT_APP_SOCKET_RW_TIMEOUT@
 DEFAULT_CHANNEL_SUBBUF_SIZE = @DEFAULT_CHANNEL_SUBBUF_SIZE@
 DEFAULT_CHANNEL_TRACEFILE_COUNT = @DEFAULT_CHANNEL_TRACEFILE_COUNT@
 DEFAULT_CHANNEL_TRACEFILE_SIZE = @DEFAULT_CHANNEL_TRACEFILE_SIZE@
+DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE = @DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE@
 DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT = @DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT@
 DEFAULT_KERNEL_CHANNEL_LIVE_TIMER = @DEFAULT_KERNEL_CHANNEL_LIVE_TIMER@
 DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER = @DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER@
@@ -359,6 +367,7 @@ NMEDIT = @NMEDIT@
 OBJCOPY = @OBJCOPY@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
+OSTYPE = @OSTYPE@
 OTOOL = @OTOOL@
 OTOOL64 = @OTOOL64@
 PACKAGE = @PACKAGE@
@@ -399,6 +408,12 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
+URCU_BP_CFLAGS = @URCU_BP_CFLAGS@
+URCU_BP_LIBS = @URCU_BP_LIBS@
+URCU_CDS_CFLAGS = @URCU_CDS_CFLAGS@
+URCU_CDS_LIBS = @URCU_CDS_LIBS@
+URCU_CFLAGS = @URCU_CFLAGS@
+URCU_LIBS = @URCU_LIBS@
 UST_CFLAGS = @UST_CFLAGS@
 UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
 UST_CTL_LIBS = @UST_CTL_LIBS@
@@ -450,6 +465,7 @@ localedir = @localedir@
 localstatedir = @localstatedir@
 lttngactionincludedir = @lttngactionincludedir@
 lttngconditionincludedir = @lttngconditionincludedir@
+lttngeventruleincludedir = @lttngeventruleincludedir@
 lttngincludedir = @lttngincludedir@
 lttnglibexecdir = @lttnglibexecdir@
 lttngnotificationincludedir = @lttngnotificationincludedir@
@@ -514,27 +530,36 @@ MAN1_NAMES = \
 	lttng-rotate \
 	lttng-enable-rotation \
 	lttng-disable-rotation \
-	lttng-clear
+	lttng-clear \
+	lttng-add-trigger \
+	lttng-remove-trigger \
+	lttng-list-triggers
 
 MAN3_NAMES = 
+MAN7_NAMES = lttng-event-rule lttng-concepts
 MAN8_NAMES = lttng-sessiond lttng-relayd
 MAN1_NO_ASCIIDOC_NAMES = 
 MAN3_NO_ASCIIDOC_NAMES = lttng-health-check
+MAN7_NO_ASCIIDOC_NAMES = 
 MAN8_NO_ASCIIDOC_NAMES = 
 
 # AsciiDoc sources and outputs
 MAN1_TXT = $(call manaddsuffix,.1.txt,$(MAN1_NAMES))
 MAN3_TXT = $(call manaddsuffix,.3.txt,$(MAN3_NAMES))
+MAN7_TXT = $(call manaddsuffix,.7.txt,$(MAN7_NAMES))
 MAN8_TXT = $(call manaddsuffix,.8.txt,$(MAN8_NAMES))
-MAN_TXT = $(MAN1_TXT) $(MAN3_TXT) $(MAN8_TXT)
+MAN_TXT = $(MAN1_TXT) $(MAN3_TXT) $(MAN7_TXT) $(MAN8_TXT)
 MAN_XML = $(patsubst $(srcdir)/%.txt,%.xml,$(MAN_TXT))
 
 # common AsciiDoc source files
 COMMON_TXT = \
 	$(srcdir)/common-footer.txt \
-	$(srcdir)/common-cmd-footer.txt \
-	$(srcdir)/common-cmd-options-head.txt \
-	$(srcdir)/common-cmd-help-options.txt
+	$(srcdir)/common-lttng-cmd-after-options.txt \
+	$(srcdir)/common-lttng-cmd-options-head.txt \
+	$(srcdir)/common-lttng-cmd-help-options.txt \
+	$(srcdir)/common-help-option.txt \
+	$(srcdir)/common-intro.txt \
+	$(srcdir)/common-daemon-cfg.txt
 
 
 # config
@@ -548,11 +573,13 @@ COMMON_DEPS = $(ASCIIDOC_CONF) $(COMMON_TXT) $(am__append_2)
 # man pages destinations
 MAN1 = $(addsuffix .1,$(MAN1_NAMES))
 MAN3 = $(addsuffix .3,$(MAN3_NAMES))
+MAN7 = $(addsuffix .7,$(MAN7_NAMES))
 MAN8 = $(addsuffix .8,$(MAN8_NAMES))
 MAN1_NO_ASCIIDOC = $(addsuffix .1,$(MAN1_NO_ASCIIDOC_NAMES))
 MAN3_NO_ASCIIDOC = $(addsuffix .3,$(MAN3_NO_ASCIIDOC_NAMES))
+MAN7_NO_ASCIIDOC = $(addsuffix .7,$(MAN7_NO_ASCIIDOC_NAMES))
 MAN8_NO_ASCIIDOC = $(addsuffix .8,$(MAN8_NO_ASCIIDOC_NAMES))
-MAN = $(MAN1) $(MAN3) $(MAN8)
+MAN = $(MAN1) $(MAN3) $(MAN7) $(MAN8)
 
 # initially empty
 CLEANFILES = $(am__append_1) $(am__append_3)
@@ -600,7 +627,8 @@ CLEANFILES = $(am__append_1) $(am__append_3)
 # those are always installed since they are directly written in troff
 dist_man1_MANS = $(MAN1_NO_ASCIIDOC) $(am__append_4)
 dist_man3_MANS = $(MAN3_NO_ASCIIDOC) $(am__append_5)
-dist_man8_MANS = $(MAN8_NO_ASCIIDOC) $(am__append_6)
+dist_man7_MANS = $(MAN7_NO_ASCIIDOC) $(am__append_6)
+dist_man8_MANS = $(MAN8_NO_ASCIIDOC) $(am__append_7)
 
 # always distribute the source files
 EXTRA_DIST = $(MAN_TXT) $(COMMON_TXT) $(XSL_FILE) \
@@ -728,6 +756,47 @@ uninstall-man3:
 	} | sed -e 's,.*/,,;h;s,.*\.,,;s,^[^3][0-9a-z]*$$,3,;x' \
 	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,'`; \
 	dir='$(DESTDIR)$(man3dir)'; $(am__uninstall_files_from_dir)
+install-man7: $(dist_man7_MANS)
+	@$(NORMAL_INSTALL)
+	@list1='$(dist_man7_MANS)'; \
+	list2=''; \
+	test -n "$(man7dir)" \
+	  && test -n "`echo $$list1$$list2`" \
+	  || exit 0; \
+	echo " $(MKDIR_P) '$(DESTDIR)$(man7dir)'"; \
+	$(MKDIR_P) "$(DESTDIR)$(man7dir)" || exit 1; \
+	{ for i in $$list1; do echo "$$i"; done;  \
+	if test -n "$$list2"; then \
+	  for i in $$list2; do echo "$$i"; done \
+	    | sed -n '/\.7[a-z]*$$/p'; \
+	fi; \
+	} | while read p; do \
+	  if test -f $$p; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; echo "$$p"; \
+	done | \
+	sed -e 'n;s,.*/,,;p;h;s,.*\.,,;s,^[^7][0-9a-z]*$$,7,;x' \
+	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,' | \
+	sed 'N;N;s,\n, ,g' | { \
+	list=; while read file base inst; do \
+	  if test "$$base" = "$$inst"; then list="$$list $$file"; else \
+	    echo " $(INSTALL_DATA) '$$file' '$(DESTDIR)$(man7dir)/$$inst'"; \
+	    $(INSTALL_DATA) "$$file" "$(DESTDIR)$(man7dir)/$$inst" || exit $$?; \
+	  fi; \
+	done; \
+	for i in $$list; do echo "$$i"; done | $(am__base_list) | \
+	while read files; do \
+	  test -z "$$files" || { \
+	    echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(man7dir)'"; \
+	    $(INSTALL_DATA) $$files "$(DESTDIR)$(man7dir)" || exit $$?; }; \
+	done; }
+
+uninstall-man7:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_man7_MANS)'; test -n "$(man7dir)" || exit 0; \
+	files=`{ for i in $$list; do echo "$$i"; done; \
+	} | sed -e 's,.*/,,;h;s,.*\.,,;s,^[^7][0-9a-z]*$$,7,;x' \
+	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,'`; \
+	dir='$(DESTDIR)$(man7dir)'; $(am__uninstall_files_from_dir)
 install-man8: $(dist_man8_MANS)
 	@$(NORMAL_INSTALL)
 	@list1='$(dist_man8_MANS)'; \
@@ -815,7 +884,7 @@ check: check-am
 @EMBED_HELP_FALSE@all-local:
 all-am: Makefile $(MANS) all-local
 installdirs:
-	for dir in "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man3dir)" "$(DESTDIR)$(man8dir)"; do \
+	for dir in "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man3dir)" "$(DESTDIR)$(man7dir)" "$(DESTDIR)$(man8dir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -885,7 +954,7 @@ install-info: install-info-am
 
 install-info-am:
 
-install-man: install-man1 install-man3 install-man8
+install-man: install-man1 install-man3 install-man7 install-man8
 
 install-pdf: install-pdf-am
 
@@ -915,7 +984,8 @@ ps-am:
 
 uninstall-am: uninstall-man
 
-uninstall-man: uninstall-man1 uninstall-man3 uninstall-man8
+uninstall-man: uninstall-man1 uninstall-man3 uninstall-man7 \
+	uninstall-man8
 
 .MAKE: install-am install-strip
 
@@ -926,12 +996,13 @@ uninstall-man: uninstall-man1 uninstall-man3 uninstall-man8
 	install-data-am install-dvi install-dvi-am install-exec \
 	install-exec-am install-html install-html-am install-info \
 	install-info-am install-man install-man1 install-man3 \
-	install-man8 install-pdf install-pdf-am install-ps \
-	install-ps-am install-strip installcheck installcheck-am \
-	installdirs maintainer-clean maintainer-clean-generic \
-	mostlyclean mostlyclean-generic mostlyclean-libtool pdf pdf-am \
-	ps ps-am tags-am uninstall uninstall-am uninstall-man \
-	uninstall-man1 uninstall-man3 uninstall-man8
+	install-man7 install-man8 install-pdf install-pdf-am \
+	install-ps install-ps-am install-strip installcheck \
+	installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-generic \
+	mostlyclean-libtool pdf pdf-am ps ps-am tags-am uninstall \
+	uninstall-am uninstall-man uninstall-man1 uninstall-man3 \
+	uninstall-man7 uninstall-man8
 
 .PRECIOUS: Makefile
 
@@ -960,6 +1031,12 @@ uninstall-man: uninstall-man1 uninstall-man3 uninstall-man8
 @HAVE_ASCIIDOC_XMLTO_TRUE@@MAN_PAGES_OPT_TRUE@%.3: %.3.xml $(XSL_FILE)
 @HAVE_ASCIIDOC_XMLTO_TRUE@@MAN_PAGES_OPT_TRUE@	$(XTO) $< 2>/dev/null
 
+@HAVE_ASCIIDOC_XMLTO_TRUE@@MAN_PAGES_OPT_TRUE@%.7.xml: $(srcdir)/%.7.txt $(COMMON_DEPS)
+@HAVE_ASCIIDOC_XMLTO_TRUE@@MAN_PAGES_OPT_TRUE@	$(ADOC_DOCBOOK) -o $@ $<
+
+@HAVE_ASCIIDOC_XMLTO_TRUE@@MAN_PAGES_OPT_TRUE@%.7: %.7.xml $(XSL_FILE)
+@HAVE_ASCIIDOC_XMLTO_TRUE@@MAN_PAGES_OPT_TRUE@	$(XTO) $< 2>/dev/null
+
 @HAVE_ASCIIDOC_XMLTO_TRUE@@MAN_PAGES_OPT_TRUE@%.8.xml: $(srcdir)/%.8.txt $(COMMON_DEPS)
 @HAVE_ASCIIDOC_XMLTO_TRUE@@MAN_PAGES_OPT_TRUE@	$(ADOC_DOCBOOK) -o $@ $<
 
@@ -974,6 +1051,10 @@ uninstall-man: uninstall-man1 uninstall-man3 uninstall-man8
 @HAVE_ASCIIDOC_XMLTO_FALSE@@MAN_PAGES_OPT_TRUE@	@echo $(ERR_MSG)
 @HAVE_ASCIIDOC_XMLTO_FALSE@@MAN_PAGES_OPT_TRUE@	@false
 
+@HAVE_ASCIIDOC_XMLTO_FALSE@@MAN_PAGES_OPT_TRUE@%.7: $(srcdir)/%.7.txt $(COMMON_DEPS)
+@HAVE_ASCIIDOC_XMLTO_FALSE@@MAN_PAGES_OPT_TRUE@	@echo $(ERR_MSG)
+@HAVE_ASCIIDOC_XMLTO_FALSE@@MAN_PAGES_OPT_TRUE@	@false
+
 @HAVE_ASCIIDOC_XMLTO_FALSE@@MAN_PAGES_OPT_TRUE@%.8: $(srcdir)/%.8.txt $(COMMON_DEPS)
 @HAVE_ASCIIDOC_XMLTO_FALSE@@MAN_PAGES_OPT_TRUE@	@echo $(ERR_MSG)
 @HAVE_ASCIIDOC_XMLTO_FALSE@@MAN_PAGES_OPT_TRUE@	@false
@@ -983,7 +1064,7 @@ uninstall-man: uninstall-man1 uninstall-man3 uninstall-man8
 @MAN_PAGES_OPT_FALSE@	@false
 
 # keep generated man pages that can be considered intermediate files
-.PRECIOUS: %.1 %.3 %.8
+.PRECIOUS: %.1 %.3 %.7 %.8
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

@@ -22,11 +22,15 @@
 #include <common/string-utils/string-utils.h>
 #include <common/utils.h>
 
-#include <lttng/constant.h>
 /* Mi dependancy */
 #include <common/mi-lttng.h>
 
+#include <lttng/domain-internal.h>
+#include <lttng/event-internal.h>
+
 #include "../command.h"
+#include "../loglevel.h"
+#include "../uprobe.h"
 
 #if (LTTNG_SYMBOL_NAME_LEN == 256)
 #define LTTNG_SYMBOL_NAME_LEN_SCANF_IS_A_BROKEN_API	"255"
@@ -174,577 +178,6 @@ end:
 	return ret;
 }
 
-/*
- * Walk the directories in the PATH environment variable to find the target
- * binary passed as parameter.
- *
- * On success, the full path of the binary is copied in binary_full_path out
- * parameter. This buffer is allocated by the caller and must be at least
- * LTTNG_PATH_MAX bytes long.
- * On failure, returns -1;
- */
-static int walk_command_search_path(const char *binary, char *binary_full_path)
-{
-	char *tentative_binary_path = NULL;
-	char *command_search_path = NULL;
-	char *curr_search_dir_end = NULL;
-	char *curr_search_dir = NULL;
-	struct stat stat_output;
-	int ret = 0;
-
-	command_search_path = lttng_secure_getenv("PATH");
-	if (!command_search_path) {
-		ret = -1;
-		goto end;
-	}
-
-	/*
-	 * Duplicate the $PATH string as the char pointer returned by getenv() should
-	 * not be modified.
-	 */
-	command_search_path = strdup(command_search_path);
-	if (!command_search_path) {
-		ret = -1;
-		goto end;
-	}
-
-	/*
-	 * This char array is used to concatenate path to binary to look for
-	 * the binary.
-	 */
-	tentative_binary_path = zmalloc(LTTNG_PATH_MAX * sizeof(char));
-	if (!tentative_binary_path) {
-		ret = -1;
-		goto alloc_error;
-	}
-
-	curr_search_dir = command_search_path;
-	do {
-		/*
-		 * Split on ':'. The return value of this call points to the
-		 * matching character.
-		 */
-		curr_search_dir_end = strchr(curr_search_dir, ':');
-		if (curr_search_dir_end != NULL) {
-			/*
-			 * Add a NULL byte to the end of the first token so it
-			 * can be used as a string.
-			 */
-			curr_search_dir_end[0] = '\0';
-		}
-
-		/* Empty the tentative path */
-		memset(tentative_binary_path, 0, LTTNG_PATH_MAX * sizeof(char));
-
-		/*
-		 * Build the tentative path to the binary using the current
-		 * search directory and the name of the binary.
-		 */
-		ret = snprintf(tentative_binary_path, LTTNG_PATH_MAX, "%s/%s",
-				curr_search_dir, binary);
-		if (ret < 0) {
-			goto free_binary_path;
-		}
-		if (ret < LTTNG_PATH_MAX) {
-			 /*
-			  * Use STAT(2) to see if the file exists.
-			 */
-			ret = stat(tentative_binary_path, &stat_output);
-			if (ret == 0) {
-				/*
-				 * Verify that it is a regular file or a
-				 * symlink and not a special file (e.g.
-				 * device).
-				 */
-				if (S_ISREG(stat_output.st_mode)
-						|| S_ISLNK(stat_output.st_mode)) {
-					/*
-					 * Found a match, set the out parameter
-					 * and return success.
-					 */
-					ret = lttng_strncpy(binary_full_path,
-							tentative_binary_path,
-							LTTNG_PATH_MAX);
-					if (ret == -1) {
-						ERR("Source path does not fit "
-							"in destination buffer.");
-					}
-					goto free_binary_path;
-				}
-			}
-		}
-		/* Go to the next entry in the $PATH variable. */
-		curr_search_dir = curr_search_dir_end + 1;
-	} while (curr_search_dir_end != NULL);
-
-free_binary_path:
-	free(tentative_binary_path);
-alloc_error:
-	free(command_search_path);
-end:
-	return ret;
-}
-
-/*
- * Check if the symbol field passed by the user is in fact an address or an
- * offset from a symbol. Those two instrumentation types are not supported yet.
- * It's expected to be a common mistake because of the existing --probe option
- * that does support these formats.
- *
- * Here are examples of these unsupported formats for the --userspace-probe
- * option:
- * elf:/path/to/binary:0x400430
- * elf:/path/to/binary:4194364
- * elf:/path/to/binary:my_symbol+0x323
- * elf:/path/to/binary:my_symbol+43
- */
-static int warn_userspace_probe_syntax(const char *symbol)
-{
-	int ret;
-
-	/* Check if the symbol field is an hex address. */
-	ret = sscanf(symbol, "0x%*x");
-	if (ret > 0) {
-		/* If there is a match, print a warning and return an error. */
-		ERR("Userspace probe on address not supported yet.");
-		ret = CMD_UNSUPPORTED;
-		goto error;
-	}
-
-	/* Check if the symbol field is an decimal address. */
-	ret = sscanf(symbol, "%*u");
-	if (ret > 0) {
-		/* If there is a match, print a warning and return an error. */
-		ERR("Userspace probe on address not supported yet.");
-		ret = CMD_UNSUPPORTED;
-		goto error;
-	}
-
-	/* Check if the symbol field is symbol+hex_offset. */
-	ret = sscanf(symbol, "%*[^+]+0x%*x");
-	if (ret > 0) {
-		/* If there is a match, print a warning and return an error. */
-		ERR("Userspace probe on symbol+offset not supported yet.");
-		ret = CMD_UNSUPPORTED;
-		goto error;
-	}
-
-	/* Check if the symbol field is symbol+decimal_offset. */
-	ret = sscanf(symbol, "%*[^+]+%*u");
-	if (ret > 0) {
-		/* If there is a match, print a warning and return an error. */
-		ERR("Userspace probe on symbol+offset not supported yet.");
-		ret = CMD_UNSUPPORTED;
-		goto error;
-	}
-
-	ret = 0;
-
-error:
-	return ret;
-}
-
-/*
- * Parse userspace probe options
- * Set the userspace probe fields in the lttng_event struct and set the
- * target_path to the path to the binary.
- */
-static int parse_userspace_probe_opts(struct lttng_event *ev, char *opt)
-{
-	int ret = CMD_SUCCESS;
-	int num_token;
-	char **tokens;
-	char *target_path = NULL;
-	char *unescaped_target_path = NULL;
-	char *real_target_path = NULL;
-	char *symbol_name = NULL, *probe_name = NULL, *provider_name = NULL;
-	struct lttng_userspace_probe_location *probe_location = NULL;
-	struct lttng_userspace_probe_location_lookup_method *lookup_method =
-			NULL;
-
-	if (opt == NULL) {
-		ret = CMD_ERROR;
-		goto end;
-	}
-
-	switch (ev->type) {
-	case LTTNG_EVENT_USERSPACE_PROBE:
-		break;
-	default:
-		assert(0);
-	}
-
-	/*
-	 * userspace probe fields are separated by ':'.
-	 */
-	tokens = strutils_split(opt, ':', 1);
-	num_token = strutils_array_of_strings_len(tokens);
-
-	/*
-	 * Early sanity check that the number of parameter is between 2 and 4
-	 * inclusively.
-	 * elf:PATH:SYMBOL
-	 * std:PATH:PROVIDER_NAME:PROBE_NAME
-	 * PATH:SYMBOL (same behavior as ELF)
-	 */
-	if (num_token < 2 || num_token > 4) {
-		ret = CMD_ERROR;
-		goto end_string;
-	}
-
-	/*
-	 * Looking up the first parameter will tell the technique to use to
-	 * interpret the userspace probe/function description.
-	 */
-	switch (num_token) {
-	case 2:
-		/* When the probe type is omitted we assume ELF for now. */
-	case 3:
-		if (num_token == 3 && strcmp(tokens[0], "elf") == 0) {
-			target_path = tokens[1];
-			symbol_name = tokens[2];
-		} else if (num_token == 2) {
-			target_path = tokens[0];
-			symbol_name = tokens[1];
-		} else {
-			ret = CMD_ERROR;
-			goto end_string;
-		}
-		lookup_method =
-			lttng_userspace_probe_location_lookup_method_function_elf_create();
-		if (!lookup_method) {
-			WARN("Failed to create ELF lookup method");
-			ret = CMD_ERROR;
-			goto end_string;
-		}
-		break;
-	case 4:
-		if (strcmp(tokens[0], "sdt") == 0) {
-			target_path = tokens[1];
-			provider_name = tokens[2];
-			probe_name = tokens[3];
-		} else {
-			ret = CMD_ERROR;
-			goto end_string;
-		}
-		lookup_method =
-			lttng_userspace_probe_location_lookup_method_tracepoint_sdt_create();
-		if (!lookup_method) {
-			WARN("Failed to create SDT lookup method");
-			ret = CMD_ERROR;
-			goto end_string;
-		}
-		break;
-	default:
-		ret = CMD_ERROR;
-		goto end_string;
-	}
-
-	/* strutils_unescape_string allocates a new char *. */
-	unescaped_target_path = strutils_unescape_string(target_path, 0);
-	if (!unescaped_target_path) {
-		ret = CMD_ERROR;
-		goto end_destroy_lookup_method;
-	}
-
-	/*
-	 * If there is not forward slash in the path. Walk the $PATH else
-	 * expand.
-	 */
-	if (strchr(unescaped_target_path, '/') == NULL) {
-		/* Walk the $PATH variable to find the targeted binary. */
-		real_target_path = zmalloc(LTTNG_PATH_MAX * sizeof(char));
-		if (!real_target_path) {
-			PERROR("Error allocating path buffer");
-			ret = CMD_ERROR;
-			goto end_destroy_lookup_method;
-		}
-		ret = walk_command_search_path(unescaped_target_path, real_target_path);
-		if (ret) {
-			ERR("Binary not found.");
-			ret = CMD_ERROR;
-			goto end_destroy_lookup_method;
-		}
-	} else {
-		/*
-		 * Expand references to `/./` and `/../`. This function does not check
-		 * if the file exists. This call returns an allocated buffer on
-		 * success.
-		 */
-		real_target_path = utils_expand_path_keep_symlink(unescaped_target_path);
-		if (!real_target_path) {
-			ERR("Error expanding the path to binary.");
-			ret = CMD_ERROR;
-			goto end_destroy_lookup_method;
-		}
-
-		/*
-		 * Check if the file exists using access(2), If it does not,
-		 * return an error.
-		 */
-		ret = access(real_target_path, F_OK);
-		if (ret) {
-			ERR("Cannot find binary at path: %s.", real_target_path);
-			ret = CMD_ERROR;
-			goto end_destroy_lookup_method;
-		}
-	}
-
-	switch (lttng_userspace_probe_location_lookup_method_get_type(lookup_method)) {
-	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF:
-		/*
-		 * Check for common mistakes in userspace probe description syntax.
-		 */
-		ret = warn_userspace_probe_syntax(symbol_name);
-		if (ret) {
-			goto end_destroy_lookup_method;
-		}
-
-		probe_location = lttng_userspace_probe_location_function_create(
-				real_target_path, symbol_name, lookup_method);
-		if (!probe_location) {
-			WARN("Failed to create function probe location");
-			ret = CMD_ERROR;
-			goto end_destroy_lookup_method;
-		}
-
-		/* Ownership transferred to probe_location. */
-		lookup_method = NULL;
-
-		ret = lttng_event_set_userspace_probe_location(ev, probe_location);
-		if (ret) {
-			WARN("Failed to set probe location on event");
-			ret = CMD_ERROR;
-			goto end_destroy_location;
-		}
-		break;
-	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_TRACEPOINT_SDT:
-		probe_location = lttng_userspace_probe_location_tracepoint_create(
-				real_target_path, provider_name, probe_name, lookup_method);
-		if (!probe_location) {
-			WARN("Failed to create function probe location");
-			ret = CMD_ERROR;
-			goto end_destroy_lookup_method;
-		}
-
-		/* Ownership transferred to probe_location. */
-		lookup_method = NULL;
-
-		ret = lttng_event_set_userspace_probe_location(ev, probe_location);
-		if (ret) {
-			WARN("Failed to set probe location on event");
-			ret = CMD_ERROR;
-			goto end_destroy_location;
-		}
-		break;
-	default:
-		ret = CMD_ERROR;
-		goto end_destroy_lookup_method;
-	}
-
-	/* Successful parsing, now clean up everything and return. */
-	goto end_string;
-
-end_destroy_location:
-	lttng_userspace_probe_location_destroy(probe_location);
-end_destroy_lookup_method:
-	lttng_userspace_probe_location_lookup_method_destroy(lookup_method);
-end_string:
-	strutils_free_null_terminated_array_of_strings(tokens);
-	/*
-	 * Freeing both char * here makes the error handling simplier. free()
-	 * performs not action if the pointer is NULL.
-	 */
-	free(real_target_path);
-	free(unescaped_target_path);
-end:
-	return ret;
-}
-
-/*
- * Maps LOG4j loglevel from string to value
- */
-static int loglevel_log4j_str_to_value(const char *inputstr)
-{
-	int i = 0;
-	char str[LTTNG_SYMBOL_NAME_LEN];
-
-	if (!inputstr || strlen(inputstr) == 0) {
-		return -1;
-	}
-
-	/*
-	 * Loop up to LTTNG_SYMBOL_NAME_LEN minus one because the NULL bytes is
-	 * added at the end of the loop so a the upper bound we avoid the overflow.
-	 */
-	while (i < (LTTNG_SYMBOL_NAME_LEN - 1) && inputstr[i] != '\0') {
-		str[i] = toupper(inputstr[i]);
-		i++;
-	}
-	str[i] = '\0';
-
-	if (!strcmp(str, "LOG4J_OFF") || !strcmp(str, "OFF")) {
-		return LTTNG_LOGLEVEL_LOG4J_OFF;
-	} else if (!strcmp(str, "LOG4J_FATAL") || !strcmp(str, "FATAL")) {
-		return LTTNG_LOGLEVEL_LOG4J_FATAL;
-	} else if (!strcmp(str, "LOG4J_ERROR") || !strcmp(str, "ERROR")) {
-		return LTTNG_LOGLEVEL_LOG4J_ERROR;
-	} else if (!strcmp(str, "LOG4J_WARN") || !strcmp(str, "WARN")) {
-		return LTTNG_LOGLEVEL_LOG4J_WARN;
-	} else if (!strcmp(str, "LOG4J_INFO") || !strcmp(str, "INFO")) {
-		return LTTNG_LOGLEVEL_LOG4J_INFO;
-	} else if (!strcmp(str, "LOG4J_DEBUG") || !strcmp(str, "DEBUG")) {
-		return LTTNG_LOGLEVEL_LOG4J_DEBUG;
-	} else if (!strcmp(str, "LOG4J_TRACE") || !strcmp(str, "TRACE")) {
-		return LTTNG_LOGLEVEL_LOG4J_TRACE;
-	} else if (!strcmp(str, "LOG4J_ALL") || !strcmp(str, "ALL")) {
-		return LTTNG_LOGLEVEL_LOG4J_ALL;
-	} else {
-		return -1;
-	}
-}
-
-/*
- * Maps JUL loglevel from string to value
- */
-static int loglevel_jul_str_to_value(const char *inputstr)
-{
-	int i = 0;
-	char str[LTTNG_SYMBOL_NAME_LEN];
-
-	if (!inputstr || strlen(inputstr) == 0) {
-		return -1;
-	}
-
-	/*
-	 * Loop up to LTTNG_SYMBOL_NAME_LEN minus one because the NULL bytes is
-	 * added at the end of the loop so a the upper bound we avoid the overflow.
-	 */
-	while (i < (LTTNG_SYMBOL_NAME_LEN - 1) && inputstr[i] != '\0') {
-		str[i] = toupper(inputstr[i]);
-		i++;
-	}
-	str[i] = '\0';
-
-	if (!strcmp(str, "JUL_OFF") || !strcmp(str, "OFF")) {
-		return LTTNG_LOGLEVEL_JUL_OFF;
-	} else if (!strcmp(str, "JUL_SEVERE") || !strcmp(str, "SEVERE")) {
-		return LTTNG_LOGLEVEL_JUL_SEVERE;
-	} else if (!strcmp(str, "JUL_WARNING") || !strcmp(str, "WARNING")) {
-		return LTTNG_LOGLEVEL_JUL_WARNING;
-	} else if (!strcmp(str, "JUL_INFO") || !strcmp(str, "INFO")) {
-		return LTTNG_LOGLEVEL_JUL_INFO;
-	} else if (!strcmp(str, "JUL_CONFIG") || !strcmp(str, "CONFIG")) {
-		return LTTNG_LOGLEVEL_JUL_CONFIG;
-	} else if (!strcmp(str, "JUL_FINE") || !strcmp(str, "FINE")) {
-		return LTTNG_LOGLEVEL_JUL_FINE;
-	} else if (!strcmp(str, "JUL_FINER") || !strcmp(str, "FINER")) {
-		return LTTNG_LOGLEVEL_JUL_FINER;
-	} else if (!strcmp(str, "JUL_FINEST") || !strcmp(str, "FINEST")) {
-		return LTTNG_LOGLEVEL_JUL_FINEST;
-	} else if (!strcmp(str, "JUL_ALL") || !strcmp(str, "ALL")) {
-		return LTTNG_LOGLEVEL_JUL_ALL;
-	} else {
-		return -1;
-	}
-}
-
-/*
- * Maps Python loglevel from string to value
- */
-static int loglevel_python_str_to_value(const char *inputstr)
-{
-	int i = 0;
-	char str[LTTNG_SYMBOL_NAME_LEN];
-
-	if (!inputstr || strlen(inputstr) == 0) {
-		return -1;
-	}
-
-	/*
-	 * Loop up to LTTNG_SYMBOL_NAME_LEN minus one because the NULL bytes is
-	 * added at the end of the loop so a the upper bound we avoid the overflow.
-	 */
-	while (i < (LTTNG_SYMBOL_NAME_LEN - 1) && inputstr[i] != '\0') {
-		str[i] = toupper(inputstr[i]);
-		i++;
-	}
-	str[i] = '\0';
-
-	if (!strcmp(str, "PYTHON_CRITICAL") || !strcmp(str, "CRITICAL")) {
-		return LTTNG_LOGLEVEL_PYTHON_CRITICAL;
-	} else if (!strcmp(str, "PYTHON_ERROR") || !strcmp(str, "ERROR")) {
-		return LTTNG_LOGLEVEL_PYTHON_ERROR;
-	} else if (!strcmp(str, "PYTHON_WARNING") || !strcmp(str, "WARNING")) {
-		return LTTNG_LOGLEVEL_PYTHON_WARNING;
-	} else if (!strcmp(str, "PYTHON_INFO") || !strcmp(str, "INFO")) {
-		return LTTNG_LOGLEVEL_PYTHON_INFO;
-	} else if (!strcmp(str, "PYTNON_DEBUG") || !strcmp(str, "DEBUG")) {
-		return LTTNG_LOGLEVEL_PYTHON_DEBUG;
-	} else if (!strcmp(str, "PYTHON_NOTSET") || !strcmp(str, "NOTSET")) {
-		return LTTNG_LOGLEVEL_PYTHON_NOTSET;
-	} else {
-		return -1;
-	}
-}
-
-/*
- * Maps loglevel from string to value
- */
-static
-int loglevel_str_to_value(const char *inputstr)
-{
-	int i = 0;
-	char str[LTTNG_SYMBOL_NAME_LEN];
-
-	if (!inputstr || strlen(inputstr) == 0) {
-		return -1;
-	}
-
-	/*
-	 * Loop up to LTTNG_SYMBOL_NAME_LEN minus one because the NULL bytes is
-	 * added at the end of the loop so a the upper bound we avoid the overflow.
-	 */
-	while (i < (LTTNG_SYMBOL_NAME_LEN - 1) && inputstr[i] != '\0') {
-		str[i] = toupper(inputstr[i]);
-		i++;
-	}
-	str[i] = '\0';
-	if (!strcmp(str, "TRACE_EMERG") || !strcmp(str, "EMERG")) {
-		return LTTNG_LOGLEVEL_EMERG;
-	} else if (!strcmp(str, "TRACE_ALERT") || !strcmp(str, "ALERT")) {
-		return LTTNG_LOGLEVEL_ALERT;
-	} else if (!strcmp(str, "TRACE_CRIT") || !strcmp(str, "CRIT")) {
-		return LTTNG_LOGLEVEL_CRIT;
-	} else if (!strcmp(str, "TRACE_ERR") || !strcmp(str, "ERR")) {
-		return LTTNG_LOGLEVEL_ERR;
-	} else if (!strcmp(str, "TRACE_WARNING") || !strcmp(str, "WARNING")) {
-		return LTTNG_LOGLEVEL_WARNING;
-	} else if (!strcmp(str, "TRACE_NOTICE") || !strcmp(str, "NOTICE")) {
-		return LTTNG_LOGLEVEL_NOTICE;
-	} else if (!strcmp(str, "TRACE_INFO") || !strcmp(str, "INFO")) {
-		return LTTNG_LOGLEVEL_INFO;
-	} else if (!strcmp(str, "TRACE_DEBUG_SYSTEM") || !strcmp(str, "DEBUG_SYSTEM") || !strcmp(str, "SYSTEM")) {
-		return LTTNG_LOGLEVEL_DEBUG_SYSTEM;
-	} else if (!strcmp(str, "TRACE_DEBUG_PROGRAM") || !strcmp(str, "DEBUG_PROGRAM") || !strcmp(str, "PROGRAM")) {
-		return LTTNG_LOGLEVEL_DEBUG_PROGRAM;
-	} else if (!strcmp(str, "TRACE_DEBUG_PROCESS") || !strcmp(str, "DEBUG_PROCESS") || !strcmp(str, "PROCESS")) {
-		return LTTNG_LOGLEVEL_DEBUG_PROCESS;
-	} else if (!strcmp(str, "TRACE_DEBUG_MODULE") || !strcmp(str, "DEBUG_MODULE") || !strcmp(str, "MODULE")) {
-		return LTTNG_LOGLEVEL_DEBUG_MODULE;
-	} else if (!strcmp(str, "TRACE_DEBUG_UNIT") || !strcmp(str, "DEBUG_UNIT") || !strcmp(str, "UNIT")) {
-		return LTTNG_LOGLEVEL_DEBUG_UNIT;
-	} else if (!strcmp(str, "TRACE_DEBUG_FUNCTION") || !strcmp(str, "DEBUG_FUNCTION") || !strcmp(str, "FUNCTION")) {
-		return LTTNG_LOGLEVEL_DEBUG_FUNCTION;
-	} else if (!strcmp(str, "TRACE_DEBUG_LINE") || !strcmp(str, "DEBUG_LINE") || !strcmp(str, "LINE")) {
-		return LTTNG_LOGLEVEL_DEBUG_LINE;
-	} else if (!strcmp(str, "TRACE_DEBUG") || !strcmp(str, "DEBUG")) {
-		return LTTNG_LOGLEVEL_DEBUG;
-	} else {
-		return -1;
-	}
-}
-
 static
 const char *print_channel_name(const char *name)
 {
@@ -761,10 +194,11 @@ const char *print_raw_channel_name(const char *name)
  * Mi print exlcusion list
  */
 static
-int mi_print_exclusion(char **names)
+int mi_print_exclusion(const struct lttng_dynamic_pointer_array *exclusions)
 {
-	int i, ret;
-	int count = names ? strutils_array_of_strings_len(names) : 0;
+	int ret;
+	size_t i;
+	const size_t count = lttng_dynamic_pointer_array_get_count(exclusions);
 
 	assert(writer);
 
@@ -772,14 +206,18 @@ int mi_print_exclusion(char **names)
 		ret = 0;
 		goto end;
 	}
+
 	ret = mi_lttng_writer_open_element(writer, config_element_exclusions);
 	if (ret) {
 		goto end;
 	}
 
 	for (i = 0; i < count; i++) {
+		const char *exclusion = lttng_dynamic_pointer_array_get_pointer(
+				exclusions, i);
+
 		ret = mi_lttng_writer_write_element_string(writer,
-				config_element_exclusion, names[i]);
+				config_element_exclusion, exclusion);
 		if (ret) {
 			goto end;
 		}
@@ -796,21 +234,24 @@ end:
  * Return allocated string for pretty-printing exclusion names.
  */
 static
-char *print_exclusions(char **names)
+char *print_exclusions(const struct lttng_dynamic_pointer_array *exclusions)
 {
 	int length = 0;
-	int i;
+	size_t i;
 	const char preamble[] = " excluding ";
 	char *ret;
-	int count = names ? strutils_array_of_strings_len(names) : 0;
+	const size_t count = lttng_dynamic_pointer_array_get_count(exclusions);
 
 	if (count == 0) {
 		return strdup("");
 	}
 
-	/* calculate total required length */
+	/* Calculate total required length. */
 	for (i = 0; i < count; i++) {
-		length += strlen(names[i]) + 4;
+		const char *exclusion = lttng_dynamic_pointer_array_get_pointer(
+				exclusions, i);
+
+		length += strlen(exclusion) + 4;
 	}
 
 	length += sizeof(preamble);
@@ -818,10 +259,14 @@ char *print_exclusions(char **names)
 	if (!ret) {
 		return NULL;
 	}
+
 	strncpy(ret, preamble, length);
 	for (i = 0; i < count; i++) {
+		const char *exclusion = lttng_dynamic_pointer_array_get_pointer(
+				exclusions, i);
+
 		strcat(ret, "\"");
-		strcat(ret, names[i]);
+		strcat(ret, exclusion);
 		strcat(ret, "\"");
 		if (i != count - 1) {
 			strcat(ret, ", ");
@@ -891,24 +336,15 @@ end:
 	return ret;
 }
 
-static
-int create_exclusion_list_and_validate(const char *event_name,
-		const char *exclusions_arg,
-		char ***exclusion_list)
+int validate_exclusion_list(const char *event_name,
+		const struct lttng_dynamic_pointer_array *exclusions)
 {
-	int ret = 0;
-	char **exclusions = NULL;
+	int ret;
 
 	/* Event name must be a valid globbing pattern to allow exclusions. */
 	if (!strutils_is_star_glob_pattern(event_name)) {
 		ERR("Event %s: Exclusions can only be used with a globbing pattern",
 			event_name);
-		goto error;
-	}
-
-	/* Split exclusions. */
-	exclusions = strutils_split(exclusions_arg, ',', true);
-	if (!exclusions) {
 		goto error;
 	}
 
@@ -918,12 +354,18 @@ int create_exclusion_list_and_validate(const char *event_name,
 	 * all exclusions are passed to the session daemon.
 	 */
 	if (strutils_is_star_at_the_end_only_glob_pattern(event_name)) {
-		char * const *exclusion;
+		size_t i, num_exclusions;
 
-		for (exclusion = exclusions; *exclusion; exclusion++) {
-			if (!strutils_is_star_glob_pattern(*exclusion) ||
-					strutils_is_star_at_the_end_only_glob_pattern(*exclusion)) {
-				ret = check_exclusion_subsets(event_name, *exclusion);
+		num_exclusions = lttng_dynamic_pointer_array_get_count(exclusions);
+
+		for (i = 0; i < num_exclusions; i++) {
+			const char *exclusion =
+					lttng_dynamic_pointer_array_get_pointer(
+							exclusions, i);
+
+			if (!strutils_is_star_glob_pattern(exclusion) ||
+					strutils_is_star_at_the_end_only_glob_pattern(exclusion)) {
+				ret = check_exclusion_subsets(event_name, exclusion);
 				if (ret) {
 					goto error;
 				}
@@ -931,27 +373,55 @@ int create_exclusion_list_and_validate(const char *event_name,
 		}
 	}
 
-	*exclusion_list = exclusions;
-
+	ret = 0;
 	goto end;
 
 error:
 	ret = -1;
-	strutils_free_null_terminated_array_of_strings(exclusions);
 
 end:
 	return ret;
 }
 
-static void warn_on_truncated_exclusion_names(char * const *exclusion_list,
+static int create_exclusion_list_and_validate(const char *event_name,
+		const char *exclusions_arg,
+		struct lttng_dynamic_pointer_array *exclusions)
+{
+	int ret = 0;
+
+	/* Split exclusions. */
+	ret = strutils_split(exclusions_arg, ',', true, exclusions);
+	if (ret < 0) {
+		goto error;
+	}
+
+	if (validate_exclusion_list(event_name, exclusions) !=
+			0) {
+		goto error;
+	}
+
+	goto end;
+
+error:
+	ret = -1;
+	lttng_dynamic_pointer_array_reset(exclusions);
+
+end:
+	return ret;
+}
+
+static void warn_on_truncated_exclusion_names(const struct lttng_dynamic_pointer_array *exclusions,
 	int *warn)
 {
-	char * const *exclusion;
+	size_t i;
+	const size_t num_exclusions = lttng_dynamic_pointer_array_get_count(exclusions);
 
-	for (exclusion = exclusion_list; *exclusion; exclusion++) {
-		if (strlen(*exclusion) >= LTTNG_SYMBOL_NAME_LEN) {
+	for (i = 0; i < num_exclusions; i++) {
+		const char * const exclusion = lttng_dynamic_pointer_array_get_pointer(exclusions, i);
+
+		if (strlen(exclusion) >= LTTNG_SYMBOL_NAME_LEN) {
 			WARN("Event exclusion \"%s\" will be truncated",
-				*exclusion);
+					exclusion);
 			*warn = 1;
 		}
 	}
@@ -967,10 +437,11 @@ static int enable_events(char *session_name)
 	int error_holder = CMD_SUCCESS, warn = 0, error = 0, success = 1;
 	char *event_name, *channel_name = NULL;
 	struct lttng_event *ev;
-	struct lttng_domain dom;
-	char **exclusion_list = NULL;
+	struct lttng_domain dom = {};
+	struct lttng_dynamic_pointer_array exclusions;
+	struct lttng_userspace_probe_location *uprobe_loc = NULL;
 
-	memset(&dom, 0, sizeof(dom));
+	lttng_dynamic_pointer_array_init(&exclusions, NULL);
 
 	ev = lttng_event_create();
 	if (!ev) {
@@ -1016,7 +487,7 @@ static int enable_events(char *session_name)
 		case LTTNG_DOMAIN_LOG4J:
 		case LTTNG_DOMAIN_PYTHON:
 			ERR("Event name exclusions are not yet implemented for %s events",
-					get_domain_str(dom.type));
+					lttng_domain_type_str(dom.type));
 			ret = CMD_ERROR;
 			goto error;
 		case LTTNG_DOMAIN_UST:
@@ -1081,17 +552,34 @@ static int enable_events(char *session_name)
 			strcpy(ev->name, "*");
 			ev->loglevel_type = opt_loglevel_type;
 			if (opt_loglevel) {
+				int name_search_ret;
+
 				assert(opt_userspace || opt_jul || opt_log4j || opt_python);
+
 				if (opt_userspace) {
-					ev->loglevel = loglevel_str_to_value(opt_loglevel);
+					enum lttng_loglevel loglevel;
+
+					name_search_ret = loglevel_name_to_value(opt_loglevel, &loglevel);
+					ev->loglevel = (int) loglevel;
 				} else if (opt_jul) {
-					ev->loglevel = loglevel_jul_str_to_value(opt_loglevel);
+					enum lttng_loglevel_jul loglevel;
+
+					name_search_ret = loglevel_jul_name_to_value(opt_loglevel, &loglevel);
+					ev->loglevel = (int) loglevel;
 				} else if (opt_log4j) {
-					ev->loglevel = loglevel_log4j_str_to_value(opt_loglevel);
-				} else if (opt_python) {
-					ev->loglevel = loglevel_python_str_to_value(opt_loglevel);
+					enum lttng_loglevel_log4j loglevel;
+
+					name_search_ret = loglevel_log4j_name_to_value(opt_loglevel, &loglevel);
+					ev->loglevel = (int) loglevel;
+				} else {
+					/* python domain. */
+					enum lttng_loglevel_python loglevel;
+
+					name_search_ret = loglevel_python_name_to_value(opt_loglevel, &loglevel);
+					ev->loglevel = (int) loglevel;
 				}
-				if (ev->loglevel == -1) {
+
+				if (name_search_ret == -1) {
 					ERR("Unknown loglevel %s", opt_loglevel);
 					ret = -LTTNG_ERR_INVALID;
 					goto error;
@@ -1112,22 +600,22 @@ static int enable_events(char *session_name)
 
 		if (opt_exclude) {
 			ret = create_exclusion_list_and_validate("*",
-				opt_exclude, &exclusion_list);
+				opt_exclude, &exclusions);
 			if (ret) {
 				ret = CMD_ERROR;
 				goto error;
 			}
 
 			ev->exclusion = 1;
-			warn_on_truncated_exclusion_names(exclusion_list,
+			warn_on_truncated_exclusion_names(&exclusions,
 				&warn);
 		}
 		if (!opt_filter) {
 			ret = lttng_enable_event_with_exclusions(handle,
 					ev, channel_name,
 					NULL,
-					exclusion_list ? strutils_array_of_strings_len(exclusion_list) : 0,
-					exclusion_list);
+					lttng_dynamic_pointer_array_get_count(&exclusions),
+					(char **) exclusions.array.buffer.data);
 			if (ret < 0) {
 				switch (-ret) {
 				case LTTNG_ERR_KERN_EVENT_EXIST:
@@ -1161,7 +649,7 @@ static int enable_events(char *session_name)
 			switch (opt_event_type) {
 			case LTTNG_EVENT_TRACEPOINT:
 				if (opt_loglevel && dom.type != LTTNG_DOMAIN_KERNEL) {
-					char *exclusion_string = print_exclusions(exclusion_list);
+					char *exclusion_string = print_exclusions(&exclusions);
 
 					if (!exclusion_string) {
 						PERROR("Cannot allocate exclusion_string");
@@ -1169,13 +657,13 @@ static int enable_events(char *session_name)
 						goto end;
 					}
 					MSG("All %s tracepoints%s are enabled in channel %s for loglevel %s",
-							get_domain_str(dom.type),
+							lttng_domain_type_str(dom.type),
 							exclusion_string,
 							print_channel_name(channel_name),
 							opt_loglevel);
 					free(exclusion_string);
 				} else {
-					char *exclusion_string = print_exclusions(exclusion_list);
+					char *exclusion_string = print_exclusions(&exclusions);
 
 					if (!exclusion_string) {
 						PERROR("Cannot allocate exclusion_string");
@@ -1183,7 +671,7 @@ static int enable_events(char *session_name)
 						goto end;
 					}
 					MSG("All %s tracepoints%s are enabled in channel %s",
-							get_domain_str(dom.type),
+							lttng_domain_type_str(dom.type),
 							exclusion_string,
 							print_channel_name(channel_name));
 					free(exclusion_string);
@@ -1192,13 +680,13 @@ static int enable_events(char *session_name)
 			case LTTNG_EVENT_SYSCALL:
 				if (opt_kernel) {
 					MSG("All %s system calls are enabled in channel %s",
-							get_domain_str(dom.type),
+							lttng_domain_type_str(dom.type),
 							print_channel_name(channel_name));
 				}
 				break;
 			case LTTNG_EVENT_ALL:
 				if (opt_loglevel && dom.type != LTTNG_DOMAIN_KERNEL) {
-					char *exclusion_string = print_exclusions(exclusion_list);
+					char *exclusion_string = print_exclusions(&exclusions);
 
 					if (!exclusion_string) {
 						PERROR("Cannot allocate exclusion_string");
@@ -1206,13 +694,13 @@ static int enable_events(char *session_name)
 						goto end;
 					}
 					MSG("All %s events%s are enabled in channel %s for loglevel %s",
-							get_domain_str(dom.type),
+							lttng_domain_type_str(dom.type),
 							exclusion_string,
 							print_channel_name(channel_name),
 							opt_loglevel);
 					free(exclusion_string);
 				} else {
-					char *exclusion_string = print_exclusions(exclusion_list);
+					char *exclusion_string = print_exclusions(&exclusions);
 
 					if (!exclusion_string) {
 						PERROR("Cannot allocate exclusion_string");
@@ -1220,7 +708,7 @@ static int enable_events(char *session_name)
 						goto end;
 					}
 					MSG("All %s events%s are enabled in channel %s",
-							get_domain_str(dom.type),
+							lttng_domain_type_str(dom.type),
 							exclusion_string,
 							print_channel_name(channel_name));
 					free(exclusion_string);
@@ -1237,9 +725,9 @@ static int enable_events(char *session_name)
 
 		if (opt_filter) {
 			command_ret = lttng_enable_event_with_exclusions(handle, ev, channel_name,
-						opt_filter,
-						exclusion_list ? strutils_array_of_strings_len(exclusion_list) : 0,
-						exclusion_list);
+					opt_filter,
+					lttng_dynamic_pointer_array_get_count(&exclusions),
+					(char **) exclusions.array.buffer.data);
 			if (command_ret < 0) {
 				switch (-command_ret) {
 				case LTTNG_ERR_FILTER_EXIST:
@@ -1299,7 +787,7 @@ static int enable_events(char *session_name)
 			}
 
 			/* print exclusion */
-			ret = mi_print_exclusion(exclusion_list);
+			ret = mi_print_exclusion(&exclusions);
 			if (ret) {
 				ret = CMD_ERROR;
 				goto error;
@@ -1356,7 +844,9 @@ static int enable_events(char *session_name)
 				}
 				break;
 			case LTTNG_EVENT_USERSPACE_PROBE:
-				ret = parse_userspace_probe_opts(ev, opt_userspace_probe);
+				assert(ev->type == LTTNG_EVENT_USERSPACE_PROBE);
+
+				ret = parse_userspace_probe_opts(opt_userspace_probe, &uprobe_loc);
 				if (ret) {
 					switch (ret) {
 					case CMD_UNSUPPORTED:
@@ -1373,6 +863,16 @@ static int enable_events(char *session_name)
 					}
 					goto error;
 				}
+
+				ret = lttng_event_set_userspace_probe_location(ev, uprobe_loc);
+				if (ret) {
+					WARN("Failed to set probe location on event");
+					ret = CMD_ERROR;
+					goto error;
+				}
+
+				/* Ownership of the uprobe location was transferred to the event. */
+				uprobe_loc = NULL;
 				break;
 			case LTTNG_EVENT_FUNCTION:
 				ret = parse_probe_opts(ev, opt_function);
@@ -1422,30 +922,32 @@ static int enable_events(char *session_name)
 					ret = CMD_ERROR;
 					goto error;
 				}
-				/* Free previously allocated items */
-				strutils_free_null_terminated_array_of_strings(
-					exclusion_list);
-				exclusion_list = NULL;
+				/* Free previously allocated items. */
+				lttng_dynamic_pointer_array_reset(&exclusions);
 				ret = create_exclusion_list_and_validate(
 					event_name, opt_exclude,
-					&exclusion_list);
+					&exclusions);
 				if (ret) {
 					ret = CMD_ERROR;
 					goto error;
 				}
 
 				warn_on_truncated_exclusion_names(
-					exclusion_list, &warn);
+					&exclusions, &warn);
 			}
 
 			ev->loglevel_type = opt_loglevel_type;
 			if (opt_loglevel) {
-				ev->loglevel = loglevel_str_to_value(opt_loglevel);
-				if (ev->loglevel == -1) {
+				enum lttng_loglevel loglevel;
+				const int name_search_ret = loglevel_name_to_value(opt_loglevel, &loglevel);
+
+				if (name_search_ret == -1) {
 					ERR("Unknown loglevel %s", opt_loglevel);
 					ret = -LTTNG_ERR_INVALID;
 					goto error;
 				}
+
+				ev->loglevel = (int) loglevel;
 			} else {
 				ev->loglevel = -1;
 			}
@@ -1459,14 +961,27 @@ static int enable_events(char *session_name)
 
 			ev->loglevel_type = opt_loglevel_type;
 			if (opt_loglevel) {
+				int name_search_ret;
+
 				if (opt_jul) {
-					ev->loglevel = loglevel_jul_str_to_value(opt_loglevel);
+					enum lttng_loglevel_jul loglevel;
+
+					name_search_ret = loglevel_jul_name_to_value(opt_loglevel, &loglevel);
+					ev->loglevel = (int) loglevel;
 				} else if (opt_log4j) {
-					ev->loglevel = loglevel_log4j_str_to_value(opt_loglevel);
-				} else if (opt_python) {
-					ev->loglevel = loglevel_python_str_to_value(opt_loglevel);
+					enum lttng_loglevel_log4j loglevel;
+
+					name_search_ret = loglevel_log4j_name_to_value(opt_loglevel, &loglevel);
+					ev->loglevel = (int) loglevel;
+				} else {
+					/* python domain. */
+					enum lttng_loglevel_python loglevel;
+
+					name_search_ret = loglevel_python_name_to_value(opt_loglevel, &loglevel);
+					ev->loglevel = (int) loglevel;
 				}
-				if (ev->loglevel == -1) {
+
+				if (name_search_ret) {
 					ERR("Unknown loglevel %s", opt_loglevel);
 					ret = -LTTNG_ERR_INVALID;
 					goto error;
@@ -1493,9 +1008,9 @@ static int enable_events(char *session_name)
 			command_ret = lttng_enable_event_with_exclusions(handle,
 					ev, channel_name,
 					NULL,
-					exclusion_list ? strutils_array_of_strings_len(exclusion_list) : 0,
-					exclusion_list);
-			exclusion_string = print_exclusions(exclusion_list);
+					lttng_dynamic_pointer_array_get_count(&exclusions),
+					(char **) exclusions.array.buffer.data);
+			exclusion_string = print_exclusions(&exclusions);
 			if (!exclusion_string) {
 				PERROR("Cannot allocate exclusion_string");
 				error = 1;
@@ -1545,7 +1060,7 @@ static int enable_events(char *session_name)
 				case LTTNG_DOMAIN_KERNEL:
 				case LTTNG_DOMAIN_UST:
 					MSG("%s event %s%s created in channel %s",
-						get_domain_str(dom.type),
+						lttng_domain_type_str(dom.type),
 						event_name,
 						exclusion_string,
 						print_channel_name(channel_name));
@@ -1558,7 +1073,7 @@ static int enable_events(char *session_name)
 					 * name for agent domains.
 					 */
 					MSG("%s event %s%s enabled",
-						get_domain_str(dom.type),
+						lttng_domain_type_str(dom.type),
 						event_name,
 						exclusion_string);
 					break;
@@ -1577,9 +1092,9 @@ static int enable_events(char *session_name)
 
 			command_ret = lttng_enable_event_with_exclusions(handle, ev, channel_name,
 					opt_filter,
-					exclusion_list ? strutils_array_of_strings_len(exclusion_list) : 0,
-					exclusion_list);
-			exclusion_string = print_exclusions(exclusion_list);
+					lttng_dynamic_pointer_array_get_count(&exclusions),
+					(char **) exclusions.array.buffer.data);
+			exclusion_string = print_exclusions(&exclusions);
 			if (!exclusion_string) {
 				PERROR("Cannot allocate exclusion_string");
 				error = 1;
@@ -1642,7 +1157,7 @@ static int enable_events(char *session_name)
 			}
 
 			/* print exclusion */
-			ret = mi_print_exclusion(exclusion_list);
+			ret = mi_print_exclusion(&exclusions);
 			if (ret) {
 				ret = CMD_ERROR;
 				goto error;
@@ -1688,7 +1203,8 @@ error:
 		ret = CMD_ERROR;
 	}
 	lttng_destroy_handle(handle);
-	strutils_free_null_terminated_array_of_strings(exclusion_list);
+	lttng_dynamic_pointer_array_reset(&exclusions);
+	lttng_userspace_probe_location_destroy(uprobe_loc);
 
 	/* Overwrite ret with error_holder if there was an actual error with
 	 * enabling an event.

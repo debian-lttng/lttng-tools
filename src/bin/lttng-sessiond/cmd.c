@@ -6,59 +6,69 @@
  *
  */
 
-#include "bin/lttng-sessiond/tracker.h"
-#include "lttng/lttng-error.h"
-#include "lttng/tracker.h"
+
 #define _LGPL_SOURCE
 #include <assert.h>
 #include <inttypes.h>
+#include <stdio.h>
+#include <sys/stat.h>
 #include <urcu/list.h>
 #include <urcu/uatomic.h>
-#include <sys/stat.h>
-#include <stdio.h>
 
-#include <common/defaults.h>
-#include <common/common.h>
-#include <common/sessiond-comm/sessiond-comm.h>
-#include <common/relayd/relayd.h>
-#include <common/utils.h>
-#include <common/compat/string.h>
-#include <common/kernel-ctl/kernel-ctl.h>
-#include <common/dynamic-buffer.h>
 #include <common/buffer-view.h>
-#include <common/trace-chunk.h>
-#include <lttng/location-internal.h>
-#include <lttng/trigger/trigger-internal.h>
-#include <lttng/condition/condition.h>
-#include <lttng/action/action.h>
-#include <lttng/channel.h>
-#include <lttng/channel-internal.h>
-#include <lttng/rotate-internal.h>
-#include <lttng/location-internal.h>
-#include <lttng/session-internal.h>
-#include <lttng/userspace-probe-internal.h>
-#include <lttng/session-descriptor-internal.h>
+#include <common/common.h>
+#include <common/compat/string.h>
+#include <common/defaults.h>
+#include <common/dynamic-buffer.h>
+#include <common/kernel-ctl/kernel-ctl.h>
+#include <common/payload-view.h>
+#include <common/payload.h>
+#include <common/relayd/relayd.h>
+#include <common/sessiond-comm/sessiond-comm.h>
 #include <common/string-utils/string-utils.h>
+#include <common/trace-chunk.h>
+#include <common/utils.h>
+#include <lttng/action/action-internal.h>
+#include <lttng/action/action.h>
+#include <lttng/channel-internal.h>
+#include <lttng/channel.h>
+#include <lttng/condition/condition-internal.h>
+#include <lttng/condition/condition.h>
+#include <lttng/condition/event-rule-matches-internal.h>
+#include <lttng/condition/event-rule-matches.h>
+#include <lttng/error-query-internal.h>
+#include <lttng/event-rule/event-rule-internal.h>
+#include <lttng/event-rule/event-rule.h>
+#include <lttng/location-internal.h>
+#include <lttng/lttng-error.h>
+#include <lttng/rotate-internal.h>
+#include <lttng/session-descriptor-internal.h>
+#include <lttng/session-internal.h>
+#include <lttng/tracker.h>
+#include <lttng/trigger/trigger-internal.h>
+#include <lttng/userspace-probe-internal.h>
 
-#include "channel.h"
-#include "consumer.h"
-#include "event.h"
-#include "health-sessiond.h"
-#include "kernel.h"
-#include "kernel-consumer.h"
-#include "lttng-sessiond.h"
-#include "utils.h"
-#include "lttng-syscall.h"
+#include "agent-thread.h"
 #include "agent.h"
 #include "buffer-registry.h"
-#include "notification-thread.h"
+#include "channel.h"
+#include "cmd.h"
+#include "consumer.h"
+#include "event-notifier-error-accounting.h"
+#include "event.h"
+#include "health-sessiond.h"
+#include "kernel-consumer.h"
+#include "kernel.h"
+#include "lttng-sessiond.h"
+#include "lttng-syscall.h"
 #include "notification-thread-commands.h"
+#include "notification-thread.h"
 #include "rotate.h"
 #include "rotation-thread.h"
+#include "session.h"
 #include "timer.h"
-#include "agent-thread.h"
-
-#include "cmd.h"
+#include "tracker.h"
+#include "utils.h"
 
 /* Sleep for 100ms between each check for the shm path's deletion. */
 #define SESSION_DESTROY_SHM_PATH_CHECK_DELAY_US 100000
@@ -108,7 +118,7 @@ static int cmd_enable_event_internal(struct ltt_session *session,
 		const struct lttng_domain *domain,
 		char *channel_name, struct lttng_event *event,
 		char *filter_expression,
-		struct lttng_filter_bytecode *filter,
+		struct lttng_bytecode *filter,
 		struct lttng_event_exclusion *exclusion,
 		int wpipe);
 
@@ -352,7 +362,7 @@ static ssize_t list_lttng_channels(enum lttng_domain_type domain,
 			 * Map enum lttng_ust_output to enum lttng_event_output.
 			 */
 			switch (uchan->attr.output) {
-			case LTTNG_UST_MMAP:
+			case LTTNG_UST_ABI_MMAP:
 				channels[i].attr.output = LTTNG_EVENT_MMAP;
 				break;
 			default:
@@ -393,95 +403,69 @@ end:
 	}
 }
 
-static int increment_extended_len(const char *filter_expression,
-		struct lttng_event_exclusion *exclusion,
-		const struct lttng_userspace_probe_location *probe_location,
-		size_t *extended_len)
-{
-	int ret = 0;
-
-	*extended_len += sizeof(struct lttcomm_event_extended_header);
-
-	if (filter_expression) {
-		*extended_len += strlen(filter_expression) + 1;
-	}
-
-	if (exclusion) {
-		*extended_len += exclusion->count * LTTNG_SYMBOL_NAME_LEN;
-	}
-
-	if (probe_location) {
-		ret = lttng_userspace_probe_location_serialize(probe_location,
-				NULL, NULL);
-		if (ret < 0) {
-			goto end;
-		}
-		*extended_len += ret;
-	}
-	ret = 0;
-end:
-	return ret;
-}
-
 static int append_extended_info(const char *filter_expression,
 		struct lttng_event_exclusion *exclusion,
 		struct lttng_userspace_probe_location *probe_location,
-		void **extended_at)
+		struct lttng_payload *payload)
 {
 	int ret = 0;
 	size_t filter_len = 0;
 	size_t nb_exclusions = 0;
 	size_t userspace_probe_location_len = 0;
-	struct lttng_dynamic_buffer location_buffer;
-	struct lttcomm_event_extended_header extended_header;
+	struct lttcomm_event_extended_header extended_header = {};
+	struct lttcomm_event_extended_header *p_extended_header;
+	const size_t original_payload_size = payload->buffer.size;
+
+	ret = lttng_dynamic_buffer_append(&payload->buffer, &extended_header,
+			sizeof(extended_header));
+	if (ret) {
+		goto end;
+	}
 
 	if (filter_expression) {
 		filter_len = strlen(filter_expression) + 1;
+		ret = lttng_dynamic_buffer_append(&payload->buffer,
+				filter_expression, filter_len);
+		if (ret) {
+			goto end;
+		}
 	}
 
 	if (exclusion) {
+		const size_t len = exclusion->count * LTTNG_SYMBOL_NAME_LEN;
+
 		nb_exclusions = exclusion->count;
+
+		ret = lttng_dynamic_buffer_append(
+				&payload->buffer, &exclusion->names, len);
+		if (ret) {
+			goto end;
+		}
 	}
 
 	if (probe_location) {
-		lttng_dynamic_buffer_init(&location_buffer);
+		const size_t size_before_probe = payload->buffer.size;
+
 		ret = lttng_userspace_probe_location_serialize(probe_location,
-				&location_buffer, NULL);
+				payload);
 		if (ret < 0) {
 			ret = -1;
 			goto end;
 		}
-		userspace_probe_location_len = location_buffer.size;
+
+		userspace_probe_location_len =
+				payload->buffer.size - size_before_probe;
 	}
 
 	/* Set header fields */
-	extended_header.filter_len = filter_len;
-	extended_header.nb_exclusions = nb_exclusions;
-	extended_header.userspace_probe_location_len = userspace_probe_location_len;
+	p_extended_header = (struct lttcomm_event_extended_header *)
+			(payload->buffer.data + original_payload_size);
 
-	/* Copy header */
-	memcpy(*extended_at, &extended_header, sizeof(extended_header));
-	*extended_at += sizeof(extended_header);
+	p_extended_header->filter_len = filter_len;
+	p_extended_header->nb_exclusions = nb_exclusions;
+	p_extended_header->userspace_probe_location_len =
+			userspace_probe_location_len;
 
-	/* Copy filter string */
-	if (filter_expression) {
-		memcpy(*extended_at, filter_expression, filter_len);
-		*extended_at += filter_len;
-	}
-
-	/* Copy exclusion names */
-	if (exclusion) {
-		size_t len = nb_exclusions * LTTNG_SYMBOL_NAME_LEN;
-
-		memcpy(*extended_at, &exclusion->names, len);
-		*extended_at += len;
-	}
-
-	if (probe_location) {
-		memcpy(*extended_at, location_buffer.data, location_buffer.size);
-		*extended_at += location_buffer.size;
-		lttng_dynamic_buffer_reset(&location_buffer);
-	}
 	ret = 0;
 end:
 	return ret;
@@ -493,89 +477,61 @@ end:
  * Return number of events in list on success or else a negative value.
  */
 static int list_lttng_agent_events(struct agent *agt,
-		struct lttng_event **events, size_t *total_size)
+		struct lttng_payload *payload)
 {
-	int i = 0, ret = 0;
-	unsigned int nb_event = 0;
-	struct agent_event *event;
-	struct lttng_event *tmp_events = NULL;
+	int nb_events = 0, ret = 0;
+	const struct agent_event *agent_event;
 	struct lttng_ht_iter iter;
-	size_t extended_len = 0;
-	void *extended_at;
 
 	assert(agt);
-	assert(events);
 
 	DBG3("Listing agent events");
 
 	rcu_read_lock();
-	nb_event = lttng_ht_get_count(agt->events);
-	rcu_read_unlock();
-	if (nb_event == 0) {
-		ret = nb_event;
-		*total_size = 0;
-		goto error;
-	}
+	cds_lfht_for_each_entry (
+			agt->events->ht, &iter.iter, agent_event, node.node) {
+		struct lttng_event event = {
+			.enabled = AGENT_EVENT_IS_ENABLED(agent_event),
+			.loglevel = agent_event->loglevel_value,
+			.loglevel_type = agent_event->loglevel_type,
+		};
 
-	/* Compute required extended infos size */
-	extended_len = nb_event * sizeof(struct lttcomm_event_extended_header);
-
-	/*
-	 * This is only valid because the commands which add events are
-	 * processed in the same thread as the listing.
-	 */
-	rcu_read_lock();
-	cds_lfht_for_each_entry(agt->events->ht, &iter.iter, event, node.node) {
-		ret = increment_extended_len(event->filter_expression, NULL, NULL,
-				&extended_len);
+		ret = lttng_strncpy(event.name, agent_event->name, sizeof(event.name));
 		if (ret) {
-			DBG("Error computing the length of extended info message");
-			ret = -LTTNG_ERR_FATAL;
-			goto error;
+			/* Internal error, invalid name. */
+			ERR("Invalid event name while listing agent events: '%s' exceeds the maximal allowed length of %zu bytes",
+					agent_event->name, sizeof(event.name));
+			ret = -LTTNG_ERR_UNK;
+			goto end;
 		}
-	}
-	rcu_read_unlock();
 
-	*total_size = nb_event * sizeof(*tmp_events) + extended_len;
-	tmp_events = zmalloc(*total_size);
-	if (!tmp_events) {
-		PERROR("zmalloc agent events session");
-		ret = -LTTNG_ERR_FATAL;
-		goto error;
-	}
-
-	extended_at = ((uint8_t *) tmp_events) +
-		nb_event * sizeof(struct lttng_event);
-
-	rcu_read_lock();
-	cds_lfht_for_each_entry(agt->events->ht, &iter.iter, event, node.node) {
-		strncpy(tmp_events[i].name, event->name, sizeof(tmp_events[i].name));
-		tmp_events[i].name[sizeof(tmp_events[i].name) - 1] = '\0';
-		tmp_events[i].enabled = event->enabled;
-		tmp_events[i].loglevel = event->loglevel_value;
-		tmp_events[i].loglevel_type = event->loglevel_type;
-		i++;
-
-		/* Append extended info */
-		ret = append_extended_info(event->filter_expression, NULL, NULL,
-				&extended_at);
+		ret = lttng_dynamic_buffer_append(
+				&payload->buffer, &event, sizeof(event));
 		if (ret) {
-			DBG("Error appending extended info message");
-			ret = -LTTNG_ERR_FATAL;
-			goto error;
+			ERR("Failed to append event to payload");
+			ret = -LTTNG_ERR_NOMEM;
+			goto end;
+		}
+
+		nb_events++;
+	}
+
+	cds_lfht_for_each_entry (
+		agt->events->ht, &iter.iter, agent_event, node.node) {
+		/* Append extended info. */
+		ret = append_extended_info(agent_event->filter_expression, NULL,
+				NULL, payload);
+		if (ret) {
+			ERR("Failed to append extended event info to payload");
+			ret = -LTTNG_ERR_NOMEM;
+			goto end;
 		}
 	}
 
-	*events = tmp_events;
-	ret = nb_event;
-	assert(nb_event == i);
-
+	ret = nb_events;
 end:
 	rcu_read_unlock();
 	return ret;
-error:
-	free(tmp_events);
-	goto end;
 }
 
 /*
@@ -583,23 +539,20 @@ error:
  */
 static int list_lttng_ust_global_events(char *channel_name,
 		struct ltt_ust_domain_global *ust_global,
-		struct lttng_event **events, size_t *total_size)
+		struct lttng_payload *payload)
 {
-	int i = 0, ret = 0;
-	unsigned int nb_event = 0;
+	int ret = 0;
+	unsigned int nb_events = 0;
 	struct lttng_ht_iter iter;
-	struct lttng_ht_node_str *node;
-	struct ltt_ust_channel *uchan;
-	struct ltt_ust_event *uevent;
-	struct lttng_event *tmp;
-	size_t extended_len = 0;
-	void *extended_at;
+	const struct lttng_ht_node_str *node;
+	const struct ltt_ust_channel *uchan;
+	const struct ltt_ust_event *uevent;
 
 	DBG("Listing UST global events for channel %s", channel_name);
 
 	rcu_read_lock();
 
-	lttng_ht_lookup(ust_global->channels, (void *)channel_name, &iter);
+	lttng_ht_lookup(ust_global->channels, (void *) channel_name, &iter);
 	node = lttng_ht_iter_get_node_str(&iter);
 	if (node == NULL) {
 		ret = LTTNG_ERR_UST_CHAN_NOT_FOUND;
@@ -608,99 +561,81 @@ static int list_lttng_ust_global_events(char *channel_name,
 
 	uchan = caa_container_of(&node->node, struct ltt_ust_channel, node.node);
 
-	nb_event = lttng_ht_get_count(uchan->events);
-	if (nb_event == 0) {
-		ret = nb_event;
-		*total_size = 0;
-		goto end;
-	}
+	DBG3("Listing UST global events");
 
-	DBG3("Listing UST global %d events", nb_event);
-
-	/* Compute required extended infos size */
 	cds_lfht_for_each_entry(uchan->events->ht, &iter.iter, uevent, node.node) {
+		struct lttng_event event = {};
+
 		if (uevent->internal) {
-			nb_event--;
 			continue;
 		}
 
-		ret = increment_extended_len(uevent->filter_expression,
-			uevent->exclusion, NULL, &extended_len);
+		ret = lttng_strncpy(event.name, uevent->attr.name, sizeof(event.name));
 		if (ret) {
-			DBG("Error computing the length of extended info message");
-			ret = -LTTNG_ERR_FATAL;
+			/* Internal error, invalid name. */
+			ERR("Invalid event name while listing user space tracer events: '%s' exceeds the maximal allowed length of %zu bytes",
+					uevent->attr.name, sizeof(event.name));
+			ret = -LTTNG_ERR_UNK;
 			goto end;
 		}
-	}
-	if (nb_event == 0) {
-		/* All events are internal, skip. */
-		ret = 0;
-		*total_size = 0;
-		goto end;
-	}
 
-	*total_size = nb_event * sizeof(struct lttng_event) + extended_len;
-	tmp = zmalloc(*total_size);
-	if (tmp == NULL) {
-		ret = -LTTNG_ERR_FATAL;
-		goto end;
-	}
-
-	extended_at = ((uint8_t *) tmp) + nb_event * sizeof(struct lttng_event);
-
-	cds_lfht_for_each_entry(uchan->events->ht, &iter.iter, uevent, node.node) {
-		if (uevent->internal) {
-			/* This event should remain hidden from clients */
-			continue;
-		}
-		strncpy(tmp[i].name, uevent->attr.name, LTTNG_SYMBOL_NAME_LEN);
-		tmp[i].name[LTTNG_SYMBOL_NAME_LEN - 1] = '\0';
-		tmp[i].enabled = uevent->enabled;
+		event.enabled = uevent->enabled;
 
 		switch (uevent->attr.instrumentation) {
-		case LTTNG_UST_TRACEPOINT:
-			tmp[i].type = LTTNG_EVENT_TRACEPOINT;
+		case LTTNG_UST_ABI_TRACEPOINT:
+			event.type = LTTNG_EVENT_TRACEPOINT;
 			break;
-		case LTTNG_UST_PROBE:
-			tmp[i].type = LTTNG_EVENT_PROBE;
+		case LTTNG_UST_ABI_PROBE:
+			event.type = LTTNG_EVENT_PROBE;
 			break;
-		case LTTNG_UST_FUNCTION:
-			tmp[i].type = LTTNG_EVENT_FUNCTION;
+		case LTTNG_UST_ABI_FUNCTION:
+			event.type = LTTNG_EVENT_FUNCTION;
 			break;
 		}
 
-		tmp[i].loglevel = uevent->attr.loglevel;
+		event.loglevel = uevent->attr.loglevel;
 		switch (uevent->attr.loglevel_type) {
-		case LTTNG_UST_LOGLEVEL_ALL:
-			tmp[i].loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;
+		case LTTNG_UST_ABI_LOGLEVEL_ALL:
+			event.loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;
 			break;
-		case LTTNG_UST_LOGLEVEL_RANGE:
-			tmp[i].loglevel_type = LTTNG_EVENT_LOGLEVEL_RANGE;
+		case LTTNG_UST_ABI_LOGLEVEL_RANGE:
+			event.loglevel_type = LTTNG_EVENT_LOGLEVEL_RANGE;
 			break;
-		case LTTNG_UST_LOGLEVEL_SINGLE:
-			tmp[i].loglevel_type = LTTNG_EVENT_LOGLEVEL_SINGLE;
+		case LTTNG_UST_ABI_LOGLEVEL_SINGLE:
+			event.loglevel_type = LTTNG_EVENT_LOGLEVEL_SINGLE;
 			break;
 		}
-		if (uevent->filter) {
-			tmp[i].filter = 1;
-		}
-		if (uevent->exclusion) {
-			tmp[i].exclusion = 1;
-		}
-		i++;
 
-		/* Append extended info */
-		ret = append_extended_info(uevent->filter_expression,
-			uevent->exclusion, NULL, &extended_at);
+		if (uevent->filter) {
+			event.filter = 1;
+		}
+
+		if (uevent->exclusion) {
+			event.exclusion = 1;
+		}
+
+		ret = lttng_dynamic_buffer_append(&payload->buffer, &event, sizeof(event));
 		if (ret) {
-			DBG("Error appending extended info message");
+			ERR("Failed to append event to payload");
+			ret = -LTTNG_ERR_NOMEM;
+			goto end;
+		}
+
+		nb_events++;
+	}
+
+	cds_lfht_for_each_entry(uchan->events->ht, &iter.iter, uevent, node.node) {
+		/* Append extended info. */
+		ret = append_extended_info(uevent->filter_expression,
+				uevent->exclusion, NULL, payload);
+		if (ret) {
+			ERR("Failed to append extended event info to payload");
 			ret = -LTTNG_ERR_FATAL;
 			goto end;
 		}
 	}
 
-	ret = nb_event;
-	*events = tmp;
+	ret = nb_events;
 end:
 	rcu_read_unlock();
 	return ret;
@@ -711,14 +646,12 @@ end:
  */
 static int list_lttng_kernel_events(char *channel_name,
 		struct ltt_kernel_session *kernel_session,
-		struct lttng_event **events, size_t *total_size)
+		struct lttng_payload *payload)
 {
-	int i = 0, ret;
+	int ret;
 	unsigned int nb_event;
-	struct ltt_kernel_event *event;
-	struct ltt_kernel_channel *kchan;
-	size_t extended_len = 0;
-	void *extended_at;
+	const struct ltt_kernel_event *kevent;
+	const struct ltt_kernel_channel *kchan;
 
 	kchan = trace_kernel_get_channel_by_name(channel_name, kernel_session);
 	if (kchan == NULL) {
@@ -730,81 +663,71 @@ static int list_lttng_kernel_events(char *channel_name,
 
 	DBG("Listing events for channel %s", kchan->channel->name);
 
-	if (nb_event == 0) {
-		*total_size = 0;
-		*events = NULL;
-		goto end;
-	}
-
-	/* Compute required extended infos size */
-	cds_list_for_each_entry(event, &kchan->events_list.head, list) {
-		ret = increment_extended_len(event->filter_expression, NULL,
-			event->userspace_probe_location,
-			&extended_len);
-		if (ret) {
-			DBG("Error computing the length of extended info message");
-			ret = -LTTNG_ERR_FATAL;
-			goto error;
-		}
-	}
-
-	*total_size = nb_event * sizeof(struct lttng_event) + extended_len;
-	*events = zmalloc(*total_size);
-	if (*events == NULL) {
-		ret = -LTTNG_ERR_FATAL;
-		goto error;
-	}
-
-	extended_at = ((void *) *events) +
-		nb_event * sizeof(struct lttng_event);
-
 	/* Kernel channels */
-	cds_list_for_each_entry(event, &kchan->events_list.head , list) {
-		strncpy((*events)[i].name, event->event->name, LTTNG_SYMBOL_NAME_LEN);
-		(*events)[i].name[LTTNG_SYMBOL_NAME_LEN - 1] = '\0';
-		(*events)[i].enabled = event->enabled;
-		(*events)[i].filter =
-				(unsigned char) !!event->filter_expression;
+	cds_list_for_each_entry(kevent, &kchan->events_list.head , list) {
+		struct lttng_event event = {};
 
-		switch (event->event->instrumentation) {
-		case LTTNG_KERNEL_TRACEPOINT:
-			(*events)[i].type = LTTNG_EVENT_TRACEPOINT;
+		ret = lttng_strncpy(event.name, kevent->event->name, sizeof(event.name));
+		if (ret) {
+			/* Internal error, invalid name. */
+			ERR("Invalid event name while listing kernel events: '%s' exceeds the maximal allowed length of %zu bytes",
+					kevent->event->name,
+					sizeof(event.name));
+			ret = -LTTNG_ERR_UNK;
+			goto end;
+		}
+
+		event.enabled = kevent->enabled;
+		event.filter = (unsigned char) !!kevent->filter_expression;
+
+		switch (kevent->event->instrumentation) {
+		case LTTNG_KERNEL_ABI_TRACEPOINT:
+			event.type = LTTNG_EVENT_TRACEPOINT;
 			break;
-		case LTTNG_KERNEL_KRETPROBE:
-			(*events)[i].type = LTTNG_EVENT_FUNCTION;
-			memcpy(&(*events)[i].attr.probe, &event->event->u.kprobe,
-					sizeof(struct lttng_kernel_kprobe));
+		case LTTNG_KERNEL_ABI_KRETPROBE:
+			event.type = LTTNG_EVENT_FUNCTION;
+			memcpy(&event.attr.probe, &kevent->event->u.kprobe,
+					sizeof(struct lttng_kernel_abi_kprobe));
 			break;
-		case LTTNG_KERNEL_KPROBE:
-			(*events)[i].type = LTTNG_EVENT_PROBE;
-			memcpy(&(*events)[i].attr.probe, &event->event->u.kprobe,
-					sizeof(struct lttng_kernel_kprobe));
+		case LTTNG_KERNEL_ABI_KPROBE:
+			event.type = LTTNG_EVENT_PROBE;
+			memcpy(&event.attr.probe, &kevent->event->u.kprobe,
+					sizeof(struct lttng_kernel_abi_kprobe));
 			break;
-		case LTTNG_KERNEL_UPROBE:
-			(*events)[i].type = LTTNG_EVENT_USERSPACE_PROBE;
+		case LTTNG_KERNEL_ABI_UPROBE:
+			event.type = LTTNG_EVENT_USERSPACE_PROBE;
 			break;
-		case LTTNG_KERNEL_FUNCTION:
-			(*events)[i].type = LTTNG_EVENT_FUNCTION;
-			memcpy(&((*events)[i].attr.ftrace), &event->event->u.ftrace,
-					sizeof(struct lttng_kernel_function));
+		case LTTNG_KERNEL_ABI_FUNCTION:
+			event.type = LTTNG_EVENT_FUNCTION;
+			memcpy(&event.attr.ftrace, &kevent->event->u.ftrace,
+					sizeof(struct lttng_kernel_abi_function));
 			break;
-		case LTTNG_KERNEL_NOOP:
-			(*events)[i].type = LTTNG_EVENT_NOOP;
+		case LTTNG_KERNEL_ABI_NOOP:
+			event.type = LTTNG_EVENT_NOOP;
 			break;
-		case LTTNG_KERNEL_SYSCALL:
-			(*events)[i].type = LTTNG_EVENT_SYSCALL;
+		case LTTNG_KERNEL_ABI_SYSCALL:
+			event.type = LTTNG_EVENT_SYSCALL;
 			break;
-		case LTTNG_KERNEL_ALL:
+		case LTTNG_KERNEL_ABI_ALL:
 			/* fall-through. */
 		default:
 			assert(0);
 			break;
 		}
-		i++;
 
-		/* Append extended info */
-		ret = append_extended_info(event->filter_expression, NULL,
-			event->userspace_probe_location, &extended_at);
+		ret = lttng_dynamic_buffer_append(
+				&payload->buffer, &event, sizeof(event));
+		if (ret) {
+			ERR("Failed to append event to payload");
+			ret = -LTTNG_ERR_NOMEM;
+			goto end;
+		}
+	}
+
+	cds_list_for_each_entry(kevent, &kchan->events_list.head , list) {
+		/* Append extended info. */
+		ret = append_extended_info(kevent->filter_expression, NULL,
+				kevent->userspace_probe_location, payload);
 		if (ret) {
 			DBG("Error appending extended info message");
 			ret = -LTTNG_ERR_FATAL;
@@ -814,7 +737,6 @@ static int list_lttng_kernel_events(char *channel_name,
 
 end:
 	return nb_event;
-
 error:
 	return ret;
 }
@@ -1052,7 +974,7 @@ static enum lttng_error_code send_consumer_relayd_socket(
 		struct consumer_socket *consumer_sock,
 		const char *session_name, const char *hostname,
 		const char *base_path, int session_live_timer,
-	        const uint64_t *current_chunk_id,
+		const uint64_t *current_chunk_id,
 		time_t session_creation_time,
 		bool session_name_contains_creation_time)
 {
@@ -1180,9 +1102,9 @@ int cmd_setup_relayd(struct ltt_session *session)
 	struct ltt_kernel_session *ksess;
 	struct consumer_socket *socket;
 	struct lttng_ht_iter iter;
-        LTTNG_OPTIONAL(uint64_t) current_chunk_id = {};
+	LTTNG_OPTIONAL(uint64_t) current_chunk_id = {};
 
-        assert(session);
+	assert(session);
 
 	usess = session->ust_session;
 	ksess = session->kernel_session;
@@ -1466,15 +1388,6 @@ int cmd_enable_channel(struct ltt_session *session,
 	rcu_read_lock();
 
 	/*
-	 * Don't try to enable a channel if the session has been started at
-	 * some point in time before. The tracer does not allow it.
-	 */
-	if (session->has_been_started) {
-		ret = LTTNG_ERR_TRACE_ALREADY_STARTED;
-		goto error;
-	}
-
-	/*
 	 * If the session is a live session, remove the switch timer, the
 	 * live timer does the same thing but sends also synchronisation
 	 * beacons for inactive streams.
@@ -1522,6 +1435,15 @@ int cmd_enable_channel(struct ltt_session *session,
 		kchan = trace_kernel_get_channel_by_name(attr.name,
 				session->kernel_session);
 		if (kchan == NULL) {
+			/*
+			 * Don't try to create a channel if the session has been started at
+			 * some point in time before. The tracer does not allow it.
+			 */
+			if (session->has_been_started) {
+				ret = LTTNG_ERR_TRACE_ALREADY_STARTED;
+				goto error;
+			}
+
 			if (session->snapshot.nb_output > 0 ||
 					session->snapshot_mode) {
 				/* Enforce mmap output for snapshot sessions. */
@@ -1581,6 +1503,15 @@ int cmd_enable_channel(struct ltt_session *session,
 
 		uchan = trace_ust_find_channel_by_name(chan_ht, attr.name);
 		if (uchan == NULL) {
+			/*
+			 * Don't try to create a channel if the session has been started at
+			 * some point in time before. The tracer does not allow it.
+			 */
+			if (session->has_been_started) {
+				ret = LTTNG_ERR_TRACE_ALREADY_STARTED;
+				goto error;
+			}
+
 			ret = channel_ust_create(usess, &attr, domain->buf_type);
 			if (attr.name[0] != '\0') {
 				usess->has_non_default_channel = 1;
@@ -2164,7 +2095,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 		const struct lttng_domain *domain,
 		char *channel_name, struct lttng_event *event,
 		char *filter_expression,
-		struct lttng_filter_bytecode *filter,
+		struct lttng_bytecode *filter,
 		struct lttng_event_exclusion *exclusion,
 		int wpipe, bool internal_event)
 {
@@ -2247,7 +2178,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 		case LTTNG_EVENT_ALL:
 		{
 			char *filter_expression_a = NULL;
-			struct lttng_filter_bytecode *filter_a = NULL;
+			struct lttng_bytecode *filter_a = NULL;
 
 			/*
 			 * We need to duplicate filter_expression and filter,
@@ -2394,7 +2325,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 			 */
 			ret = validate_ust_event_name(event->name);
 			if (ret) {
-			        WARN("Userspace event name %s failed validation.",
+				WARN("Userspace event name %s failed validation.",
 						event->name);
 				ret = LTTNG_ERR_INVALID_EVENT_NAME;
 				goto error;
@@ -2482,11 +2413,11 @@ static int _cmd_enable_event(struct ltt_session *session,
 
 		{
 			char *filter_expression_copy = NULL;
-			struct lttng_filter_bytecode *filter_copy = NULL;
+			struct lttng_bytecode *filter_copy = NULL;
 
 			if (filter) {
 				const size_t filter_size = sizeof(
-						struct lttng_filter_bytecode)
+						struct lttng_bytecode)
 						+ filter->len;
 
 				filter_copy = zmalloc(filter_size);
@@ -2562,7 +2493,7 @@ int cmd_enable_event(struct ltt_session *session,
 		const struct lttng_domain *domain,
 		char *channel_name, struct lttng_event *event,
 		char *filter_expression,
-		struct lttng_filter_bytecode *filter,
+		struct lttng_bytecode *filter,
 		struct lttng_event_exclusion *exclusion,
 		int wpipe)
 {
@@ -2579,7 +2510,7 @@ static int cmd_enable_event_internal(struct ltt_session *session,
 		const struct lttng_domain *domain,
 		char *channel_name, struct lttng_event *event,
 		char *filter_expression,
-		struct lttng_filter_bytecode *filter,
+		struct lttng_bytecode *filter,
 		struct lttng_event_exclusion *exclusion,
 		int wpipe)
 {
@@ -3183,19 +3114,19 @@ enum lttng_error_code cmd_create_session(struct command_ctx *cmd_ctx, int sock,
 	enum lttng_error_code ret_code;
 
 	lttng_dynamic_buffer_init(&payload);
-	if (cmd_ctx->lsm->u.create_session.home_dir_size >=
+	if (cmd_ctx->lsm.u.create_session.home_dir_size >=
 			LTTNG_PATH_MAX) {
 		ret_code = LTTNG_ERR_INVALID;
 		goto error;
 	}
-	if (cmd_ctx->lsm->u.create_session.session_descriptor_size >
+	if (cmd_ctx->lsm.u.create_session.session_descriptor_size >
 			LTTNG_SESSION_DESCRIPTOR_MAX_LEN) {
 		ret_code = LTTNG_ERR_INVALID;
 		goto error;
 	}
 
-	payload_size = cmd_ctx->lsm->u.create_session.home_dir_size +
-			cmd_ctx->lsm->u.create_session.session_descriptor_size;
+	payload_size = cmd_ctx->lsm.u.create_session.home_dir_size +
+			cmd_ctx->lsm.u.create_session.session_descriptor_size;
 	ret = lttng_dynamic_buffer_set_size(&payload, payload_size);
 	if (ret) {
 		ret_code = LTTNG_ERR_NOMEM;
@@ -3212,11 +3143,23 @@ enum lttng_error_code cmd_create_session(struct command_ctx *cmd_ctx, int sock,
 	home_dir_view = lttng_buffer_view_from_dynamic_buffer(
 			&payload,
 			0,
-			cmd_ctx->lsm->u.create_session.home_dir_size);
+			cmd_ctx->lsm.u.create_session.home_dir_size);
+	if (cmd_ctx->lsm.u.create_session.home_dir_size > 0 &&
+			!lttng_buffer_view_is_valid(&home_dir_view)) {
+		ERR("Invalid payload in \"create session\" command: buffer too short to contain home directory");
+		ret_code = LTTNG_ERR_INVALID_PROTOCOL;
+		goto error;
+	}
+
 	session_descriptor_view = lttng_buffer_view_from_dynamic_buffer(
 			&payload,
-			cmd_ctx->lsm->u.create_session.home_dir_size,
-			cmd_ctx->lsm->u.create_session.session_descriptor_size);
+			cmd_ctx->lsm.u.create_session.home_dir_size,
+			cmd_ctx->lsm.u.create_session.session_descriptor_size);
+	if (!lttng_buffer_view_is_valid(&session_descriptor_view)) {
+		ERR("Invalid payload in \"create session\" command: buffer too short to contain session descriptor");
+		ret_code = LTTNG_ERR_INVALID_PROTOCOL;
+		goto error;
+	}
 
 	ret = lttng_session_descriptor_create_from_buffer(
 			&session_descriptor_view, &session_descriptor);
@@ -3270,10 +3213,10 @@ void cmd_destroy_session_reply(const struct ltt_session *session,
 	lttng_dynamic_buffer_init(&payload);
 
 	ret = lttng_dynamic_buffer_append(&payload, &llm, sizeof(llm));
-        if (ret) {
+	if (ret) {
 		ERR("Failed to append session destruction message");
 		goto error;
-        }
+	}
 
 	cmd_header.rotation_state =
 			(int32_t) (reply_context->implicit_rotation_on_destroy ?
@@ -3307,6 +3250,7 @@ void cmd_destroy_session_reply(const struct ltt_session *session,
 	payload_size_before_location = payload.size;
 	comm_ret = lttng_trace_archive_location_serialize(location,
 			&payload);
+	lttng_trace_archive_location_put(location);
 	if (comm_ret < 0) {
 		ERR("Failed to serialize the location of the trace archive produced during the destruction of session \"%s\"",
 				session->name);
@@ -3396,10 +3340,10 @@ int cmd_destroy_session(struct ltt_session *session,
 					session->name, lttng_strerror(-ret));
 			destruction_last_error = -ret;
 		}
-                if (reply_context) {
+		if (reply_context) {
 			reply_context->implicit_rotation_on_destroy = true;
-                }
-        } else if (session->has_been_started && session->current_trace_chunk) {
+		}
+	} else if (session->has_been_started && session->current_trace_chunk) {
 		/*
 		 * The user has not triggered a session rotation. However, to
 		 * ensure all data has been consumed, the session is rotated
@@ -3497,8 +3441,8 @@ int cmd_destroy_session(struct ltt_session *session,
 		} else {
 			*sock_fd = -1;
 		}
-        }
-        ret = LTTNG_OK;
+	}
+	ret = LTTNG_OK;
 end:
 	return ret;
 }
@@ -3727,25 +3671,33 @@ end:
  */
 ssize_t cmd_list_events(enum lttng_domain_type domain,
 		struct ltt_session *session, char *channel_name,
-		struct lttng_event **events, size_t *total_size)
+		struct lttng_payload *payload)
 {
 	int ret = 0;
-	ssize_t nb_event = 0;
+	ssize_t nb_events = 0;
+	struct lttcomm_event_command_header cmd_header = {};
+	const size_t cmd_header_offset = payload->buffer.size;
+
+	ret = lttng_dynamic_buffer_append(
+			&payload->buffer, &cmd_header, sizeof(cmd_header));
+	if (ret) {
+		ret = LTTNG_ERR_NOMEM;
+		goto error;
+	}
 
 	switch (domain) {
 	case LTTNG_DOMAIN_KERNEL:
 		if (session->kernel_session != NULL) {
-			nb_event = list_lttng_kernel_events(channel_name,
-					session->kernel_session, events,
-					total_size);
+			nb_events = list_lttng_kernel_events(channel_name,
+					session->kernel_session, payload);
 		}
 		break;
 	case LTTNG_DOMAIN_UST:
 	{
 		if (session->ust_session != NULL) {
-			nb_event = list_lttng_ust_global_events(channel_name,
-					&session->ust_session->domain_global, events,
-					total_size);
+			nb_events = list_lttng_ust_global_events(channel_name,
+					&session->ust_session->domain_global,
+					payload);
 		}
 		break;
 	}
@@ -3760,9 +3712,8 @@ ssize_t cmd_list_events(enum lttng_domain_type domain,
 			cds_lfht_for_each_entry(session->ust_session->agents->ht,
 					&iter.iter, agt, node.node) {
 				if (agt->domain == domain) {
-					nb_event = list_lttng_agent_events(
-							agt, events,
-							total_size);
+					nb_events = list_lttng_agent_events(
+							agt, payload);
 					break;
 				}
 			}
@@ -3774,7 +3725,10 @@ ssize_t cmd_list_events(enum lttng_domain_type domain,
 		goto error;
 	}
 
-	return nb_event;
+	((struct lttcomm_event_command_header *) (payload->buffer.data +
+			 cmd_header_offset))->nb_events = (uint32_t) nb_events;
+
+	return nb_events;
 
 error:
 	/* Return negative value to differentiate return code */
@@ -3795,7 +3749,7 @@ void cmd_list_lttng_sessions(struct lttng_session *sessions,
 	unsigned int i = 0;
 	struct ltt_session *session;
 	struct ltt_session_list *list = session_get_list();
-        struct lttng_session_extended *extended =
+	struct lttng_session_extended *extended =
 			(typeof(extended)) (&sessions[session_count]);
 
 	DBG("Getting all available session for UID %d GID %d",
@@ -3811,7 +3765,7 @@ void cmd_list_lttng_sessions(struct lttng_session *sessions,
 		/*
 		 * Only list the sessions the user can control.
 		 */
-		if (!session_access_ok(session, uid, gid) ||
+		if (!session_access_ok(session, uid) ||
 				session->destroyed) {
 			session_put(session);
 			continue;
@@ -4262,7 +4216,7 @@ end:
  * then regenerate the metadata. Live and per-pid sessions are not
  * supported and return an error.
  *
- * Return 0 on success or else a LTTNG_ERR code.
+ * Return LTTNG_OK on success or else a LTTNG_ERR code.
  */
 int cmd_regenerate_metadata(struct ltt_session *session)
 {
@@ -4303,7 +4257,7 @@ end:
  *
  * Ask the tracer to regenerate a new statedump.
  *
- * Return 0 on success or else a LTTNG_ERR code.
+ * Return LTTNG_OK on success or else a LTTNG_ERR code.
  */
 int cmd_regenerate_statedump(struct ltt_session *session)
 {
@@ -4352,92 +4306,510 @@ end:
 	return ret;
 }
 
-int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
-		struct notification_thread_handle *notification_thread)
+static
+enum lttng_error_code synchronize_tracer_notifier_register(
+		struct notification_thread_handle *notification_thread,
+		struct lttng_trigger *trigger, const struct lttng_credentials *cmd_creds)
 {
-	int ret;
-	size_t trigger_len;
-	ssize_t sock_recv_len;
-	struct lttng_trigger *trigger = NULL;
-	struct lttng_buffer_view view;
-	struct lttng_dynamic_buffer trigger_buffer;
+	enum lttng_error_code ret_code;
+	const struct lttng_condition *condition =
+			lttng_trigger_get_const_condition(trigger);
+	const char *trigger_name;
+	uid_t trigger_owner;
+	enum lttng_trigger_status trigger_status;
+	const enum lttng_domain_type trigger_domain =
+			lttng_trigger_get_underlying_domain_type_restriction(
+					trigger);
 
-	lttng_dynamic_buffer_init(&trigger_buffer);
-	trigger_len = (size_t) cmd_ctx->lsm->u.trigger.length;
-	ret = lttng_dynamic_buffer_set_size(&trigger_buffer, trigger_len);
-	if (ret) {
-		ret = LTTNG_ERR_NOMEM;
-		goto end;
+	trigger_status = lttng_trigger_get_owner_uid(trigger, &trigger_owner);
+	assert(trigger_status == LTTNG_TRIGGER_STATUS_OK);
+
+	assert(condition);
+	assert(lttng_condition_get_type(condition) ==
+			LTTNG_CONDITION_TYPE_EVENT_RULE_MATCHES);
+
+	trigger_status = lttng_trigger_get_name(trigger, &trigger_name);
+	trigger_name = trigger_status == LTTNG_TRIGGER_STATUS_OK ?
+			trigger_name : "(anonymous)";
+
+	session_lock_list();
+	switch (trigger_domain) {
+	case LTTNG_DOMAIN_KERNEL:
+	{
+		ret_code = kernel_register_event_notifier(trigger, cmd_creds);
+		if (ret_code != LTTNG_OK) {
+			enum lttng_error_code notif_thread_unregister_ret;
+
+			notif_thread_unregister_ret =
+					notification_thread_command_unregister_trigger(
+						notification_thread, trigger);
+
+			if (notif_thread_unregister_ret != LTTNG_OK) {
+				/* Return the original error code. */
+				ERR("Failed to unregister trigger from notification thread during error recovery: trigger name = '%s', trigger owner uid = %d, error code = %d",
+						trigger_name,
+						(int) trigger_owner,
+						ret_code);
+			}
+		}
+		break;
+	}
+	case LTTNG_DOMAIN_UST:
+		ust_app_global_update_all_event_notifier_rules();
+		break;
+	case LTTNG_DOMAIN_JUL:
+	case LTTNG_DOMAIN_LOG4J:
+	case LTTNG_DOMAIN_PYTHON:
+	{
+		/* Agent domains. */
+		struct agent *agt = agent_find_by_event_notifier_domain(
+				trigger_domain);
+
+		if (!agt) {
+			agt = agent_create(trigger_domain);
+			if (!agt) {
+				ret_code = LTTNG_ERR_NOMEM;
+				goto end_unlock_session_list;
+			}
+
+			agent_add(agt, the_trigger_agents_ht_by_domain);
+		}
+
+		ret_code = trigger_agent_enable(trigger, agt);
+		if (ret_code != LTTNG_OK) {
+			goto end_unlock_session_list;
+		}
+
+		break;
+	}
+	case LTTNG_DOMAIN_NONE:
+	default:
+		abort();
 	}
 
-	sock_recv_len = lttcomm_recv_unix_sock(sock, trigger_buffer.data,
-			trigger_len);
-	if (sock_recv_len < 0 || sock_recv_len != trigger_len) {
-		ERR("Failed to receive \"register trigger\" command payload");
-		/* TODO: should this be a new error enum ? */
-		ret = LTTNG_ERR_INVALID_TRIGGER;
-		goto end;
-	}
-
-	view = lttng_buffer_view_from_dynamic_buffer(&trigger_buffer, 0, -1);
-	if (lttng_trigger_create_from_buffer(&view, &trigger) !=
-			trigger_len) {
-		ERR("Invalid trigger payload received in \"register trigger\" command");
-		ret = LTTNG_ERR_INVALID_TRIGGER;
-		goto end;
-	}
-
-	ret = notification_thread_command_register_trigger(notification_thread,
-			trigger);
-	/* Ownership of trigger was transferred. */
-	trigger = NULL;
-end:
-	lttng_trigger_destroy(trigger);
-	lttng_dynamic_buffer_reset(&trigger_buffer);
-	return ret;
+	ret_code = LTTNG_OK;
+end_unlock_session_list:
+	session_unlock_list();
+	return ret_code;
 }
 
-int cmd_unregister_trigger(struct command_ctx *cmd_ctx, int sock,
+enum lttng_error_code cmd_register_trigger(const struct lttng_credentials *cmd_creds,
+		struct lttng_trigger *trigger,
+		bool is_trigger_anonymous,
+		struct notification_thread_handle *notification_thread,
+		struct lttng_trigger **return_trigger)
+{
+	enum lttng_error_code ret_code;
+	const char *trigger_name;
+	uid_t trigger_owner;
+	enum lttng_trigger_status trigger_status;
+
+	trigger_status = lttng_trigger_get_name(trigger, &trigger_name);
+	trigger_name = trigger_status == LTTNG_TRIGGER_STATUS_OK ?
+			trigger_name : "(anonymous)";
+
+	trigger_status = lttng_trigger_get_owner_uid(
+		trigger, &trigger_owner);
+	assert(trigger_status == LTTNG_TRIGGER_STATUS_OK);
+
+	DBG("Running register trigger command: trigger name = '%s', trigger owner uid = %d, command creds uid = %d",
+			trigger_name, (int) trigger_owner,
+			(int) lttng_credentials_get_uid(cmd_creds));
+
+	/*
+	 * Validate the trigger credentials against the command credentials.
+	 * Only the root user can register a trigger with non-matching
+	 * credentials.
+	 */
+	if (!lttng_credentials_is_equal_uid(
+			lttng_trigger_get_credentials(trigger),
+			cmd_creds)) {
+		if (lttng_credentials_get_uid(cmd_creds) != 0) {
+			ERR("Trigger credentials do not match the command credentials: trigger name = '%s', trigger owner uid = %d, command creds uid = %d",
+					trigger_name, (int) trigger_owner,
+					(int) lttng_credentials_get_uid(cmd_creds));
+			ret_code = LTTNG_ERR_INVALID_TRIGGER;
+			goto end;
+		}
+	}
+
+	/*
+	 * The bytecode generation also serves as a validation step for the
+	 * bytecode expressions.
+	 */
+	ret_code = lttng_trigger_generate_bytecode(trigger, cmd_creds);
+	if (ret_code != LTTNG_OK) {
+		ERR("Failed to generate bytecode of trigger: trigger name = '%s', trigger owner uid = %d, error code = %d",
+				trigger_name, (int) trigger_owner, ret_code);
+		goto end;
+	}
+
+	/*
+	 * A reference to the trigger is acquired by the notification thread.
+	 * It is safe to return the same trigger to the caller since it the
+	 * other user holds a reference.
+	 *
+	 * The trigger is modified during the execution of the
+	 * "register trigger" command. However, by the time the command returns,
+	 * it is safe to use without any locking as its properties are
+	 * immutable.
+	 */
+	ret_code = notification_thread_command_register_trigger(
+			notification_thread, trigger, is_trigger_anonymous);
+	if (ret_code != LTTNG_OK) {
+		DBG("Failed to register trigger to notification thread: trigger name = '%s', trigger owner uid = %d, error code = %d",
+				trigger_name, (int) trigger_owner, ret_code);
+		goto end;
+	}
+
+	trigger_status = lttng_trigger_get_name(trigger, &trigger_name);
+	trigger_name = trigger_status == LTTNG_TRIGGER_STATUS_OK ?
+			trigger_name : "(anonymous)";
+
+	/*
+	 * Synchronize tracers if the trigger adds an event notifier.
+	 */
+	if (lttng_trigger_needs_tracer_notifier(trigger)) {
+		ret_code = synchronize_tracer_notifier_register(notification_thread,
+				trigger, cmd_creds);
+		if (ret_code != LTTNG_OK) {
+			ERR("Error registering tracer notifier: %s",
+					lttng_strerror(-ret_code));
+			goto end;
+		}
+	}
+
+	/*
+	 * Return an updated trigger to the client.
+	 *
+	 * Since a modified version of the same trigger is returned, acquire a
+	 * reference to the trigger so the caller doesn't have to care if those
+	 * are distinct instances or not.
+	 */
+	if (ret_code == LTTNG_OK) {
+		lttng_trigger_get(trigger);
+		*return_trigger = trigger;
+		/* Ownership of trigger was transferred to caller. */
+		trigger = NULL;
+	}
+end:
+	return ret_code;
+}
+
+static
+enum lttng_error_code synchronize_tracer_notifier_unregister(
+		const struct lttng_trigger *trigger)
+{
+	enum lttng_error_code ret_code;
+	const struct lttng_condition *condition =
+			lttng_trigger_get_const_condition(trigger);
+	const enum lttng_domain_type trigger_domain =
+			lttng_trigger_get_underlying_domain_type_restriction(
+					trigger);
+
+	assert(condition);
+	assert(lttng_condition_get_type(condition) ==
+			LTTNG_CONDITION_TYPE_EVENT_RULE_MATCHES);
+
+	session_lock_list();
+	switch (trigger_domain) {
+	case LTTNG_DOMAIN_KERNEL:
+		ret_code = kernel_unregister_event_notifier(trigger);
+		if (ret_code != LTTNG_OK) {
+			goto end_unlock_session_list;
+		}
+
+		break;
+	case LTTNG_DOMAIN_UST:
+		ust_app_global_update_all_event_notifier_rules();
+		break;
+	case LTTNG_DOMAIN_JUL:
+	case LTTNG_DOMAIN_LOG4J:
+	case LTTNG_DOMAIN_PYTHON:
+	{
+		/* Agent domains. */
+		struct agent *agt = agent_find_by_event_notifier_domain(
+				trigger_domain);
+
+		/*
+		 * This trigger was never registered in the first place. Calling
+		 * this function under those circumstances is an internal error.
+		 */
+		assert(agt);
+		ret_code = trigger_agent_disable(trigger, agt);
+		if (ret_code != LTTNG_OK) {
+			goto end_unlock_session_list;
+		}
+
+		break;
+	}
+	case LTTNG_DOMAIN_NONE:
+	default:
+		abort();
+	}
+
+	ret_code = LTTNG_OK;
+
+end_unlock_session_list:
+	session_unlock_list();
+	return ret_code;
+}
+
+enum lttng_error_code cmd_unregister_trigger(const struct lttng_credentials *cmd_creds,
+		const struct lttng_trigger *trigger,
 		struct notification_thread_handle *notification_thread)
 {
-	int ret;
-	size_t trigger_len;
-	ssize_t sock_recv_len;
-	struct lttng_trigger *trigger = NULL;
-	struct lttng_buffer_view view;
-	struct lttng_dynamic_buffer trigger_buffer;
+	enum lttng_error_code ret_code;
+	const char *trigger_name;
+	uid_t trigger_owner;
+	enum lttng_trigger_status trigger_status;
+	struct lttng_trigger *sessiond_trigger = NULL;
 
-	lttng_dynamic_buffer_init(&trigger_buffer);
-	trigger_len = (size_t) cmd_ctx->lsm->u.trigger.length;
-	ret = lttng_dynamic_buffer_set_size(&trigger_buffer, trigger_len);
-	if (ret) {
-		ret = LTTNG_ERR_NOMEM;
+	trigger_status = lttng_trigger_get_name(trigger, &trigger_name);
+	trigger_name = trigger_status == LTTNG_TRIGGER_STATUS_OK ? trigger_name : "(anonymous)";
+	trigger_status = lttng_trigger_get_owner_uid(trigger, &trigger_owner);
+	assert(trigger_status == LTTNG_TRIGGER_STATUS_OK);
+
+	DBG("Running unregister trigger command: trigger name = '%s', trigger owner uid = %d, command creds uid = %d",
+			trigger_name, (int) trigger_owner,
+			(int) lttng_credentials_get_uid(cmd_creds));
+
+	/*
+	 * Validate the trigger credentials against the command credentials.
+	 * Only the root user can unregister a trigger with non-matching
+	 * credentials.
+	 */
+	if (!lttng_credentials_is_equal_uid(
+			lttng_trigger_get_credentials(trigger),
+			cmd_creds)) {
+		if (lttng_credentials_get_uid(cmd_creds) != 0) {
+			ERR("Trigger credentials do not match the command credentials: trigger name = '%s', trigger owner uid = %d, command creds uid = %d",
+					trigger_name, (int) trigger_owner,
+					(int) lttng_credentials_get_uid(cmd_creds));
+			ret_code = LTTNG_ERR_INVALID_TRIGGER;
+			goto end;
+		}
+	}
+
+	/* Fetch the sessiond side trigger object. */
+	ret_code = notification_thread_command_get_trigger(
+			notification_thread, trigger, &sessiond_trigger);
+	if (ret_code != LTTNG_OK) {
+		DBG("Failed to get trigger from notification thread during unregister: trigger name = '%s', trigger owner uid = %d, error code = %d",
+				trigger_name, (int) trigger_owner, ret_code);
 		goto end;
 	}
 
-	sock_recv_len = lttcomm_recv_unix_sock(sock, trigger_buffer.data,
-			trigger_len);
-	if (sock_recv_len < 0 || sock_recv_len != trigger_len) {
-		ERR("Failed to receive \"unregister trigger\" command payload");
-		/* TODO: should this be a new error enum ? */
-		ret = LTTNG_ERR_INVALID_TRIGGER;
+	assert(sessiond_trigger);
+
+	/*
+	 * From this point on, no matter what, consider the trigger
+	 * unregistered.
+	 *
+	 * We set the unregistered state of the sessiond side trigger object in
+	 * the client thread since we want to minimize the possibility of the
+	 * notification thread being stalled due to a long execution of an
+	 * action that required the trigger lock.
+	 */
+	lttng_trigger_set_as_unregistered(sessiond_trigger);
+
+	ret_code = notification_thread_command_unregister_trigger(notification_thread,
+								  trigger);
+	if (ret_code != LTTNG_OK) {
+		DBG("Failed to unregister trigger from notification thread: trigger name = '%s', trigger owner uid = %d, error code = %d",
+				trigger_name, (int) trigger_owner, ret_code);
 		goto end;
 	}
 
-	view = lttng_buffer_view_from_dynamic_buffer(&trigger_buffer, 0, -1);
-	if (lttng_trigger_create_from_buffer(&view, &trigger) !=
-			trigger_len) {
-		ERR("Invalid trigger payload received in \"unregister trigger\" command");
-		ret = LTTNG_ERR_INVALID_TRIGGER;
-		goto end;
+	/*
+	 * Synchronize tracers if the trigger removes an event notifier.
+	 * Do this even if the trigger unregistration failed to at least stop
+	 * the tracers from producing notifications associated with this
+	 * event notifier.
+	 */
+	if (lttng_trigger_needs_tracer_notifier(trigger)) {
+		ret_code = synchronize_tracer_notifier_unregister(trigger);
+		if (ret_code != LTTNG_OK) {
+			ERR("Error unregistering trigger to tracer.");
+			goto end;
+		}
+
 	}
 
-	ret = notification_thread_command_unregister_trigger(notification_thread,
-			trigger);
 end:
-	lttng_trigger_destroy(trigger);
-	lttng_dynamic_buffer_reset(&trigger_buffer);
-	return ret;
+	lttng_trigger_put(sessiond_trigger);
+	return ret_code;
+}
+
+enum lttng_error_code cmd_list_triggers(struct command_ctx *cmd_ctx,
+		struct notification_thread_handle *notification_thread,
+		struct lttng_triggers **return_triggers)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct lttng_triggers *triggers = NULL;
+
+	/* Get the set of triggers from the notification thread. */
+	ret_code = notification_thread_command_list_triggers(
+			notification_thread, cmd_ctx->creds.uid, &triggers);
+	if (ret_code != LTTNG_OK) {
+		goto end;
+	}
+
+	ret = lttng_triggers_remove_hidden_triggers(triggers);
+	if (ret) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
+
+	*return_triggers = triggers;
+	triggers = NULL;
+	ret_code = LTTNG_OK;
+end:
+	lttng_triggers_destroy(triggers);
+	return ret_code;
+}
+
+enum lttng_error_code cmd_execute_error_query(const struct lttng_credentials *cmd_creds,
+		const struct lttng_error_query *query,
+		struct lttng_error_query_results **_results,
+		struct notification_thread_handle *notification_thread)
+{
+	enum lttng_error_code ret_code;
+	const struct lttng_trigger *query_target_trigger;
+	const struct lttng_action *query_target_action = NULL;
+	struct lttng_trigger *matching_trigger = NULL;
+	const char *trigger_name;
+	uid_t trigger_owner;
+	enum lttng_trigger_status trigger_status;
+	struct lttng_error_query_results *results = NULL;
+
+	switch (lttng_error_query_get_target_type(query)) {
+	case LTTNG_ERROR_QUERY_TARGET_TYPE_TRIGGER:
+		query_target_trigger = lttng_error_query_trigger_borrow_target(query);
+		break;
+	case LTTNG_ERROR_QUERY_TARGET_TYPE_CONDITION:
+		query_target_trigger =
+				lttng_error_query_condition_borrow_target(query);
+		break;
+	case LTTNG_ERROR_QUERY_TARGET_TYPE_ACTION:
+		query_target_trigger = lttng_error_query_action_borrow_trigger_target(
+				query);
+		break;
+	default:
+		abort();
+	}
+
+	assert(query_target_trigger);
+
+	ret_code = notification_thread_command_get_trigger(notification_thread,
+			query_target_trigger, &matching_trigger);
+	if (ret_code != LTTNG_OK) {
+		goto end;
+	}
+
+	/* No longer needed. */
+	query_target_trigger = NULL;
+
+	if (lttng_error_query_get_target_type(query) ==
+			LTTNG_ERROR_QUERY_TARGET_TYPE_ACTION) {
+		/* Get the sessiond-side version of the target action. */
+		query_target_action =
+				lttng_error_query_action_borrow_action_target(
+						query, matching_trigger);
+	}
+
+	trigger_status = lttng_trigger_get_name(matching_trigger, &trigger_name);
+	trigger_name = trigger_status == LTTNG_TRIGGER_STATUS_OK ?
+			trigger_name : "(anonymous)";
+	trigger_status = lttng_trigger_get_owner_uid(matching_trigger,
+			&trigger_owner);
+	assert(trigger_status == LTTNG_TRIGGER_STATUS_OK);
+
+	results = lttng_error_query_results_create();
+	if (!results) {
+		ret_code = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	DBG("Running \"execute error query\" command: trigger name = '%s', trigger owner uid = %d, command creds uid = %d",
+			trigger_name, (int) trigger_owner,
+			(int) lttng_credentials_get_uid(cmd_creds));
+
+	/*
+	 * Validate the trigger credentials against the command credentials.
+	 * Only the root user can target a trigger with non-matching
+	 * credentials.
+	 */
+	if (!lttng_credentials_is_equal_uid(
+			lttng_trigger_get_credentials(matching_trigger),
+			cmd_creds)) {
+		if (lttng_credentials_get_uid(cmd_creds) != 0) {
+			ERR("Trigger credentials do not match the command credentials: trigger name = '%s', trigger owner uid = %d, command creds uid = %d",
+					trigger_name, (int) trigger_owner,
+					(int) lttng_credentials_get_uid(cmd_creds));
+			ret_code = LTTNG_ERR_INVALID_TRIGGER;
+			goto end;
+		}
+	}
+
+	switch (lttng_error_query_get_target_type(query)) {
+	case LTTNG_ERROR_QUERY_TARGET_TYPE_TRIGGER:
+		trigger_status = lttng_trigger_add_error_results(
+				matching_trigger, results);
+
+		switch (trigger_status) {
+		case LTTNG_TRIGGER_STATUS_OK:
+			break;
+		default:
+			ret_code = LTTNG_ERR_UNK;
+			goto end;
+		}
+
+		break;
+	case LTTNG_ERROR_QUERY_TARGET_TYPE_CONDITION:
+	{
+		trigger_status = lttng_trigger_condition_add_error_results(
+				matching_trigger, results);
+
+		switch (trigger_status) {
+		case LTTNG_TRIGGER_STATUS_OK:
+			break;
+		default:
+			ret_code = LTTNG_ERR_UNK;
+			goto end;
+		}
+
+		break;
+	}
+	case LTTNG_ERROR_QUERY_TARGET_TYPE_ACTION:
+	{
+		const enum lttng_action_status action_status =
+				lttng_action_add_error_query_results(
+						query_target_action, results);
+
+		switch (action_status) {
+		case LTTNG_ACTION_STATUS_OK:
+			break;
+		default:
+			ret_code = LTTNG_ERR_UNK;
+			goto end;
+		}
+
+		break;
+	}
+	default:
+		abort();
+		break;
+	}
+
+	*_results = results;
+	results = NULL;
+	ret_code = LTTNG_OK;
+end:
+	lttng_trigger_put(matching_trigger);
+	lttng_error_query_results_destroy(results);
+	return ret_code;
 }
 
 /*
@@ -4690,6 +5062,11 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 				consumer_copy_output(snapshot_output->consumer);
 		strcpy(snapshot_kernel_consumer_output->chunk_path,
 			snapshot_chunk_name);
+
+		/* Copy the original domain subdir. */
+		strcpy(snapshot_kernel_consumer_output->domain_subdir,
+				original_kernel_consumer_output->domain_subdir);
+
 		ret = consumer_copy_sockets(snapshot_kernel_consumer_output,
 				original_kernel_consumer_output);
 		if (ret < 0) {
@@ -4712,6 +5089,11 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 				consumer_copy_output(snapshot_output->consumer);
 		strcpy(snapshot_ust_consumer_output->chunk_path,
 			snapshot_chunk_name);
+
+		/* Copy the original domain subdir. */
+		strcpy(snapshot_ust_consumer_output->domain_subdir,
+				original_ust_consumer_output->domain_subdir);
+
 		ret = consumer_copy_sockets(snapshot_ust_consumer_output,
 				original_ust_consumer_output);
 		if (ret < 0) {
@@ -4961,7 +5343,7 @@ int cmd_set_session_shm_path(struct ltt_session *session,
 		sizeof(session->shm_path));
 	session->shm_path[sizeof(session->shm_path) - 1] = '\0';
 
-	return 0;
+	return LTTNG_OK;
 }
 
 /*
@@ -5055,7 +5437,7 @@ int cmd_rotate_session(struct ltt_session *session,
 			cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
 			goto error;
 		}
-        }
+	}
 
 	/*
 	 * The current trace chunk becomes the chunk being archived.
@@ -5134,8 +5516,8 @@ int cmd_rotate_session(struct ltt_session *session,
 	chunk_being_archived = NULL;
 	if (!quiet_rotation) {
 		ret = notification_thread_command_session_rotation_ongoing(
-				notification_thread_handle,
-				session->name, session->uid, session->gid,
+				the_notification_thread_handle, session->name,
+				session->uid, session->gid,
 				ongoing_rotation_chunk_id);
 		if (ret != LTTNG_OK) {
 			ERR("Failed to notify notification thread that a session rotation is ongoing for session %s",
@@ -5314,7 +5696,7 @@ end:
  * 'activate' to false means deactivate the rotation schedule and validate that
  * 'new_value' has the same value as the currently active value.
  *
- * Return 0 on success or else a positive LTTNG_ERR code.
+ * Return LTTNG_OK on success or else a positive LTTNG_ERR code.
  */
 int cmd_rotation_set_schedule(struct ltt_session *session,
 		bool activate, enum lttng_rotation_schedule_type schedule_type,

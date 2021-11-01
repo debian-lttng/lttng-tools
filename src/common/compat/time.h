@@ -16,7 +16,7 @@ typedef uint64_t timer_t;
 
 #include <mach/mach.h>
 #include <mach/clock.h>
-#include <errno.h>
+#include <common/compat/errno.h>
 
 #undef NSEC_PER_SEC
 #undef NSEC_PER_MSEC
@@ -53,8 +53,8 @@ int lttng_clock_gettime(clockid_t clk_id, struct timespec *tp)
 		goto deallocate;
 	}
 
-        tp->tv_sec = now.tv_sec;
-        tp->tv_nsec = now.tv_nsec;
+	tp->tv_sec = now.tv_sec;
+	tp->tv_nsec = now.tv_nsec;
 
 deallocate:
 	mach_port_deallocate(mach_task_self(), clock);

@@ -118,6 +118,8 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
 	$(top_srcdir)/m4/lttng_check_sdt_works.m4 \
+	$(top_srcdir)/m4/lttng_pthread_getname_np.m4 \
+	$(top_srcdir)/m4/lttng_pthread_setname_np.m4 \
 	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
 	$(top_srcdir)/m4/pprint.m4 \
 	$(top_srcdir)/m4/rw_prog_cxx_works.m4 \
@@ -125,7 +127,8 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(lttngactioninclude_HEADERS) \
-	$(lttngconditioninclude_HEADERS) $(lttnginclude_HEADERS) \
+	$(lttngconditioninclude_HEADERS) \
+	$(lttngeventruleinclude_HEADERS) $(lttnginclude_HEADERS) \
 	$(lttngnotificationinclude_HEADERS) \
 	$(lttngtriggerinclude_HEADERS) $(noinst_HEADERS) \
 	$(am__DIST_COMMON)
@@ -181,11 +184,13 @@ am__uninstall_files_from_dir = { \
   }
 am__installdirs = "$(DESTDIR)$(lttngactionincludedir)" \
 	"$(DESTDIR)$(lttngconditionincludedir)" \
+	"$(DESTDIR)$(lttngeventruleincludedir)" \
 	"$(DESTDIR)$(lttngincludedir)" \
 	"$(DESTDIR)$(lttngnotificationincludedir)" \
 	"$(DESTDIR)$(lttngtriggerincludedir)"
 HEADERS = $(lttngactioninclude_HEADERS) \
-	$(lttngconditioninclude_HEADERS) $(lttnginclude_HEADERS) \
+	$(lttngconditioninclude_HEADERS) \
+	$(lttngeventruleinclude_HEADERS) $(lttnginclude_HEADERS) \
 	$(lttngnotificationinclude_HEADERS) \
 	$(lttngtriggerinclude_HEADERS) $(noinst_HEADERS)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) \
@@ -230,6 +235,7 @@ CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_ADD_TRIGGER = @CMD_DESCR_ADD_TRIGGER@
 CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
@@ -241,8 +247,10 @@ CMD_DESCR_ENABLE_EVENT = @CMD_DESCR_ENABLE_EVENT@
 CMD_DESCR_ENABLE_ROTATION = @CMD_DESCR_ENABLE_ROTATION@
 CMD_DESCR_HELP = @CMD_DESCR_HELP@
 CMD_DESCR_LIST = @CMD_DESCR_LIST@
+CMD_DESCR_LIST_TRIGGERS = @CMD_DESCR_LIST_TRIGGERS@
 CMD_DESCR_LOAD = @CMD_DESCR_LOAD@
 CMD_DESCR_REGENERATE = @CMD_DESCR_REGENERATE@
+CMD_DESCR_REMOVE_TRIGGER = @CMD_DESCR_REMOVE_TRIGGER@
 CMD_DESCR_ROTATE = @CMD_DESCR_ROTATE@
 CMD_DESCR_SAVE = @CMD_DESCR_SAVE@
 CMD_DESCR_SET_SESSION = @CMD_DESCR_SET_SESSION@
@@ -274,6 +282,7 @@ DEFAULT_APP_SOCKET_RW_TIMEOUT = @DEFAULT_APP_SOCKET_RW_TIMEOUT@
 DEFAULT_CHANNEL_SUBBUF_SIZE = @DEFAULT_CHANNEL_SUBBUF_SIZE@
 DEFAULT_CHANNEL_TRACEFILE_COUNT = @DEFAULT_CHANNEL_TRACEFILE_COUNT@
 DEFAULT_CHANNEL_TRACEFILE_SIZE = @DEFAULT_CHANNEL_TRACEFILE_SIZE@
+DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE = @DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE@
 DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT = @DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT@
 DEFAULT_KERNEL_CHANNEL_LIVE_TIMER = @DEFAULT_KERNEL_CHANNEL_LIVE_TIMER@
 DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER = @DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER@
@@ -363,6 +372,7 @@ NMEDIT = @NMEDIT@
 OBJCOPY = @OBJCOPY@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
+OSTYPE = @OSTYPE@
 OTOOL = @OTOOL@
 OTOOL64 = @OTOOL64@
 PACKAGE = @PACKAGE@
@@ -403,6 +413,12 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
+URCU_BP_CFLAGS = @URCU_BP_CFLAGS@
+URCU_BP_LIBS = @URCU_BP_LIBS@
+URCU_CDS_CFLAGS = @URCU_CDS_CFLAGS@
+URCU_CDS_LIBS = @URCU_CDS_LIBS@
+URCU_CFLAGS = @URCU_CFLAGS@
+URCU_LIBS = @URCU_LIBS@
 UST_CFLAGS = @UST_CFLAGS@
 UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
 UST_CTL_LIBS = @UST_CTL_LIBS@
@@ -454,6 +470,7 @@ localedir = @localedir@
 localstatedir = @localstatedir@
 lttngactionincludedir = @lttngactionincludedir@
 lttngconditionincludedir = @lttngconditionincludedir@
+lttngeventruleincludedir = @lttngeventruleincludedir@
 lttngincludedir = @lttngincludedir@
 lttnglibexecdir = @lttnglibexecdir@
 lttngnotificationincludedir = @lttngnotificationincludedir@
@@ -491,35 +508,48 @@ version_verbose_0 = @echo "  GEN       " $@;
 CLEANFILES = version.i.tmp
 DISTCLEANFILES = version.i
 lttnginclude_HEADERS = \
-	lttng/health.h \
-	lttng/lttng.h \
-	lttng/constant.h \
 	lttng/channel.h \
+	lttng/clear-handle.h \
+	lttng/clear.h \
+	lttng/constant.h \
+	lttng/destruction-handle.h \
 	lttng/domain.h \
+	lttng/endpoint.h \
+	lttng/error-query.h \
+	lttng/event-expr.h \
+	lttng/event-field-value.h \
 	lttng/event.h \
 	lttng/handle.h \
-	lttng/session.h \
-	lttng/lttng-error.h \
-	lttng/snapshot.h \
-	lttng/save.h \
+	lttng/health.h \
+	lttng/kernel-probe.h \
 	lttng/load.h \
-	lttng/endpoint.h \
-	lttng/rotation.h \
 	lttng/location.h \
-	lttng/userspace-probe.h \
+	lttng/log-level-rule.h \
+	lttng/lttng-error.h \
+	lttng/lttng.h \
+	lttng/rotation.h \
+	lttng/save.h \
 	lttng/session-descriptor.h \
-	lttng/destruction-handle.h \
-	lttng/clear.h \
-	lttng/clear-handle.h \
-	lttng/tracker.h
+	lttng/session.h \
+	lttng/snapshot.h \
+	lttng/tracker.h \
+	lttng/userspace-probe.h
 
 lttngactioninclude_HEADERS = \
 	lttng/action/action.h \
-	lttng/action/notify.h
+	lttng/action/list.h \
+	lttng/action/notify.h \
+	lttng/action/path.h \
+	lttng/action/rotate-session.h \
+	lttng/action/snapshot-session.h \
+	lttng/action/start-session.h \
+	lttng/action/stop-session.h \
+	lttng/action/rate-policy.h
 
 lttngconditioninclude_HEADERS = \
 	lttng/condition/condition.h \
 	lttng/condition/buffer-usage.h \
+	lttng/condition/event-rule-matches.h \
 	lttng/condition/session-consumed-size.h \
 	lttng/condition/session-rotation.h \
 	lttng/condition/evaluation.h
@@ -531,30 +561,64 @@ lttngnotificationinclude_HEADERS = \
 lttngtriggerinclude_HEADERS = \
 	lttng/trigger/trigger.h
 
+lttngeventruleinclude_HEADERS = \
+	lttng/event-rule/event-rule.h \
+	lttng/event-rule/jul-logging.h \
+	lttng/event-rule/kernel-kprobe.h \
+	lttng/event-rule/kernel-syscall.h \
+	lttng/event-rule/kernel-tracepoint.h \
+	lttng/event-rule/kernel-uprobe.h \
+	lttng/event-rule/log4j-logging.h \
+	lttng/event-rule/python-logging.h \
+	lttng/event-rule/user-tracepoint.h
+
 noinst_HEADERS = \
-	lttng/snapshot-internal.h \
-	lttng/health-internal.h \
-	lttng/save-internal.h \
-	lttng/load-internal.h \
 	lttng/action/action-internal.h \
+	lttng/action/list-internal.h \
 	lttng/action/notify-internal.h \
-	lttng/condition/condition-internal.h \
-	lttng/condition/buffer-usage-internal.h \
-	lttng/condition/session-consumed-size-internal.h \
-	lttng/condition/evaluation-internal.h \
-	lttng/condition/session-rotation-internal.h \
-	lttng/notification/notification-internal.h \
-	lttng/trigger/trigger-internal.h \
-	lttng/endpoint-internal.h \
-	lttng/notification/channel-internal.h \
+	lttng/action/path-internal.h \
+	lttng/action/rotate-session-internal.h \
+	lttng/action/snapshot-session-internal.h \
+	lttng/action/start-session-internal.h \
+	lttng/action/stop-session-internal.h \
+	lttng/action/rate-policy-internal.h \
 	lttng/channel-internal.h \
+	lttng/condition/buffer-usage-internal.h \
+	lttng/condition/condition-internal.h \
+	lttng/condition/evaluation-internal.h \
+	lttng/condition/event-rule-matches-internal.h \
+	lttng/condition/session-consumed-size-internal.h \
+	lttng/condition/session-rotation-internal.h \
+	lttng/domain-internal.h \
+	lttng/endpoint-internal.h \
+	lttng/error-query-internal.h \
+	lttng/event-expr-internal.h \
+	lttng/event-field-value-internal.h \
 	lttng/event-internal.h \
-	lttng/rotate-internal.h \
-	lttng/ref-internal.h \
+	lttng/event-rule/event-rule-internal.h \
+	lttng/event-rule/jul-logging-internal.h \
+	lttng/event-rule/kernel-kprobe-internal.h \
+	lttng/event-rule/kernel-syscall-internal.h \
+	lttng/event-rule/kernel-tracepoint-internal.h \
+	lttng/event-rule/kernel-uprobe-internal.h \
+	lttng/event-rule/log4j-logging-internal.h \
+	lttng/event-rule/python-logging-internal.h \
+	lttng/event-rule/user-tracepoint-internal.h \
+	lttng/health-internal.h \
+	lttng/kernel-probe-internal.h \
+	lttng/load-internal.h \
 	lttng/location-internal.h \
-	lttng/userspace-probe-internal.h \
-	lttng/session-internal.h \
+	lttng/log-level-rule-internal.h \
+	lttng/notification/channel-internal.h \
+	lttng/notification/notification-internal.h \
+	lttng/ref-internal.h \
+	lttng/rotate-internal.h \
+	lttng/save-internal.h \
 	lttng/session-descriptor-internal.h \
+	lttng/session-internal.h \
+	lttng/snapshot-internal.h \
+	lttng/trigger/trigger-internal.h \
+	lttng/userspace-probe-internal.h \
 	version.h \
 	version.i
 
@@ -654,6 +718,27 @@ uninstall-lttngconditionincludeHEADERS:
 	@list='$(lttngconditioninclude_HEADERS)'; test -n "$(lttngconditionincludedir)" || list=; \
 	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
 	dir='$(DESTDIR)$(lttngconditionincludedir)'; $(am__uninstall_files_from_dir)
+install-lttngeventruleincludeHEADERS: $(lttngeventruleinclude_HEADERS)
+	@$(NORMAL_INSTALL)
+	@list='$(lttngeventruleinclude_HEADERS)'; test -n "$(lttngeventruleincludedir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(lttngeventruleincludedir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(lttngeventruleincludedir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_HEADER) $$files '$(DESTDIR)$(lttngeventruleincludedir)'"; \
+	  $(INSTALL_HEADER) $$files "$(DESTDIR)$(lttngeventruleincludedir)" || exit $$?; \
+	done
+
+uninstall-lttngeventruleincludeHEADERS:
+	@$(NORMAL_UNINSTALL)
+	@list='$(lttngeventruleinclude_HEADERS)'; test -n "$(lttngeventruleincludedir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(lttngeventruleincludedir)'; $(am__uninstall_files_from_dir)
 install-lttngincludeHEADERS: $(lttnginclude_HEADERS)
 	@$(NORMAL_INSTALL)
 	@list='$(lttnginclude_HEADERS)'; test -n "$(lttngincludedir)" || list=; \
@@ -804,7 +889,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(HEADERS) config.h
 installdirs:
-	for dir in "$(DESTDIR)$(lttngactionincludedir)" "$(DESTDIR)$(lttngconditionincludedir)" "$(DESTDIR)$(lttngincludedir)" "$(DESTDIR)$(lttngnotificationincludedir)" "$(DESTDIR)$(lttngtriggerincludedir)"; do \
+	for dir in "$(DESTDIR)$(lttngactionincludedir)" "$(DESTDIR)$(lttngconditionincludedir)" "$(DESTDIR)$(lttngeventruleincludedir)" "$(DESTDIR)$(lttngincludedir)" "$(DESTDIR)$(lttngnotificationincludedir)" "$(DESTDIR)$(lttngtriggerincludedir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -861,6 +946,7 @@ info-am:
 
 install-data-am: install-lttngactionincludeHEADERS \
 	install-lttngconditionincludeHEADERS \
+	install-lttngeventruleincludeHEADERS \
 	install-lttngincludeHEADERS \
 	install-lttngnotificationincludeHEADERS \
 	install-lttngtriggerincludeHEADERS
@@ -909,6 +995,7 @@ ps-am:
 
 uninstall-am: uninstall-lttngactionincludeHEADERS \
 	uninstall-lttngconditionincludeHEADERS \
+	uninstall-lttngeventruleincludeHEADERS \
 	uninstall-lttngincludeHEADERS \
 	uninstall-lttngnotificationincludeHEADERS \
 	uninstall-lttngtriggerincludeHEADERS
@@ -924,6 +1011,7 @@ uninstall-am: uninstall-lttngactionincludeHEADERS \
 	install-html-am install-info install-info-am \
 	install-lttngactionincludeHEADERS \
 	install-lttngconditionincludeHEADERS \
+	install-lttngeventruleincludeHEADERS \
 	install-lttngincludeHEADERS \
 	install-lttngnotificationincludeHEADERS \
 	install-lttngtriggerincludeHEADERS install-man install-pdf \
@@ -933,6 +1021,7 @@ uninstall-am: uninstall-lttngactionincludeHEADERS \
 	mostlyclean-libtool pdf pdf-am ps ps-am tags tags-am uninstall \
 	uninstall-am uninstall-lttngactionincludeHEADERS \
 	uninstall-lttngconditionincludeHEADERS \
+	uninstall-lttngeventruleincludeHEADERS \
 	uninstall-lttngincludeHEADERS \
 	uninstall-lttngnotificationincludeHEADERS \
 	uninstall-lttngtriggerincludeHEADERS
@@ -964,7 +1053,7 @@ version.i:
 	fi; \
 	echo "#define EXTRA_VERSION_NAME \"`$(SED) -n '1p' "$(top_srcdir)/version/extra_version_name" 2> /dev/null`\"" >> version.i.tmp; \
 	echo "#define EXTRA_VERSION_DESCRIPTION \"`$(SED) -E ':a ; N ; $$!ba ; s/[^a-zA-Z0-9 \n\t\.,]/-/g ; s/\r{0,1}\n/\\\n\\\t/g' "$(top_srcdir)/version/extra_version_description" 2> /dev/null`\"" >> version.i.tmp; \
-	echo "#define EXTRA_VERSION_PATCHES \"`ls --ignore='README' -1 "$(top_srcdir)/version/extra_patches" | $(SED) -E ':a ; N ; $$!ba ; s/[^a-zA-Z0-9 \n\t\.]/-/g ; s/\r{0,1}\n/\\\n\\\t/g' 2> /dev/null`\"" >> version.i.tmp; \
+	echo "#define EXTRA_VERSION_PATCHES \"`ls -1 "$(top_srcdir)/version/extra_patches" | $(GREP) -v '^README' | $(SED) -E ':a ; N ; $$!ba ; s/[^a-zA-Z0-9 \n\t\.]/-/g ; s/\r{0,1}\n/\\\n\\\t/g' 2> /dev/null`\"" >> version.i.tmp; \
 	if test ! -f version.i || \
 			test x"`cat version.i.tmp`" != x"`cat version.i`"; then \
 		mv version.i.tmp version.i; \

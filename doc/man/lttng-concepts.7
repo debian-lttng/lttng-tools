@@ -1,0 +1,1807 @@
+'\" t
+.\"     Title: lttng-concepts
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
+.\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
+.\"      Date: 14 June 2021
+.\"    Manual: LTTng Manual
+.\"    Source: LTTng 2.13.1
+.\"  Language: English
+.\"
+.TH "LTTNG\-CONCEPTS" "7" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+lttng-concepts \- LTTng concepts
+.SH "DESCRIPTION"
+.sp
+This manual page documents the concepts of LTTng\&.
+.sp
+Many other LTTng manual pages refer to this one so that you can understand what are the various LTTng objects and how they relate to each other\&.
+.sp
+The concepts of LTTng\ \&2\&.13\&.1 are:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Instrumentation point, event rule, and event
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Trigger
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Recording session
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Tracing domain
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Channel and ring buffer
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Recording event rule and event record
+.RE
+.SH "INSTRUMENTATION POINT, EVENT RULE, AND EVENT"
+.sp
+An \fIinstrumentation point\fR is a point, within a piece of software, which, when executed, creates an LTTng \fIevent\fR\&.
+.sp
+LTTng offers various types of instrumentation; see the \(lqInstrumentation point types\(rq section below to learn about them\&.
+.sp
+An \fIevent rule\fR is a set of conditions to match a set of events\&.
+.sp
+When LTTng creates an event\ \&\fIE\fR, an event rule\ \&\fIER\fR is said to \fImatch\fR\ \&\fIE\fR when\ \&\fIE\fR satisfies \fBall\fR the conditions of\ \&\fIER\fR\&. This concept is similar to a regular expression which matches a set of strings\&.
+.sp
+When an event rule matches an event, LTTng \fIemits\fR the event, therefore attempting to execute one or more actions\&.
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBImportant\fR
+.ps -1
+.br
+.RS 4
+.sp
+The event creation and emission processes are documentation concepts to help understand the journey from an instrumentation point to the execution of actions\&.
+.sp
+The actual creation of an event can be costly because LTTng needs to evaluate the arguments of the instrumentation point\&.
+.sp
+In practice, LTTng implements various optimizations for the Linux kernel and user space tracing domains (see the \(lqTRACING DOMAIN\(rq section below) to avoid actually creating an event when the tracer knows, thanks to properties which are independent from the event payload and current context, that it would never emit such an event\&. Those properties are:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The instrumentation point type (see the \(lqInstrumentation point types\(rq section below)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The instrumentation point name\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The instrumentation point log level\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+For a recording event rule (see the \(lqRECORDING EVENT RULE AND EVENT RECORD\(rq section below):
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The status of the rule itself\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The status of the channel (see the \(lqCHANNEL AND RING BUFFER\(rq section below)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The activity of the recording session (started or stopped; see the \(lqRECORDING SESSION\(rq section below)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Whether or not the process for which LTTng would create the event is allowed to record events (see
+\fBlttng-track\fR(1))\&.
+.RE
+.RE
+.sp
+In other words: if, for a given instrumentation point\ \&\fIIP\fR, the LTTng tracer knows that it would never emit an event, executing\ \&\fIIP\fR represents a simple boolean variable check and, for a Linux kernel recording event rule, a few process attribute checks\&.
+.sp .5v
+.RE
+.sp
+As of LTTng\ \&2\&.13\&.1, there are two places where you can find an event rule:
+.PP
+Recording event rule
+.RS 4
+A specific type of event rule of which the action is to record the matched event as an event record\&.
+.sp
+See the \(lqRECORDING EVENT RULE AND EVENT RECORD\(rq section below\&.
+.sp
+Create or enable a recording event rule with the
+\fBlttng-enable-event\fR(1)
+command\&.
+.sp
+List the recording event rules of a specific recording session and/or channel with the
+\fBlttng-list\fR(1)
+and
+\fBlttng-status\fR(1)
+commands\&.
+.RE
+.PP
+\(lqEvent rule matches\(rq trigger condition (since LTTng\ \&2\&.13)
+.RS 4
+When the event rule of the trigger condition matches an event, LTTng can execute user\-defined actions such as sending an LTTng notification, starting a recording session, and more\&.
+.sp
+See
+\fBlttng-add-trigger\fR(1)
+and
+\fBlttng-event-rule\fR(7)\&.
+.RE
+.sp
+For LTTng to emit an event\ \&\fIE\fR,\ \&\fIE\fR must satisfy \fBall\fR the basic conditions of an event rule\ \&\fIER\fR, that is:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The instrumentation point from which LTTng creates\ \&\fIE\fR
+has a specific type\&.
+.sp
+See the \(lqInstrumentation point types\(rq section below\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A pattern matches the name of\ \&\fIE\fR
+while another pattern doesn\(cqt\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The log level of the instrumentation point from which LTTng creates\ \&\fIE\fR
+is at least as severe as some value, or is exactly some value\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The fields of the payload of\ \&\fIE\fR
+and the current context fields satisfy a filter expression\&.
+.RE
+.sp
+A recording event rule has additional, implicit conditions to satisfy\&. See the \(lqRECORDING EVENT RULE AND EVENT RECORD\(rq section below to learn more\&.
+.SS "Instrumentation point types"
+.sp
+As of LTTng\ \&2\&.13\&.1, the available instrumentation point types are, depending on the tracing domain (see the \(lqTRACING DOMAIN\(rq section below):
+.PP
+Linux kernel
+.RS 4
+.PP
+LTTng tracepoint
+.RS 4
+A statically defined point in the source code of the kernel image or of a kernel module using the LTTng\-modules macros\&.
+.sp
+List the available Linux kernel tracepoints with
+\fBlttng list --kernel\fR\&. See
+\fBlttng-list\fR(1)
+to learn more\&.
+.RE
+.PP
+Linux kernel system call
+.RS 4
+Entry, exit, or both of a Linux kernel system call\&.
+.sp
+List the available Linux kernel system call instrumentation points with
+\fBlttng list --kernel --syscall\fR\&. See
+\fBlttng-list\fR(1)
+to learn more\&.
+.RE
+.PP
+Linux kprobe
+.RS 4
+A single probe dynamically placed in the compiled kernel code\&.
+.sp
+When you create such an instrumentation point, you set its memory address or symbol name\&.
+.RE
+.PP
+Linux user space probe
+.RS 4
+A single probe dynamically placed at the entry of a compiled user space application/library function through the kernel\&.
+.sp
+When you create such an instrumentation point, you set:
+.PP
+With the ELF method
+.RS 4
+Its application/library path and its symbol name\&.
+.RE
+.PP
+With the USDT method
+.RS 4
+Its application/library path, its provider name, and its probe name\&.
+.sp
+\(lqUSDT\(rq stands for SystemTap User\-level Statically Defined Tracing, a DTrace\-style marker\&.
+.RE
+.sp
+As of LTTng\ \&2\&.13\&.1, LTTng only supports USDT probes which are NOT reference\-counted\&.
+.RE
+.PP
+Linux kretprobe
+.RS 4
+Entry, exit, or both of a Linux kernel function\&.
+.sp
+When you create such an instrumentation point, you set the memory address or symbol name of its function\&.
+.RE
+.RE
+.PP
+User space
+.RS 4
+.PP
+LTTng tracepoint
+.RS 4
+A statically defined point in the source code of a C/C++ application/library using the LTTng\-UST macros\&.
+.sp
+List the available Linux kernel tracepoints with
+\fBlttng list --userspace\fR\&. See
+\fBlttng-list\fR(1)
+to learn more\&.
+.RE
+.RE
+.PP
+\fBjava.util.logging\fR, Apache log4j, and Python
+.RS 4
+.PP
+Java or Python logging statement
+.RS 4
+A method call on a Java or Python logger attached to an LTTng\-UST handler\&.
+.sp
+List the available Java and Python loggers with
+\fBlttng list --jul\fR,
+\fBlttng list --log4j\fR, and
+\fBlttng list --python\fR\&. See
+\fBlttng-list\fR(1)
+to learn more\&.
+.RE
+.RE
+.SH "TRIGGER"
+.sp
+A \fItrigger\fR associates a condition to one or more actions\&.
+.sp
+When the condition of a trigger is satisfied, LTTng attempts to execute its actions\&.
+.sp
+As of LTTng\ \&2\&.13\&.1, the available trigger conditions and actions are:
+.PP
+Conditions
+.RS 4
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The consumed buffer size of a given recording session (see the \(lqRECORDING SESSION\(rq section below) becomes greater than some value\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The buffer usage of a given channel (see the \(lqCHANNEL AND RING BUFFER\(rq section below) becomes greater than some value\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The buffer usage of a given channel becomes less than some value\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+There\(cqs an ongoing recording session rotation (see the \(lqRecording session rotation\(rq section below)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A recording session rotation becomes completed\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An event rule matches an event\&.
+.sp
+As of LTTng\ \&2\&.13\&.1, this is the only available condition when you add a trigger with the
+\fBlttng-add-trigger\fR(1)
+command\&. The other ones are available through the liblttng\-ctl C\ \&API\&.
+.RE
+.RE
+.PP
+Actions
+.RS 4
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Send a notification to a user application\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Start a given recording session, like
+\fBlttng-start\fR(1)
+would do\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Stop a given recording session, like
+\fBlttng-stop\fR(1)
+would do\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Archive the current trace chunk of a given recording session (rotate), like
+\fBlttng-rotate\fR(1)
+would do\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Take a snapshot of a given recording session, like
+\fBlttng-snapshot\fR(1)
+would do\&.
+.RE
+.RE
+.sp
+A trigger belongs to a session daemon (see \fBlttng-sessiond\fR(8)), not to a specific recording session\&. For a given session daemon, each Unix user has its own, private triggers\&. Note, however, that the \fBroot\fR Unix user may, for the root session daemon:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Add a trigger as another Unix user\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+List all the triggers, regardless of their owner\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Remove a trigger which belongs to another Unix user\&.
+.RE
+.sp
+For a given session daemon and Unix user, a trigger has a unique name\&.
+.sp
+Add a trigger to a session daemon with the \fBlttng-add-trigger\fR(1) command\&.
+.sp
+List the triggers of your Unix user (or of all users if your Unix user is \fBroot\fR) with the \fBlttng-list-triggers\fR(1) command\&.
+.sp
+Remove a trigger with the \fBlttng-remove-trigger\fR(1) command\&.
+.SH "RECORDING SESSION"
+.sp
+A \fIrecording session\fR (named \(lqtracing session\(rq prior to LTTng\ \&2\&.13) is a stateful dialogue between you and a session daemon (see \fBlttng-sessiond\fR(8)) for everything related to event recording\&.
+.sp
+Everything that you do when you control LTTng tracers to record events happens within a recording session\&. In particular, a recording session:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Has its own name, unique for a given session daemon\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Has its own set of trace files, if any\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Has its own state of activity (started or stopped)\&.
+.sp
+An active recording session is an implicit recording event rule condition (see the \(lqRECORDING EVENT RULE AND EVENT RECORD\(rq section below)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Has its own mode (local, network streaming, snapshot, or live)\&.
+.sp
+See the \(lqRecording session modes\(rq section below to learn more\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Has its own channels (see the \(lqCHANNEL AND RING BUFFER\(rq section below) to which are attached their own recording event rules\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Has its own process attribute inclusion sets (see
+\fBlttng-track\fR(1))\&.
+.RE
+.sp
+Those attributes and objects are completely isolated between different recording sessions\&.
+.sp
+A recording session is like an ATM session: the operations you do on the banking system through the ATM don\(cqt alter the data of other users of the same system\&. In the case of the ATM, a session lasts as long as your bank card is inside\&. In the case of LTTng, a recording session lasts from the \fBlttng-create\fR(1) command to the \fBlttng-destroy\fR(1) command\&.
+.sp
+A recording session belongs to a session daemon (see \fBlttng-sessiond\fR(8))\&. For a given session daemon, each Unix user has its own, private recording sessions\&. Note, however, that the \fBroot\fR Unix user may operate on or destroy another user\(cqs recording session\&.
+.sp
+Create a recording session with the \fBlttng-create\fR(1) command\&.
+.sp
+List the recording sessions of the connected session daemon with the \fBlttng-list\fR(1) command\&.
+.sp
+Start and stop a recording session with the \fBlttng-start\fR(1) and \fBlttng-stop\fR(1) commands\&.
+.sp
+Save and load a recording session with the \fBlttng-save\fR(1) and \fBlttng-load\fR(1) commands\&.
+.sp
+Archive the current trace chunk of (rotate) a recording session with the \fBlttng-rotate\fR(1) command\&.
+.sp
+Destroy a recording session with the \fBlttng-destroy\fR(1) command\&.
+.SS "Current recording session"
+.sp
+When you run the \fBlttng-create\fR(1) command, LTTng creates the \fB$LTTNG_HOME/.lttngrc\fR file if it doesn\(cqt exist (\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR)\&.
+.sp
+\fB$LTTNG_HOME/.lttngrc\fR contains the name of the \fIcurrent recording session\fR\&.
+.sp
+When you create a new recording session with the \fBcreate\fR command, LTTng updates the current recording session\&.
+.sp
+The following \fBlttng\fR(1) commands select the current recording session if you don\(cqt specify one:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-add-context\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-clear\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-destroy\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-disable-channel\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-disable-event\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-disable-rotation\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-enable-channel\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-enable-event\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-enable-rotation\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-regenerate\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-rotate\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-save\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-snapshot\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-start\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-status\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-stop\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-track\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-untrack\fR(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBlttng-view\fR(1)
+.RE
+.sp
+Set the current recording session manually with the \fBlttng-set-session\fR(1) command, without having to edit the \fB.lttngrc\fR file\&.
+.SS "Recording session modes"
+.sp
+LTTng offers four recording session modes:
+.PP
+Local mode
+.RS 4
+Write the trace data to the local file system\&.
+.RE
+.PP
+Network streaming mode
+.RS 4
+Send the trace data over the network to a listening relay daemon (see
+\fBlttng-relayd\fR(8))\&.
+.RE
+.PP
+Snapshot mode
+.RS 4
+Only write the trace data to the local file system or send it to a listening relay daemon (\fBlttng-relayd\fR(8)) when LTTng takes a snapshot\&.
+.sp
+LTTng forces all the channels (see the \(lqCHANNEL AND RING BUFFER\(rq section below) to be created to be configured to be snapshot\-ready\&.
+.sp
+LTTng takes a snapshot of such a recording session when:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+You run the
+\fBlttng-snapshot\fR(1)
+command\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng executes a
+\fBsnapshot-session\fR
+trigger action (see the \(lqTRIGGER\(rq section above)\&.
+.RE
+.RE
+.PP
+Live mode
+.RS 4
+Send the trace data over the network to a listening relay daemon (see
+\fBlttng-relayd\fR(8)) for live reading\&.
+.sp
+An LTTng live reader (for example,
+\fBbabeltrace2\fR(1)) can connect to the same relay daemon to receive trace data while the recording session is active\&.
+.RE
+.SS "Recording session rotation"
+.sp
+A \fIrecording session rotation\fR is the action of archiving the current trace chunk of the recording session to the file system\&.
+.sp
+Once LTTng archives a trace chunk, it does NOT manage it anymore: you can read it, modify it, move it, or remove it\&.
+.sp
+An \fIarchived trace chunk\fR is a collection of metadata and data stream files which form a self\-contained LTTng trace\&. See the \(lqTrace chunk naming\(rq section below to learn how LTTng names a trace chunk archive directory\&.
+.sp
+The \fIcurrent trace chunk\fR of a given recording session includes:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The stream files which LTTng already wrote to the file system, and which are not part of a previously archived trace chunk, since the most recent event amongst:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The first time the recording session was started, either with the
+\fBlttng-start\fR(1)
+command or with a
+\fBstart-session\fR
+trigger action (see the \(lqTRIGGER\(rq section above)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The last rotation, performed with:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An
+\fBlttng-rotate\fR(1)
+command\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A rotation schedule previously set with
+\fBlttng-enable-rotation\fR(1)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An executed
+\fBrotate-session\fR
+trigger action (see the \(lqTRIGGER\(rq section above)\&.
+.RE
+.RE
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The content of all the non\-flushed sub\-buffers of the channels of the recording session\&.
+.RE
+.SS "Trace chunk archive naming"
+.sp
+A trace chunk archive is a subdirectory of the \fBarchives\fR subdirectory within the output directory of a recording session (see the \fB--output\fR option of the \fBlttng-create\fR(1) command and of \fBlttng-relayd\fR(8))\&.
+.sp
+A trace chunk archive contains, through tracing domain and possibly UID/PID subdirectories, metadata and data stream files\&.
+.sp
+A trace chunk archive is, at the same time:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A self\-contained LTTng trace\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A member of a set of trace chunk archives which form the complete trace of a recording session\&.
+.RE
+.sp
+In other words, an LTTng trace reader can read both the recording session output directory (all the trace chunk archives), or a single trace chunk archive\&.
+.sp
+When LTTng performs a recording session rotation, it names the resulting trace chunk archive as such, relative to the output directory of the recording session:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+archives/\fIBEGIN\fR\-\fIEND\fR\-\fIID\fR
+.fi
+.if n \{\
+.RE
+.\}
+.PP
+\fIBEGIN\fR
+.RS 4
+Date and time of the beginning of the trace chunk archive with the ISO\ \&8601\-compatible
+\fIYYYYmmddTHHMMSS\(+-HHMM\fR
+form, where
+\fIYYYYmmdd\fR
+is the date and
+\fIHHMMSS\(+-HHMM\fR
+is the time with the time zone offset from UTC\&.
+.sp
+Example:
+\fB20171119T152407-0500\fR
+.RE
+.PP
+\fIEND\fR
+.RS 4
+Date and time of the end of the trace chunk archive with the ISO\ \&8601\-compatible
+\fIYYYYmmddTHHMMSS\(+-HHMM\fR
+form, where
+\fIYYYYmmdd\fR
+is the date and
+\fIHHMMSS\(+-HHMM\fR
+is the time with the time zone offset from UTC\&.
+.sp
+Example:
+\fB20180118T152407+0930\fR
+.RE
+.PP
+\fIID\fR
+.RS 4
+Unique numeric identifier of the trace chunk within its recording session\&.
+.RE
+.sp
+Trace chunk archive name example:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+archives/20171119T152407\-0500\-20171119T151422\-0500\-3
+.fi
+.if n \{\
+.RE
+.\}
+.SH "TRACING DOMAIN"
+.sp
+A \fItracing domain\fR identifies a type of LTTng tracer\&.
+.sp
+A tracing domain has its own properties and features\&.
+.sp
+There are currently five available tracing domains:
+.TS
+allbox tab(:);
+ltB ltB ltB.
+T{
+Tracing domain
+T}:T{
+\(lqEvent rule matches\(rq trigger condition option
+T}:T{
+Option for other CLI commands
+T}
+.T&
+lt lt lt
+lt lt lt
+lt lt lt
+lt lt lt
+lt lt lt.
+T{
+.sp
+Linux kernel
+T}:T{
+.sp
+\fB--type\fR option starts with \fBkernel:\fR
+T}:T{
+.sp
+\fB--kernel\fR
+T}
+T{
+.sp
+User space
+T}:T{
+.sp
+\fB--type\fR option starts with \fBuser:\fR
+T}:T{
+.sp
+\fB--userspace\fR
+T}
+T{
+.sp
+\fBjava.util.logging\fR (JUL)
+T}:T{
+.sp
+\fB--type\fR option starts with \fBjul:\fR
+T}:T{
+.sp
+\fB--jul\fR
+T}
+T{
+.sp
+Apache log4j
+T}:T{
+.sp
+\fB--type\fR option starts with \fBlog4j:\fR
+T}:T{
+.sp
+\fB--log4j\fR
+T}
+T{
+.sp
+Python
+T}:T{
+.sp
+\fB--type\fR option starts with \fBpython:\fR
+T}:T{
+.sp
+\fB--python\fR
+T}
+.TE
+.sp 1
+.sp
+You must specify a tracing domain to target a type of LTTng tracer when using some \fBlttng\fR(1) commands to avoid ambiguity\&. For example, because the Linux kernel and user space tracing domains support named tracepoints as instrumentation points (see the \(lqINSTRUMENTATION POINT, EVENT RULE, AND EVENT\(rq section above), you need to specify a tracing domain when you create an event rule because both tracing domains could have tracepoints sharing the same name\&.
+.sp
+You can create channels (see the \(lqCHANNEL AND RING BUFFER\(rq section below) in the Linux kernel and user space tracing domains\&. The other tracing domains have a single, default channel\&.
+.SH "CHANNEL AND RING BUFFER"
+.sp
+A \fIchannel\fR is an object which is responsible for a set of ring buffers\&.
+.sp
+Each ring buffer is divided into multiple \fIsub\-buffers\fR\&. When a recording event rule (see the \(lqRECORDING EVENT RULE AND EVENT RECORD\(rq section below) matches an event, LTTng can record it to one or more sub\-buffers of one or more channels\&.
+.sp
+When you create a channel with the \fBlttng-enable-channel\fR(1) command, you set its final attributes, that is:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Its buffering scheme\&.
+.sp
+See the \(lqBuffering scheme\(rq section below\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+What to do when there\(cqs no space left for a new event record because all sub\-buffers are full\&.
+.sp
+See the \(lqEvent record loss mode\(rq section below\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The size of each ring buffer and how many sub\-buffers a ring buffer has\&.
+.sp
+See the \(lqSub\-buffer size and count\(rq section below\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The size of each trace file LTTng writes for this channel and the maximum count of trace files\&.
+.sp
+See the \(lqMaximum trace file size and count\(rq section below\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The periods of its read, switch, and monitor timers\&.
+.sp
+See the \(lqTimers\(rq section below\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+For a Linux kernel channel: its output type (\fBmmap\fR(2)
+or
+\fBsplice\fR(2))\&.
+.sp
+See the
+\fB--output\fR
+option of the
+\fBlttng-enable-channel\fR(1)
+command\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+For a user space channel: the value of its blocking timeout\&.
+.sp
+See the
+\fB--blocking-timeout\fR
+option of the
+\fBlttng-enable-channel\fR(1)
+command\&.
+.RE
+.sp
+Note that the \fBlttng-enable-event\fR(1) command can automatically create a default channel with sane defaults when no channel exists for the provided tracing domain\&.
+.sp
+A channel is always associated to a tracing domain (see the \(lqTRACING DOMAIN\(rq section below)\&. The \fBjava.util.logging\fR (JUL), log4j, and Python tracing domains each have a default channel which you can\(cqt configure\&.
+.sp
+A channel owns recording event rules\&.
+.sp
+List the channels of a given recording session with the \fBlttng-list\fR(1) and \fBlttng-status\fR(1) commands\&.
+.sp
+Disable an enabled channel with the \fBlttng-disable-channel\fR(1) command\&.
+.SS "Buffering scheme"
+.sp
+A channel has at least one ring buffer per CPU\&. LTTng always records an event to the ring buffer dedicated to the CPU which emits it\&.
+.sp
+The buffering scheme of a user space channel determines what has its own set of per\-CPU ring buffers:
+.PP
+Per\-user buffering (\fB--buffers-uid\fR option of the \fBlttng-enable-channel\fR(1) command)
+.RS 4
+Allocate one set of ring buffers (one per CPU) shared by all the instrumented processes of:
+.PP
+If your Unix user is \fBroot\fR
+.RS 4
+Each Unix user\&.
+.RE
+.PP
+Otherwise
+.RS 4
+Your Unix user\&.
+.RE
+.RE
+.PP
+Per\-process buffering (\fB--buffers-pid\fR option of the \fBlttng-enable-channel\fR(1) command)
+.RS 4
+Allocate one set of ring buffers (one per CPU) for each instrumented process of:
+.PP
+If your Unix user is \fBroot\fR
+.RS 4
+All Unix users\&.
+.RE
+.PP
+Otherwise
+.RS 4
+Your Unix user\&.
+.RE
+.RE
+.sp
+The per\-process buffering scheme tends to consume more memory than the per\-user option because systems generally have more instrumented processes than Unix users running instrumented processes\&. However, the per\-process buffering scheme ensures that one process having a high event throughput won\(cqt fill all the shared sub\-buffers of the same Unix user, only its own\&.
+.sp
+The buffering scheme of a Linux kernel channel is always to allocate a single set of ring buffers for the whole system\&. This scheme is similar to the per\-user option, but with a single, global user \(lqrunning\(rq the kernel\&.
+.SS "Event record loss mode"
+.sp
+When LTTng emits an event, LTTng can record it to a specific, available sub\-buffer within the ring buffers of specific channels\&. When there\(cqs no space left in a sub\-buffer, the tracer marks it as consumable and another, available sub\-buffer starts receiving the following event records\&. An LTTng consumer daemon eventually consumes the marked sub\-buffer, which returns to the available state\&.
+.sp
+In an ideal world, sub\-buffers are consumed faster than they are filled\&. In the real world, however, all sub\-buffers can be full at some point, leaving no space to record the following events\&.
+.sp
+By default, LTTng\-modules and LTTng\-UST are \fInon\-blocking\fR tracers: when there\(cqs no available sub\-buffer to record an event, it\(cqs acceptable to lose event records when the alternative would be to cause substantial delays in the execution of the instrumented application\&. LTTng privileges performance over integrity; it aims at perturbing the instrumented application as little as possible in order to make the detection of subtle race conditions and rare interrupt cascades possible\&.
+.sp
+Since LTTng\ \&2\&.10, the LTTng user space tracer, LTTng\-UST, supports a \fIblocking mode\fR\&. See the \fB--blocking-timeout\fR of the \fBlttng-enable-channel\fR(1) command to learn how to use the blocking mode\&.
+.sp
+When it comes to losing event records because there\(cqs no available sub\-buffer, or because the blocking timeout of the channel is reached, the \fIevent record loss mode\fR of the channel determines what to do\&. The available event record loss modes are:
+.PP
+Discard mode
+.RS 4
+Drop the newest event records until a sub\-buffer becomes available\&.
+.sp
+This is the only available mode when you specify a blocking timeout\&.
+.sp
+With this mode, LTTng increments a count of lost event records when an event record is lost and saves this count to the trace\&. A trace reader can use the saved discarded event record count of the trace to decide whether or not to perform some analysis even if trace data is known to be missing\&.
+.RE
+.PP
+Overwrite mode
+.RS 4
+Clear the sub\-buffer containing the oldest event records and start writing the newest event records there\&.
+.sp
+This mode is sometimes called
+\fIflight recorder mode\fR
+because it\(cqs similar to a
+flight recorder <https://en.wikipedia.org/wiki/Flight_recorder>: always keep a fixed amount of the latest data\&. It\(cqs also similar to the roll mode of an oscilloscope\&.
+.sp
+Since LTTng\ \&2\&.8, with this mode, LTTng writes to a given sub\-buffer its sequence number within its data stream\&. With a local, network streaming, or live recording session (see the \(lqRecording session modes\(rq section above), a trace reader can use such sequence numbers to report lost packets\&. A trace reader can use the saved discarded sub\-buffer (packet) count of the trace to decide whether or not to perform some analysis even if trace data is known to be missing\&.
+.sp
+With this mode, LTTng doesn\(cqt write to the trace the exact number of lost event records in the lost sub\-buffers\&.
+.RE
+.sp
+Which mechanism you should choose depends on your context: prioritize the newest or the oldest event records in the ring buffer?
+.sp
+Beware that, in overwrite mode, the tracer abandons a \fIwhole sub\-buffer\fR as soon as a there\(cqs no space left for a new event record, whereas in discard mode, the tracer only discards the event record that doesn\(cqt fit\&.
+.sp
+Set the event record loss mode of a channel with the \fB--discard\fR and \fB--overwrite\fR options of the \fBlttng-enable-channel\fR(1) command\&.
+.sp
+There are a few ways to decrease your probability of losing event records\&. The \(lqSub\-buffer size and count\(rq section below shows how to fine\-tune the sub\-buffer size and count of a channel to virtually stop losing event records, though at the cost of greater memory usage\&.
+.SS "Sub\-buffer size and count"
+.sp
+A channel has one or more ring buffer for each CPU of the target system\&.
+.sp
+See the \(lqBuffering scheme\(rq section above to learn how many ring buffers of a given channel are dedicated to each CPU depending on its buffering scheme\&.
+.sp
+Set the size of each sub\-buffer the ring buffers of a channel contain with the \fB--subbuf-size\fR option of the \fBlttng-enable-channel\fR(1) command\&.
+.sp
+Set the number of sub\-buffers each ring buffer of a channel contains with the \fB--num-subbuf\fR option of the \fBlttng-enable-channel\fR(1) command\&.
+.sp
+Note that LTTng switching the current sub\-buffer of a ring buffer (marking a full one as consumable and switching to an available one for LTTng to record the next events) introduces noticeable CPU overhead\&. Knowing this, the following list presents a few practical situations along with how to configure the sub\-buffer size and count for them:
+.PP
+High event throughput
+.RS 4
+In general, prefer large sub\-buffers to lower the risk of losing event records\&.
+.sp
+Having larger sub\-buffers also ensures a lower sub\-buffer switching frequency (see the \(lqTimers\(rq section below)\&.
+.sp
+The sub\-buffer count is only meaningful if you create the channel in overwrite mode (see the \(lqEvent record loss mode\(rq section above): in this case, if LTTng overwrites a sub\-buffer, then the other sub\-buffers are left unaltered\&.
+.RE
+.PP
+Low event throughput
+.RS 4
+In general, prefer smaller sub\-buffers since the risk of losing event records is low\&.
+.sp
+Because LTTng emits events less frequently, the sub\-buffer switching frequency should remain low and therefore the overhead of the tracer shouldn\(cqt be a problem\&.
+.RE
+.PP
+Low memory system
+.RS 4
+If your target system has a low memory limit, prefer fewer first, then smaller sub\-buffers\&.
+.sp
+Even if the system is limited in memory, you want to keep the sub\-buffers as large as possible to avoid a high sub\-buffer switching frequency\&.
+.RE
+.sp
+Note that LTTng uses CTF <https://diamon.org/ctf/> as its trace format, which means event record data is very compact\&. For example, the average LTTng kernel event record weights about 32\ \&bytes\&. Therefore, a sub\-buffer size of 1\ \&MiB is considered large\&.
+.sp
+The previous scenarios highlight the major trade\-off between a few large sub\-buffers and more, smaller sub\-buffers: sub\-buffer switching frequency vs\&. how many event records are lost in overwrite mode\&. Assuming a constant event throughput and using the overwrite mode, the two following configurations have the same ring buffer total size:
+.PP
+Two sub\-buffers of 4\ \&MiB each
+.RS 4
+Expect a very low sub\-buffer switching frequency, but if LTTng ever needs to overwrite a sub\-buffer, half of the event records so far (4\ \&MiB) are definitely lost\&.
+.RE
+.PP
+Eight sub\-buffers of 1\ \&MiB each
+.RS 4
+Expect four times the tracer overhead of the configuration above, but if LTTng needs to overwrite a sub\-buffer, only the eighth of event records so far (1\ \&MiB) are definitely lost\&.
+.RE
+.sp
+In discard mode, the sub\-buffer count parameter is pointless: use two sub\-buffers and set their size according to your requirements\&.
+.SS "Maximum trace file size and count"
+.sp
+By default, trace files can grow as large as needed\&.
+.sp
+Set the maximum size of each trace file that LTTng writes of a given channel with the \fB--tracefile-size\fR option of the \fBlttng-enable-channel\fR(1) command\&.
+.sp
+When the size of a trace file reaches the fixed maximum size of the channel, LTTng creates another file to contain the next event records\&. LTTng appends a file count to each trace file name in this case\&.
+.sp
+If you set the trace file size attribute when you create a channel, the maximum number of trace files that LTTng creates is \fIunlimited\fR by default\&. To limit them, use the \fB--tracefile-count\fR option of \fBlttng-enable-channel\fR(1)\&. When the number of trace files reaches the fixed maximum count of the channel, LTTng overwrites the oldest trace file\&. This mechanism is called \fItrace file rotation\fR\&.
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBImportant\fR
+.ps -1
+.br
+.RS 4
+.sp
+Even if you don\(cqt limit the trace file count, always assume that LTTng manages all the trace files of the recording session\&.
+.sp
+In other words, there\(cqs no safe way to know if LTTng still holds a given trace file open with the trace file rotation feature\&.
+.sp
+The only way to obtain an unmanaged, self\-contained LTTng trace before you destroy the recording session is with the recording session rotation feature (see the \(lqRecording session rotation\(rq section above), which is available since LTTng\ \&2\&.11\&.
+.sp .5v
+.RE
+.SS "Timers"
+.sp
+Each channel can have up to three optional timers:
+.PP
+Switch timer
+.RS 4
+When this timer expires, a sub\-buffer switch happens: for each ring buffer of the channel, LTTng marks the current sub\-buffer as consumable and switches to an available one to record the next events\&.
+.sp
+A switch timer is useful to ensure that LTTng consumes and commits trace data to trace files or to a distant relay daemon (\fBlttng-relayd\fR(8)) periodically in case of a low event throughput\&.
+.sp
+Such a timer is also convenient when you use large sub\-buffers (see the \(lqSub\-buffer size and count\(rq section above) to cope with a sporadic high event throughput, even if the throughput is otherwise low\&.
+.sp
+Set the period of the switch timer of a channel, or disable the timer altogether, with the
+\fB--switch-timer\fR
+option of the
+\fBlttng-enable-channel\fR(1)
+command\&.
+.RE
+.PP
+Read timer
+.RS 4
+When this timer expires, LTTng checks for full, consumable sub\-buffers\&.
+.sp
+By default, the LTTng tracers use an asynchronous message mechanism to signal a full sub\-buffer so that a consumer daemon can consume it\&.
+.sp
+When such messages must be avoided, for example in real\-time applications, use this timer instead\&.
+.sp
+Set the period of the read timer of a channel, or disable the timer altogether, with the
+\fB--read-timer\fR
+option of the
+\fBlttng-enable-channel\fR(1)
+command\&.
+.RE
+.PP
+Monitor timer
+.RS 4
+When this timer expires, the consumer daemon samples some channel statistics to evaluate the following trigger conditions:
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 1.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  1." 4.2
+.\}
+The consumed buffer size of a given recording session becomes greater than some value\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 2.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  2." 4.2
+.\}
+The buffer usage of a given channel becomes greater than some value\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 3.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  3." 4.2
+.\}
+The buffer usage of a given channel becomes less than some value\&.
+.RE
+.sp
+If you disable the monitor timer of a channel\ \&\fIC\fR:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The consumed buffer size value of the recording session of\ \&\fIC\fR
+could be wrong for trigger condition type\ \&1: the consumed buffer size of\ \&\fIC\fR
+won\(cqt be part of the grand total\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The buffer usage trigger conditions (types\ \&2 and\ \&3) for\ \&\fIC\fR
+will never be satisfied\&.
+.RE
+.sp
+See the \(lqTRIGGER\(rq section above to learn more about triggers\&.
+.sp
+Set the period of the monitor timer of a channel, or disable the timer altogether, with the
+\fB--monitor-timer\fR
+option of the
+\fBlttng-enable-channel\fR(1)
+command\&.
+.RE
+.SH "RECORDING EVENT RULE AND EVENT RECORD"
+.sp
+A \fIrecording event rule\fR is a specific type of event rule (see the \(lqINSTRUMENTATION POINT, EVENT RULE, AND EVENT\(rq section above) of which the action is to serialize and record the matched event as an \fIevent record\fR\&.
+.sp
+Set the explicit conditions of a recording event rule when you create it with the \fBlttng-enable-event\fR(1) command\&. A recording event rule also has the following implicit conditions:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The recording event rule itself is enabled\&.
+.sp
+A recording event rule is enabled on creation\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The channel to which the recording event rule is attached is enabled\&.
+.sp
+A channel is enabled on creation\&.
+.sp
+See the \(lqCHANNEL AND RING BUFFER\(rq section above\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The recording session of the recording event rule is active (started)\&.
+.sp
+A recording session is inactive (stopped) on creation\&.
+.sp
+See the \(lqRECORDING SESSION\(rq section above\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The process for which LTTng creates an event to match is allowed to record events\&.
+.sp
+All processes are allowed to record events on recording session creation\&.
+.sp
+Use the
+\fBlttng-track\fR(1)
+and
+\fBlttng-untrack\fR(1)
+commands to select which processes are allowed to record events based on specific process attributes\&.
+.RE
+.sp
+You always attach a recording event rule to a channel, which belongs to a recording session, when you create it\&.
+.sp
+When a recording event rule\ \&\fIER\fR matches an event\ \&\fIE\fR, LTTng attempts to serialize and record\ \&\fIE\fR to one of the available sub\-buffers of the channel to which\ \&\fIE\fR is attached\&.
+.sp
+When multiple matching recording event rules are attached to the same channel, LTTng attempts to serialize and record the matched event \fIonce\fR\&. In the following example, the second recording event rule is redundant when both are enabled:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng enable\-event \-\-userspace hello:world
+$ lttng enable\-event \-\-userspace hello:world \-\-loglevel=INFO
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+List the recording event rules of a specific recording session and/or channel with the \fBlttng-list\fR(1) and \fBlttng-status\fR(1) commands\&.
+.sp
+Disable a recording event rule with the \fBlttng-disable-event\fR(1) command\&.
+.sp
+As of LTTng\ \&2\&.13\&.1, you cannot remove a recording event rule: it exists as long as its recording session exists\&.
+.SH "RESOURCES"
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng project website <https://lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng documentation <https://lttng.org/docs>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng bug tracker <https://bugs.lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Git repositories <https://git.lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+GitHub organization <https://github.com/lttng>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
+for support and development:
+\fBlttng-dev@lists.lttng.org\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+IRC channel <irc://irc.oftc.net/lttng>:
+\fB#lttng\fR
+on
+\fBirc.oftc.net\fR
+.RE
+.SH "COPYRIGHT"
+.sp
+This program is part of the LTTng\-tools project\&.
+.sp
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+.SH "THANKS"
+.sp
+Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
+.sp
+Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
+.SH "SEE ALSO"
+.sp
+\fBlttng\fR(1), \fBlttng-relayd\fR(8), \fBlttng-sessiond\fR(8)

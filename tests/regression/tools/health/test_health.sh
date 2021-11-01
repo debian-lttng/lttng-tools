@@ -8,7 +8,7 @@ UST_EVENT_NAME="tp:tptest"
 KERNEL_EVENT_NAME="sched_switch"
 CHANNEL_NAME="testchan"
 HEALTH_CHECK_BIN="health_check"
-NUM_TESTS=106
+NUM_TESTS=99
 SLEEP_TIME=30
 
 source $TESTDIR/utils/utils.sh
@@ -124,9 +124,12 @@ function test_health
 	if [ ${test_relayd} -eq 1 ]; then
 		# We may fail to stop relayd here, and this is OK, since
 		# it may have been killed volountarily by testpoint.
-		stop_lttng_relayd_notap $KILL_SIGNAL
+		stop_lttng_relayd_cleanup $KILL_SIGNAL
 	fi
-	stop_lttng_consumerd $KILL_SIGNAL
+
+	if [ ${test_consumerd} -eq 1 ]; then
+		stop_lttng_consumerd $KILL_SIGNAL
+	fi
 	stop_lttng_sessiond $KILL_SIGNAL
 
 	unset LTTNG_TESTPOINT_ENABLE
@@ -268,10 +271,10 @@ TEST_RELAYD=(
 	1
 )
 
-STDOUT_PATH=$(mktemp)
-STDERR_PATH=$(mktemp)
-TRACE_PATH=$(mktemp -d)
-HEALTH_PATH=$(mktemp -d)
+STDOUT_PATH=$(mktemp --tmpdir tmp.test_health_stdout_path.XXXXXX)
+STDERR_PATH=$(mktemp --tmpdir tmp.test_health_stderr_path.XXXXXX)
+TRACE_PATH=$(mktemp --tmpdir -d tmp.test_health_trace_path.XXXXXX)
+HEALTH_PATH=$(mktemp --tmpdir -d tmp.test_health_trace_path.XXXXXX)
 
 if [ "$(id -u)" == "0" ]; then
 	isroot=1

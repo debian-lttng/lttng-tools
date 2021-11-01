@@ -4,9 +4,11 @@ SUBDIRS = tools kernel ust
 
 LOG_DRIVER_FLAGS = --merge --post-script $(top_srcdir)/tests/utils/warn_processes.sh
 LOG_DRIVER = env PGREP='$(PGREP)' AM_TAP_AWK='$(AWK)' $(SHELL) \
-	$(top_srcdir)/config/tap-driver.sh
+	$(top_srcdir)/tests/utils/tap-driver.sh
 
-TESTS = tools/filtering/test_invalid_filter \
+TESTS = tools/base-path/test_ust \
+	tools/channel/test_channel \
+	tools/filtering/test_invalid_filter \
 	tools/filtering/test_unsupported_op \
 	tools/filtering/test_valid_filter \
 	tools/streaming/test_ust \
@@ -27,8 +29,17 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/crash/test_crash \
 	tools/regen-metadata/test_ust \
 	tools/regen-statedump/test_ust \
-	tools/notification/test_notification_ust \
-	tools/notification/test_notification_kernel \
+	tools/notification/test_notification_ust_error \
+	tools/notification/test_notification_ust_buffer_usage \
+	tools/notification/test_notification_ust_capture \
+	tools/notification/test_notification_ust_event_rule_condition_exclusion \
+	tools/notification/test_notification_kernel_error \
+	tools/notification/test_notification_kernel_buffer_usage \
+	tools/notification/test_notification_kernel_capture \
+	tools/notification/test_notification_kernel_instrumentation \
+	tools/notification/test_notification_kernel_syscall \
+	tools/notification/test_notification_notifier_discarded_count \
+	tools/notification/test_notification_kernel_userspace_probe \
 	tools/notification/test_notification_multi_app \
 	tools/rotation/test_ust \
 	tools/rotation/test_kernel \
@@ -36,10 +47,15 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/rotation/test_schedule_api \
 	tools/metadata/test_kernel \
 	tools/working-directory/test_relayd_working_directory \
-	tools/notification/test_notification_multi_app \
 	tools/clear/test_ust \
 	tools/clear/test_kernel \
-	tools/tracker/test_event_tracker
+	tools/tracker/test_event_tracker \
+	tools/trigger/start-stop/test_start_stop \
+	tools/trigger/test_add_trigger_cli \
+	tools/trigger/test_list_triggers_cli \
+	tools/trigger/test_remove_trigger_cli \
+	tools/trigger/name/test_trigger_name_backwards_compat \
+	tools/trigger/hidden/test_hidden_trigger
 
 if HAVE_LIBLTTNG_UST_CTL
 SUBDIRS += ust
@@ -59,10 +75,15 @@ TESTS += ust/before-after/test_before_after \
 	ust/blocking/test_blocking \
 	ust/multi-lib/test_multi_lib \
 	ust/rotation-destroy-flush/test_rotation_destroy_flush \
-	ust/namespaces/test_ns_contexts \
-	ust/namespaces/test_ns_contexts_change \
 	tools/metadata/test_ust \
-	tools/relayd-grouping/test_ust
+	tools/relayd-grouping/test_ust \
+	tools/trigger/rate-policy/test_ust_rate_policy
+
+if IS_LINUX
+TESTS += \
+	ust/namespaces/test_ns_contexts \
+	ust/namespaces/test_ns_contexts_change
+endif # IS_LINUX
 endif # HAVE_LIBLTTNG_UST_CTL
 
 if PYTHON_BINDING

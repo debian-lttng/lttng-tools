@@ -20,7 +20,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <dirent.h>
-#include <byteswap.h>
+#include <common/compat/endian.h>
 #include <inttypes.h>
 #include <stdbool.h>
 
@@ -183,7 +183,7 @@ static const char *progname;
 static char *opt_viewer_path = NULL;
 static char *opt_output_path = NULL;
 
-static char *input_path;
+static char *the_input_path;
 
 int lttng_opt_quiet, lttng_opt_verbose, lttng_opt_mi;
 
@@ -300,7 +300,7 @@ static int parse_args(int argc, char **argv)
 		goto error;
 	}
 
-	input_path = argv[optind];
+	the_input_path = argv[optind];
 end:
 	return ret;
 
@@ -373,19 +373,19 @@ uint64_t _crash_get_field(const struct lttng_crash_layout *layout,
 	switch (size) {
 	case 1:	return *(uint8_t *) ptr;
 	case 2:	if (layout->reverse_byte_order) {
-			return __bswap_16(*(uint16_t *) ptr);
+			return bswap_16(*(uint16_t *) ptr);
 		} else {
 			return *(uint16_t *) ptr;
 
 		}
 	case 4:	if (layout->reverse_byte_order) {
-			return __bswap_32(*(uint32_t *) ptr);
+			return bswap_32(*(uint32_t *) ptr);
 		} else {
 			return *(uint32_t *) ptr;
 
 		}
 	case 8:	if (layout->reverse_byte_order) {
-			return __bswap_64(*(uint64_t *) ptr);
+			return bswap_64(*(uint64_t *) ptr);
 		} else {
 			return *(uint64_t *) ptr;
 		}
@@ -720,7 +720,7 @@ int copy_crash_subbuf(const struct lttng_crash_layout *layout,
 				subbuf_ptr + layout->offset.packet_size,
 				layout->length.packet_size);
 			if (layout->reverse_byte_order) {
-				packet_size = __bswap_64(packet_size);
+				packet_size = bswap_64(packet_size);
 			}
 			packet_size /= CHAR_BIT;
 		} else {
@@ -736,7 +736,7 @@ int copy_crash_subbuf(const struct lttng_crash_layout *layout,
 		 */
 		patch_size = committed * CHAR_BIT;
 		if (layout->reverse_byte_order) {
-			patch_size = __bswap_64(patch_size);
+			patch_size = bswap_64(patch_size);
 		}
 		if (layout->length.content_size) {
 			memcpy(subbuf_ptr + layout->offset.content_size,
@@ -1244,7 +1244,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	ret = extract_trace_recursive(output_path, input_path);
+	ret = extract_trace_recursive(output_path, the_input_path);
 	if (ret < 0) {
 		has_warning = true;
 		goto end;

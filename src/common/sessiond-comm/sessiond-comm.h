@@ -41,7 +41,12 @@
 #define LTTNG_SESSIOND_COMM_MAX_LISTEN 64
 
 /* Maximum number of FDs that can be sent over a Unix socket */
-#define LTTCOMM_MAX_SEND_FDS           4
+#if defined(__linux__)
+/* Based on the kernel's SCM_MAX_FD which is 253 since 2.6.38 (255 before) */
+#define LTTCOMM_MAX_SEND_FDS           253
+#else
+#define LTTCOMM_MAX_SEND_FDS           16
+#endif
 
 /*
  * Get the error code index from 0 since LTTCOMM_OK start at 1000
@@ -101,7 +106,104 @@ enum lttcomm_sessiond_command {
 	LTTNG_SESSION_LIST_ROTATION_SCHEDULES           = 48,
 	LTTNG_CREATE_SESSION_EXT                        = 49,
 	LTTNG_CLEAR_SESSION                             = 50,
+	LTTNG_LIST_TRIGGERS                             = 51,
+	LTTNG_EXECUTE_ERROR_QUERY                       = 52,
 };
+
+static inline
+const char *lttcomm_sessiond_command_str(enum lttcomm_sessiond_command cmd)
+{
+	switch (cmd) {
+	case LTTNG_ADD_CONTEXT:
+		return "LTTNG_ADD_CONTEXT";
+	case LTTNG_DISABLE_CHANNEL:
+		return "LTTNG_DISABLE_CHANNEL";
+	case LTTNG_DISABLE_EVENT:
+		return "LTTNG_DISABLE_EVENT";
+	case LTTNG_LIST_SYSCALLS:
+		return "LTTNG_LIST_SYSCALLS";
+	case LTTNG_ENABLE_CHANNEL:
+		return "LTTNG_ENABLE_CHANNEL";
+	case LTTNG_ENABLE_EVENT:
+		return "LTTNG_ENABLE_EVENT";
+	case LTTNG_DESTROY_SESSION:
+		return "LTTNG_DESTROY_SESSION";
+	case LTTNG_LIST_CHANNELS:
+		return "LTTNG_LIST_CHANNELS";
+	case LTTNG_LIST_DOMAINS:
+		return "LTTNG_LIST_DOMAINS";
+	case LTTNG_LIST_EVENTS:
+		return "LTTNG_LIST_EVENTS";
+	case LTTNG_LIST_SESSIONS:
+		return "LTTNG_LIST_SESSIONS";
+	case LTTNG_LIST_TRACEPOINTS:
+		return "LTTNG_LIST_TRACEPOINTS";
+	case LTTNG_REGISTER_CONSUMER:
+		return "LTTNG_REGISTER_CONSUMER";
+	case LTTNG_START_TRACE:
+		return "LTTNG_START_TRACE";
+	case LTTNG_STOP_TRACE:
+		return "LTTNG_STOP_TRACE";
+	case LTTNG_LIST_TRACEPOINT_FIELDS:
+		return "LTTNG_LIST_TRACEPOINT_FIELDS";
+	case LTTNG_DISABLE_CONSUMER:
+		return "LTTNG_DISABLE_CONSUMER";
+	case LTTNG_ENABLE_CONSUMER:
+		return "LTTNG_ENABLE_CONSUMER";
+	case LTTNG_SET_CONSUMER_URI:
+		return "LTTNG_SET_CONSUMER_URI";
+	case LTTNG_DATA_PENDING:
+		return "LTTNG_DATA_PENDING";
+	case LTTNG_SNAPSHOT_ADD_OUTPUT:
+		return "LTTNG_SNAPSHOT_ADD_OUTPUT";
+	case LTTNG_SNAPSHOT_DEL_OUTPUT:
+		return "LTTNG_SNAPSHOT_DEL_OUTPUT";
+	case LTTNG_SNAPSHOT_LIST_OUTPUT:
+		return "LTTNG_SNAPSHOT_LIST_OUTPUT";
+	case LTTNG_SNAPSHOT_RECORD:
+		return "LTTNG_SNAPSHOT_RECORD";
+	case LTTNG_SAVE_SESSION:
+		return "LTTNG_SAVE_SESSION";
+	case LTTNG_PROCESS_ATTR_TRACKER_ADD_INCLUDE_VALUE:
+		return "LTTNG_PROCESS_ATTR_TRACKER_ADD_INCLUDE_VALUE";
+	case LTTNG_PROCESS_ATTR_TRACKER_REMOVE_INCLUDE_VALUE:
+		return "LTTNG_PROCESS_ATTR_TRACKER_REMOVE_INCLUDE_VALUE";
+	case LTTNG_PROCESS_ATTR_TRACKER_GET_POLICY:
+		return "LTTNG_PROCESS_ATTR_TRACKER_GET_POLICY";
+	case LTTNG_PROCESS_ATTR_TRACKER_SET_POLICY:
+		return "LTTNG_PROCESS_ATTR_TRACKER_SET_POLICY";
+	case LTTNG_PROCESS_ATTR_TRACKER_GET_INCLUSION_SET:
+		return "LTTNG_PROCESS_ATTR_TRACKER_GET_INCLUSION_SET";
+	case LTTNG_SET_SESSION_SHM_PATH:
+		return "LTTNG_SET_SESSION_SHM_PATH";
+	case LTTNG_REGENERATE_METADATA:
+		return "LTTNG_REGENERATE_METADATA";
+	case LTTNG_REGENERATE_STATEDUMP:
+		return "LTTNG_REGENERATE_STATEDUMP";
+	case LTTNG_REGISTER_TRIGGER:
+		return "LTTNG_REGISTER_TRIGGER";
+	case LTTNG_UNREGISTER_TRIGGER:
+		return "LTTNG_UNREGISTER_TRIGGER";
+	case LTTNG_ROTATE_SESSION:
+		return "LTTNG_ROTATE_SESSION";
+	case LTTNG_ROTATION_GET_INFO:
+		return "LTTNG_ROTATION_GET_INFO";
+	case LTTNG_ROTATION_SET_SCHEDULE:
+		return "LTTNG_ROTATION_SET_SCHEDULE";
+	case LTTNG_SESSION_LIST_ROTATION_SCHEDULES:
+		return "LTTNG_SESSION_LIST_ROTATION_SCHEDULES";
+	case LTTNG_CREATE_SESSION_EXT:
+		return "LTTNG_CREATE_SESSION_EXT";
+	case LTTNG_CLEAR_SESSION:
+		return "LTTNG_CLEAR_SESSION";
+	case LTTNG_LIST_TRIGGERS:
+		return "LTTNG_LIST_TRIGGERS";
+	case LTTNG_EXECUTE_ERROR_QUERY:
+		return "LTTNG_EXECUTE_ERROR_QUERY";
+	default:
+		abort();
+	}
+}
 
 enum lttcomm_relayd_command {
 	RELAYD_ADD_STREAM                   = 1,
@@ -278,7 +380,7 @@ struct lttcomm_session_msg {
 		/* Event data */
 		struct {
 			char channel_name[LTTNG_SYMBOL_NAME_LEN];
-			struct lttng_event event LTTNG_PACKED;
+			struct lttng_event event;
 			/* Length of following filter expression. */
 			uint32_t expression_len;
 			/* Length of following bytecode for filter. */
@@ -297,7 +399,7 @@ struct lttcomm_session_msg {
 		} LTTNG_PACKED enable;
 		struct {
 			char channel_name[LTTNG_SYMBOL_NAME_LEN];
-			struct lttng_event event LTTNG_PACKED;
+			struct lttng_event event;
 			/* Length of following filter expression. */
 			uint32_t expression_len;
 			/* Length of following bytecode for filter. */
@@ -311,14 +413,13 @@ struct lttcomm_session_msg {
 		} LTTNG_PACKED disable;
 		/* Create channel */
 		struct {
-			struct lttng_channel chan LTTNG_PACKED;
-			/* struct lttng_channel_extended is already packed. */
+			struct lttng_channel chan;
 			struct lttng_channel_extended extended;
 		} LTTNG_PACKED channel;
 		/* Context */
 		struct {
 			char channel_name[LTTNG_SYMBOL_NAME_LEN];
-			struct lttng_event_context ctx LTTNG_PACKED;
+			struct lttng_event_context ctx;
 			uint32_t provider_name_len;
 			uint32_t context_name_len;
 		} LTTNG_PACKED context;
@@ -337,18 +438,18 @@ struct lttcomm_session_msg {
 			uint32_t size;
 		} LTTNG_PACKED uri;
 		struct {
-			struct lttng_snapshot_output output LTTNG_PACKED;
+			struct lttng_snapshot_output output;
 		} LTTNG_PACKED snapshot_output;
 		struct {
 			uint32_t wait;
-			struct lttng_snapshot_output output LTTNG_PACKED;
+			struct lttng_snapshot_output output;
 		} LTTNG_PACKED snapshot_record;
 		struct {
 			uint32_t nb_uri;
 			unsigned int timer_interval;	/* usec */
 		} LTTNG_PACKED session_live;
 		struct {
-			struct lttng_save_session_attr attr; /* struct already packed */
+			struct lttng_save_session_attr attr;
 		} LTTNG_PACKED save_session;
 		struct {
 			char shm_path[PATH_MAX];
@@ -385,7 +486,11 @@ struct lttcomm_session_msg {
 		} LTTNG_PACKED process_attr_tracker_set_tracking_policy;
 		struct {
 			uint32_t length;
+			uint8_t is_trigger_anonymous;
 		} LTTNG_PACKED trigger;
+		struct {
+			uint32_t length;
+		} LTTNG_PACKED error_query;
 		struct {
 			uint64_t rotation_id;
 		} LTTNG_PACKED get_rotation_info;
@@ -411,6 +516,8 @@ struct lttcomm_session_msg {
 			/* An lttng_session_descriptor follows. */
 		} LTTNG_PACKED create_session;
 	} u;
+	/* Count of fds sent. */
+	uint32_t fd_count;
 } LTTNG_PACKED;
 
 #define LTTNG_FILTER_MAX_LEN	65536
@@ -422,7 +529,7 @@ struct lttcomm_session_msg {
  * starts at reloc_table_offset.
  */
 #define LTTNG_FILTER_PADDING	32
-struct lttng_filter_bytecode {
+struct lttng_bytecode {
 	uint32_t len;	/* len of data */
 	uint32_t reloc_table_offset;
 	uint64_t seqnum;
@@ -502,6 +609,7 @@ struct lttcomm_lttng_msg {
 	uint32_t pid;		/* pid_t */
 	uint32_t cmd_header_size;
 	uint32_t data_size;
+	uint32_t fd_count;
 } LTTNG_PACKED;
 
 struct lttcomm_lttng_output_id {
@@ -759,11 +867,11 @@ struct lttcomm_ust_msg {
 	uint32_t handle;
 	uint32_t cmd;
 	union {
-		struct lttng_ust_channel channel;
-		struct lttng_ust_stream stream;
-		struct lttng_ust_event event;
-		struct lttng_ust_context context;
-		struct lttng_ust_tracer_version version;
+		struct lttng_ust_abi_channel channel;
+		struct lttng_ust_abi_stream stream;
+		struct lttng_ust_abi_event event;
+		struct lttng_ust_abi_context context;
+		struct lttng_ust_abi_tracer_version version;
 	} u;
 } LTTNG_PACKED;
 
@@ -783,7 +891,7 @@ struct lttcomm_ust_reply {
 		struct {
 			uint64_t memory_map_size;
 		} LTTNG_PACKED stream;
-		struct lttng_ust_tracer_version version;
+		struct lttng_ust_abi_tracer_version version;
 	} u;
 } LTTNG_PACKED;
 

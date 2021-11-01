@@ -1,11 +1,11 @@
 lttng-disable-rotation(1)
 =========================
-:revdate: 8 November 2018
+:revdate: 14 June 2021
 
 
 NAME
 ----
-lttng-disable-rotation - Unset a tracing session's rotation schedule
+lttng-disable-rotation - Unset an LTTng recording session rotation schedule
 
 
 SYNOPSIS
@@ -17,12 +17,23 @@ SYNOPSIS
 
 DESCRIPTION
 -----------
-The `lttng disable-rotation` command unsets a rotation schedule for the
-current tracing session, or for the tracing session named 'SESSION' if
-provided, previously set with the man:lttng-enable-rotation(1) command.
+The `lttng disable-rotation` command unsets a rotation schedule,
+previously set with the man:lttng-enable-rotation(1) command, for:
+
+With the option:--session='SESSION' option::
+    The recording session named 'SESSION'.
+
+Without the option:--session option::
+    The current recording session (see man:lttng-concepts(7) to learn
+    more about the current recording session).
+
+See man:lttng-concepts(7) to learn more about the recording session
+rotation and trace chunk concepts.
+
+See the ``<<examples,EXAMPLES>>'' section below for usage examples.
 
 
-include::common-cmd-options-head.txt[]
+include::common-lttng-cmd-options-head.txt[]
 
 
 Rotation schedule condition
@@ -36,20 +47,49 @@ option:--timer::
     option of the man:lttng-enable-rotation(1) command.
 
 
-Target
-~~~~~~
+Recording target
+~~~~~~~~~~~~~~~~
 option:-s 'SESSION', option:--session='SESSION'::
-    Unset a rotation schedule in the tracing session named 'SESSION'
-    instead of the current tracing session.
+    Unset a rotation schedule for the recording session named 'SESSION'
+    instead of the current recording session.
 
 
-include::common-cmd-help-options.txt[]
+include::common-lttng-cmd-help-options.txt[]
 
 
-include::common-cmd-footer.txt[]
+include::common-lttng-cmd-after-options.txt[]
+
+
+[[examples]]
+EXAMPLES
+--------
+.Unset the size-based rotation schedule of the current recording session.
+====
+See the option:--size option.
+
+[role="term"]
+----
+$ lttng disable-rotation --size
+----
+====
+
+.Unset the periodic rotation schedule of a specific recording session.
+====
+See the option:--timer and option:--session options.
+
+[role="term"]
+----
+$ lttng disable-rotation --session=my-session --timer
+----
+====
+
+
+include::common-footer.txt[]
 
 
 SEE ALSO
 --------
+man:lttng(1),
 man:lttng-enable-rotation(1),
-man:lttng(1)
+man:lttng-rotate(1),
+man:lttng-concepts(7)

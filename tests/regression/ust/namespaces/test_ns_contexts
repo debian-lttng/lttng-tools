@@ -12,12 +12,12 @@ TESTDIR=$CURDIR/../../..
 TESTAPP_PATH="$TESTDIR/utils/testapp"
 TESTAPP_NAME="gen-ust-events"
 TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
-NUM_EVENT=10000
+NUM_EVENT=1000
 EVENT_NAME="tp:tptest"
 
 TESTS_PER_NS=13
 
-NUM_TESTS=$((TESTS_PER_NS * 7))
+NUM_TESTS=$((TESTS_PER_NS * 8))
 
 source "$TESTDIR/utils/utils.sh"
 
@@ -35,7 +35,6 @@ function test_ns()
 	local session_name="${ns}_ns"
 	local chan_name="${ns}_ns"
 	local context_name="${ns}_ns"
-
 	local trace_path
 	local ns_inode
 
@@ -45,11 +44,11 @@ function test_ns()
 		return
 	fi
 
+	trace_path=$(mktemp --tmpdir -d -t "tmp.${FUNCNAME[0]}_trace_path.XXXXXX")
+
 	# Get the current ns inode number
 	ns_inode=$(stat -c '%i' -L "/proc/$$/ns/$ns")
 	ok $? "Get current $ns namespace inode: $ns_inode"
-
-	trace_path=$(mktemp -d)
 
 	start_lttng_sessiond
 
@@ -89,5 +88,6 @@ test_ns ipc
 test_ns mnt
 test_ns net
 test_ns pid
+test_ns time
 test_ns user
 test_ns uts

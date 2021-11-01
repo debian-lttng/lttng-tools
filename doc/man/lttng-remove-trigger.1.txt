@@ -1,0 +1,83 @@
+lttng-remove-trigger(1)
+=======================
+:revdate: 17 May 2021
+
+
+NAME
+----
+lttng-remove-trigger - Remove an LTTng trigger
+
+
+SYNOPSIS
+--------
+[verse]
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *remove-trigger* [option:--owner-uid='UID'] 'NAME'
+
+
+DESCRIPTION
+-----------
+The `lttng remove-trigger` command removes the trigger named 'NAME'.
+
+See man:lttng-concepts(7) to learn more about LTTng triggers.
+
+List the triggers of your Unix user, or of all users if your
+Unix user is `root`, with the man:lttng-list-triggers(1) command.
+
+The `remove-trigger` command removes a trigger which belong to your Unix
+user. If your Unix user is `root`, you can remove the trigger of another
+user with the option:--owner-uid option.
+
+See the ``<<examples,EXAMPLES>>'' section below for usage examples.
+
+
+OPTIONS
+-------
+Identification
+~~~~~~~~~~~~~~
+option:--owner-uid='UID'::
+    Remove the trigger named 'NAME' of the Unix user having the user ID
+    'UID'.
++
+You may only use this option if your Unix user is `root`.
+
+
+include::common-lttng-cmd-help-options.txt[]
+
+
+include::common-lttng-cmd-after-options.txt[]
+
+
+[[examples]]
+EXAMPLES
+--------
+.Remove a trigger.
+====
+[role="term"]
+----
+$ lttng remove-trigger my-trigger
+----
+====
+
+.Remove a trigger as another Unix user.
+====
+The command line below removes a trigger as the `mireille` Unix user.
+
+Your Unix user must be `root` to use the option:--owner-uid option.
+
+[role="term"]
+----
+$ lttng remove-trigger --owner-uid=$(id --user mireille) \
+                       my-trigger
+----
+====
+
+
+include::common-footer.txt[]
+
+
+SEE ALSO
+--------
+man:lttng(1),
+man:lttng-add-trigger(1),
+man:lttng-list-triggers(1),
+man:lttng-concepts(7)

@@ -68,7 +68,7 @@ struct ltt_session {
 	char name[NAME_MAX];
 	bool has_auto_generated_name;
 	bool name_contains_creation_time;
-	char hostname[HOST_NAME_MAX]; /* Local hostname. */
+	char hostname[LTTNG_HOST_NAME_MAX]; /* Local hostname. */
 	/* Path of the last closed chunk. */
 	char last_chunk_path[LTTNG_PATH_MAX];
 	time_t creation_time;
@@ -146,6 +146,10 @@ struct ltt_session {
 	 */
 	struct lttng_ht_node_u64 node;
 	/*
+	 * Node in ltt_sessions_ht_by_name.
+	 */
+	struct lttng_ht_node_str node_by_name;
+	/*
 	 * Timer to check periodically if a relay and/or consumer has completed
 	 * the last rotation.
 	 */
@@ -206,7 +210,7 @@ void session_unlock(struct ltt_session *session);
  * also used as a multi-session lock when synchronizing newly-registered
  * 'user space tracer' and 'agent' applications.
  *
- * In other words, it prevents session configurations from changing while they
+ * In other words, it prevents tracer configurations from changing while they
  * are being transmitted to the various applications.
  */
 void session_lock_list(void);
@@ -240,7 +244,7 @@ struct ltt_session *session_find_by_id(uint64_t id);
 struct ltt_session_list *session_get_list(void);
 void session_list_wait_empty(void);
 
-int session_access_ok(struct ltt_session *session, uid_t uid, gid_t gid);
+bool session_access_ok(struct ltt_session *session, uid_t uid);
 
 int session_reset_rotation_state(struct ltt_session *session,
 		enum lttng_rotation_state result);
@@ -277,5 +281,16 @@ int session_close_trace_chunk(struct ltt_session *session,
 enum lttng_error_code session_open_packets(struct ltt_session *session);
 
 bool session_output_supports_trace_chunks(const struct ltt_session *session);
+
+/*
+ * Sample the id of a session looked up via its name.
+ * Here the term "sampling" hint the caller that this return the id at a given
+ * point in time with no guarantee that the session for which the id was
+ * sampled still exist at that point.
+ *
+ * Return 0 when the session is not found,
+ * Return 1 when the session is found and set `id`.
+ */
+bool sample_session_id_by_name(const char *name, uint64_t *id);
 
 #endif /* _LTT_SESSION_H */

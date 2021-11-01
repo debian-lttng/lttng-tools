@@ -8,13 +8,15 @@
 #define _LGPL_SOURCE
 #include <assert.h>
 #include <inttypes.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 
-#include <lttng/lttng-error.h>
 #include <common/common.h>
+#include <common/thread.h>
+#include <common/compat/errno.h>
 #include <common/compat/getenv.h>
+#include <lttng/lttng-error.h>
 
 #include "error.h"
 
@@ -28,6 +30,7 @@ static int lttng_opt_abort_on_error = -1;
 
 /* TLS variable that contains the time of one single log entry. */
 DEFINE_URCU_TLS(struct log_time, error_log_time);
+DEFINE_URCU_TLS(const char *, logger_thread_name);
 
 LTTNG_HIDDEN
 const char *log_add_time(void)
@@ -64,6 +67,23 @@ error:
 	/* Return an empty string on error so logging is not affected. */
 	errno = errsv;
 	return "";
+}
+
+LTTNG_HIDDEN
+void logger_set_thread_name(const char *name, bool set_pthread_name)
+{
+	int ret;
+
+	assert(name);
+	URCU_TLS(logger_thread_name) = name;
+
+	if (set_pthread_name) {
+		ret = lttng_thread_setname(name);
+		if (ret && ret != -ENOSYS) {
+			/* Don't fail as this is not essential. */
+			DBG("Failed to set pthread name attribute");
+		}
+	}
 }
 
 /*
@@ -123,8 +143,8 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_UST_EVENT_NOT_FOUND)] = "UST event not found",
 	[ ERROR_INDEX(LTTNG_ERR_UST_CONTEXT_EXIST)] = "UST context already exist",
 	[ ERROR_INDEX(LTTNG_ERR_UST_CONTEXT_INVAL)] = "UST invalid context",
-	[ ERROR_INDEX(LTTNG_ERR_NEED_ROOT_SESSIOND) ] = "Tracing the kernel requires a root lttng-sessiond daemon, as well as \"tracing\" group membership or root user ID for the lttng client.",
-	[ ERROR_INDEX(LTTNG_ERR_NO_UST) ] = "LTTng-UST tracer is not supported. Please rebuild lttng-tools with lttng-ust support enabled.",
+	[ ERROR_INDEX(LTTNG_ERR_NEED_ROOT_SESSIOND) ] = "Tracing the kernel requires a root lttng-sessiond daemon, as well as \"tracing\" group membership or root user ID for the lttng client",
+	[ ERROR_INDEX(LTTNG_ERR_NO_UST) ] = "LTTng-UST tracer is not supported. Please rebuild lttng-tools with lttng-ust support enabled",
 	[ ERROR_INDEX(LTTNG_ERR_TRACE_ALREADY_STARTED) ] = "Tracing has already been started once",
 	[ ERROR_INDEX(LTTNG_ERR_TRACE_ALREADY_STOPPED) ] = "Tracing has already been stopped",
 	[ ERROR_INDEX(LTTNG_ERR_KERN_EVENT_ENOSYS) ] = "Kernel event type not supported",
@@ -141,7 +161,7 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_FILTER_INVAL) ] = "Invalid filter bytecode",
 	[ ERROR_INDEX(LTTNG_ERR_FILTER_NOMEM) ] = "Not enough memory for filter bytecode",
 	[ ERROR_INDEX(LTTNG_ERR_FILTER_EXIST) ] = "Filter already exist",
-	[ ERROR_INDEX(LTTNG_ERR_NO_CONSUMER) ] = "Consumer not found for tracing session",
+	[ ERROR_INDEX(LTTNG_ERR_NO_CONSUMER) ] = "Consumer not found for recording session",
 	[ ERROR_INDEX(LTTNG_ERR_NO_SESSIOND) ] = "No session daemon is available",
 	[ ERROR_INDEX(LTTNG_ERR_SESSION_STARTED) ] = "Session is running",
 	[ ERROR_INDEX(LTTNG_ERR_NOT_SUPPORTED) ] = "Operation not supported",
@@ -175,7 +195,7 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_OVERFLOW) ] = "Overflow occurred",
 	[ ERROR_INDEX(LTTNG_ERR_SESSION_NOT_STARTED) ] = "Session not started",
 	[ ERROR_INDEX(LTTNG_ERR_LIVE_SESSION) ] = "Live sessions are not supported",
-	[ ERROR_INDEX(LTTNG_ERR_PER_PID_SESSION) ] = "Per-PID tracing sessions are not supported",
+	[ ERROR_INDEX(LTTNG_ERR_PER_PID_SESSION) ] = "Per-PID recording sessions are not supported",
 	[ ERROR_INDEX(LTTNG_ERR_KERN_CONTEXT_UNAVAILABLE) ] = "Context unavailable on this kernel",
 	[ ERROR_INDEX(LTTNG_ERR_REGEN_STATEDUMP_FAIL) ] = "Failed to regenerate the state dump",
 	[ ERROR_INDEX(LTTNG_ERR_REGEN_STATEDUMP_NOMEM) ] = "Failed to regenerate the state dump, not enough memory",
@@ -203,14 +223,14 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_MKDIR_FAIL_CONSUMER) ] = "Directory creation failure on consumer",
 	[ ERROR_INDEX(LTTNG_ERR_CHAN_NOT_FOUND) ] = "Channel not found",
 	[ ERROR_INDEX(LTTNG_ERR_SNAPSHOT_UNSUPPORTED) ] = "Session configuration does not allow the use of snapshots",
-	[ ERROR_INDEX(LTTNG_ERR_SESSION_NOT_EXIST) ] = "Tracing session does not exist",
+	[ ERROR_INDEX(LTTNG_ERR_SESSION_NOT_EXIST) ] = "Recording session does not exist",
 	[ ERROR_INDEX(LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER) ] = "Trace chunk creation failed on consumer",
 	[ ERROR_INDEX(LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER) ] = "Trace chunk close failed on consumer",
 	[ ERROR_INDEX(LTTNG_ERR_TRACE_CHUNK_EXISTS_FAIL_CONSUMER) ] = "Failed to query consumer for trace chunk existence",
 	[ ERROR_INDEX(LTTNG_ERR_INVALID_PROTOCOL) ] = "Protocol error occurred",
 	[ ERROR_INDEX(LTTNG_ERR_FILE_CREATION_ERROR) ] = "Failed to create file",
 	[ ERROR_INDEX(LTTNG_ERR_TIMER_STOP_ERROR) ] = "Failed to stop a timer",
-	[ ERROR_INDEX(LTTNG_ERR_ROTATION_NOT_AVAILABLE_KERNEL) ] = "Rotation feature not supported by the kernel tracer.",
+	[ ERROR_INDEX(LTTNG_ERR_ROTATION_NOT_AVAILABLE_KERNEL) ] = "Rotation feature not supported by the kernel tracer",
 	[ ERROR_INDEX(LTTNG_ERR_CLEAR_RELAY_DISALLOWED) ] = "Relayd daemon peer does not allow sessions to be cleared",
 	[ ERROR_INDEX(LTTNG_ERR_CLEAR_NOT_AVAILABLE_RELAY) ] = "Clearing a session is not supported by the relay daemon",
 	[ ERROR_INDEX(LTTNG_ERR_CLEAR_FAIL_CONSUMER) ] = "Consumer failed to clear the session",
@@ -219,6 +239,12 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_GROUP_NOT_FOUND) ] = "Group not found",
 	[ ERROR_INDEX(LTTNG_ERR_UNSUPPORTED_DOMAIN) ] = "Unsupported domain used",
 	[ ERROR_INDEX(LTTNG_ERR_PROCESS_ATTR_TRACKER_INVALID_TRACKING_POLICY) ] = "Operation does not apply to the process attribute tracker's tracking policy",
+	[ ERROR_INDEX(LTTNG_ERR_EVENT_NOTIFIER_GROUP_NOTIFICATION_FD) ] = "Failed to create an event notifier group notification file descriptor",
+	[ ERROR_INDEX(LTTNG_ERR_INVALID_CAPTURE_EXPRESSION) ] = "Invalid capture expression",
+	[ ERROR_INDEX(LTTNG_ERR_EVENT_NOTIFIER_REGISTRATION) ] = "Failed to create event notifier",
+	[ ERROR_INDEX(LTTNG_ERR_EVENT_NOTIFIER_ERROR_ACCOUNTING) ] = "Failed to initialize event notifier error accounting",
+	[ ERROR_INDEX(LTTNG_ERR_EVENT_NOTIFIER_ERROR_ACCOUNTING_FULL) ] = "No index available in event notifier error accounting",
+	[ ERROR_INDEX(LTTNG_ERR_BUFFER_FLUSH_FAILED) ] = "Failed to flush stream buffer",
 
 	/* Last element */
 	[ ERROR_INDEX(LTTNG_ERR_NR) ] = "Unknown error code"

@@ -9,7 +9,7 @@ TEST_DESC="Kernel tracer - Basic event"
 
 CURDIR=$(dirname $0)/
 TESTDIR=$CURDIR/../..
-NUM_TESTS=20
+NUM_TESTS=21
 
 TESTCMD="/bin/true"
 
@@ -17,7 +17,7 @@ source $TESTDIR/utils/utils.sh
 
 function test_event_basic()
 {
-	TRACE_PATH=$(mktemp -d)
+	TRACE_PATH=$(mktemp --tmpdir -d "tmp.${FUNCNAME[0]}_trace_path.XXXXXX")
 	SESSION_NAME="kernel_event_basic"
 
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
@@ -33,6 +33,7 @@ function test_event_basic()
 	eval ${TESTCMD}
 	stop_lttng_tracing_ok
 
+	validate_trace_path_kernel "$TRACE_PATH" ""
 	validate_trace "sched_switch" $TRACE_PATH
 	validate_trace "sched_process_exit" $TRACE_PATH
 	validate_trace "sched_process_fork" $TRACE_PATH
@@ -44,7 +45,7 @@ function test_event_basic()
 
 function test_enable_after_start()
 {
-	TRACE_PATH=$(mktemp -d)
+	TRACE_PATH=$(mktemp --tmpdir -d "tmp.${FUNCNAME[0]}_trace_path.XXXXXX")
 	SESSION_NAME="kernel_enable_after_start"
 
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH

@@ -1,0 +1,431 @@
+lttng-add-trigger(1)
+====================
+:revdate: 14 June 2021
+
+
+NAME
+----
+lttng-add-trigger - Add an LTTng trigger
+
+
+SYNOPSIS
+--------
+[verse]
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *add-trigger* [option:--name='NAME'] [option:--owner-uid='UID']
+      option:--condition='CONDTYPE' ['CONDARGS']
+      option:--action='ACTTYPE' ['ACTARGS'] [option:--action='ACTTYPE' ['ACTARGS']]...
+
+DESCRIPTION
+-----------
+The `lttng add-trigger` command creates and adds an LTTng _trigger_ to
+the connected session daemon (see man:lttng-sessiond(8)).
+
+See man:lttng-concepts(7) to learn more about LTTng triggers.
+
+By default, the `add-trigger` command automatically assigns a name,
+unique for a given session daemon and Unix user, to the added trigger.
+Assign a custom name with the option:--name.
+
+The `add-trigger` command adds a trigger for your Unix user. If your
+Unix user is `root`, you may add the trigger as another user with the
+option:--owner-uid option.
+
+Specify the condition of the trigger to add with a <<cond-spec,condition
+specifier>> and its actions with one or more <<action-spec,action
+specifiers>>. The order of the action specifiers is significant: LTTng
+attempts to execute the actions of a firing trigger in this order.
+
+See the ``<<examples,EXAMPLES>>'' section below for usage examples.
+
+List the triggers of your Unix user, or of all users if your
+Unix user is `root`, with the man:lttng-list-triggers(1) command.
+
+Remove a trigger with the man:lttng-remove-trigger(1) command.
+
+
+[[cond-spec]]
+Condition specifier
+~~~~~~~~~~~~~~~~~~~
+Synopsis:
+
+[verse]
+option:--condition='CONDTYPE' ['CONDARGS']
+
+A condition specifier is the option:--condition option, which specifies
+the type of condition 'CONDTYPE', followed, depending on 'CONDTYPE',
+with zero or more arguments 'CONDARGS'.
+
+The available condition types are:
+
+[[er-matches-cond-spec]]`event-rule-matches`::
+    Synopsis:
++
+[verse]
+option:--condition=**event-rule-matches** [nloption:--capture='CDESCR']... 'ERSPEC'
+{nbsp}
++
+An `event-rule-matches` condition is considered satisfied when the event
+rule specified with 'ERSPEC' matches an event.
++
+See man:lttng-event-rule(7) to learn how to specify an event rule
+('ERSPEC' part).
++
+Capture event record and context fields with one or more
+nloption:--capture options (see the ``<<capture-descr,Capture
+descriptor>>'' section below to learn more). When an
+`event-rule-matches` condition with capture descriptors is satisfied,
+the captured field values are available in the evaluation object of the
+condition using the liblttng-ctl C{nbsp}API.
++
+IMPORTANT: Make sure to **single-quote** 'CDESCR' when you run the
+`add-trigger` command from a shell, as capture descriptors can include
+characters having a special meaning for most shells.
+
+
+[[capture-descr]]
+Capture descriptor
+~~~~~~~~~~~~~~~~~~
+A capture descriptor is a textual expression which describes how to read
+an event record or context field.
+
+The argument of a nloption:--capture option, when using an
+<<er-matches-cond-spec,``event rule matches'' condition specifier>>
+(`event-rule-matches`), is a capture descriptor.
+
+A capture descriptor expression is one of:
+
+'NAME'::
+    An event record field named 'NAME'.
++
+The supported event record field types are:
++
+--
+* Integer
+* Enumeration (integral value)
+* Floating point number
+* Static array of integers
+* Dynamic array (``sequence'') of integers
+* Text string
+--
++
+Examples: `my_field`, `target_cpu`, `ip`.
+
+++$ctx.++__NAME__::
+    A statically-known context field named 'NAME'.
++
+List the available statically-known context field names with
+man:lttng-add-context(1).
++
+Examples: `$ctx.prio`, `$ctx.preemptible`,
+`$ctx.perf:cpu:stalled-cycles-frontend`.
+
+++$app.++__PROVIDER__++.++__NAME__::
+    An application-specific context field named 'NAME' from the
+    provider 'PROVIDER'.
++
+See man:lttng-add-context(1) to learn more about application-specific
+context fields.
++
+Example: `$app.server:cur_user`.
+
+__EXPR__++[++__INDEX__++]++::
+    The element at index 'INDEX' of the array field (static or dynamic)
+    identified by the expression 'EXPR'.
++
+'INDEX' must be a constant, positive integral value.
++
+Examples: `ip[3]`, `user_ids[15]`.
+
+If, when an event rule matches, a given capture descriptor doesn't
+identify an existing event or context field, then the captured value is
+reported as being unavailable. This applies to:
+
+* A nonexistent event record field name.
+* A nonexistent statically-known context field name.
+* A nonexistent application-specific context field name.
+* An out-of-bounds array field index.
+
+
+[[action-spec]]
+Action specifier
+~~~~~~~~~~~~~~~~
+Synopsis:
+
+[verse]
+option:--action='ACTTYPE' ['ACTARGS']
+
+An action specifier is the option:--action option, which specifies
+the type of action 'ACTTYPE', followed, depending on 'ACTTYPE', with zero
+or more arguments 'ACTARGS'.
+
+The available action types are:
+
+Notify::
+    Synopsis:
++
+[verse]
+option:--action=**notify** [nloption:--rate-policy='POLICY']
+{nbsp}
++
+Sends a notification through the notification
+mechanism of the session daemon (see man:lttng-session(8)).
++
+The session daemon sends details about the condition evaluation along
+with the notification.
++
+As of LTTng{nbsp}{lttng_version}, you can write a C/pass:[C++] program
+to receive LTTng notifications (see the liblttng-ctl C{nbsp}headers).
++
+See below for the nloption:--rate-policy option.
+
+Start a recording session::
+    Synopsis:
++
+[verse]
+option:--action=**start-session** 'SESSION' [nloption:--rate-policy='POLICY']
+{nbsp}
++
+Starts the recording session named 'SESSION' like man:lttng-start(1)
+would.
++
+If no recording session has the name 'SESSION' when LTTng is ready to
+execute the action, LTTng does nothing.
++
+See below for the nloption:--rate-policy option.
+
+Stop a recording session::
+    Synopsis:
++
+[verse]
+option:--action=**stop-session** 'SESSION' [nloption:--rate-policy='POLICY']
+{nbsp}
++
+Stops the recording session named 'SESSION' like man:lttng-stop(1)
+would.
++
+If no recording session has the name 'SESSION' when LTTng is ready to
+execute the action, LTTng does nothing.
++
+See below for the nloption:--rate-policy option.
+
+Rotate a recording session::
+    Synopsis:
++
+[verse]
+option:--action=**rotate-session** 'SESSION' [nloption:--rate-policy='POLICY']
+{nbsp}
++
+Archives the current trace chunk of the recording session named
+'SESSION' like man:lttng-rotate(1) would.
++
+If no recording session has the name 'SESSION' when LTTng is ready to
+execute the action, LTTng does nothing.
++
+See below for the nloption:--rate-policy option.
+
+Take a recording session snapshot::
+    Synopsis:
++
+[verse]
+option:--action=**snapshot-session** 'SESSION' [nloption:--rate-policy='POLICY']
+{nbsp}
++
+Takes a snapshot of the recording session named 'SESSION' like
+man:lttng-snapshot(1) would.
++
+When the condition of the trigger is satisfied, the recording session
+named 'SESSION', if any, must be a snapshot-mode recording session
+(see man:lttng-create(1)).
++
+If no recording session has the name 'SESSION' when LTTng is ready to
+execute the action, LTTng does nothing.
++
+See below for the nloption:--rate-policy option.
+
+Common action options (as of LTTng{nbsp}{lttng_version}):
+
+nloption:--rate-policy='POLICY'::
+    Set the rate policy of the action to 'POLICY' instead of
+    `every:1` (always execute).
++
+A trigger which ``fires'' (its condition is satisfied) leads to an
+execution request for each of its actions, in order. An execution
+request of a given action{nbsp}__A__ first increments the execution
+request count{nbsp}__C__ of{nbsp}__A__. An execution request can then
+become an actual execution when{nbsp}__C__ satisfies the rate policy
+of{nbsp}__A__.
++
+'POLICY' is one of:
++
+--
+++once-after:++__COUNT__::
+    Only execute{nbsp}__A__ when{nbsp}__C__ is equal to 'COUNT'.
++
+In other words, execute{nbsp}__A__ a single time after 'COUNT' execution
+requests.
+
+++every:++__COUNT__::
+    Only execute{nbsp}__A__ when{nbsp}__C__ is a multiple of 'COUNT'.
++
+In other words, execute{nbsp}__A__ every 'COUNT' execution requests.
+--
++
+'COUNT' must be an integer greater than{nbsp}0.
++
+As of LTTng{nbsp}{lttng_version}, you can use this option with any
+action type, but new action types in the future may not support it.
+
+
+OPTIONS
+-------
+Identification
+~~~~~~~~~~~~~~
+option:--name='NAME'::
+    Set the unique name of the trigger to add to 'NAME' instead of the
+    `add-trigger` command automatically assigning one.
+
+option:--owner-uid='UID'::
+    Add the trigger as the Unix user having the user ID 'UID'.
++
+You may only use this option if your Unix user is `root`.
+
+
+Specifier
+~~~~~~~~~
+option:--condition='CONDTYPE'::
+    Introductory option for a condition specifier of type 'CONDTYPE'.
++
+See the ``<<cond-spec,Condition specifier>>'' section above to learn
+more.
+
+option:--action='ACTTYPE'::
+    Introductory option for an action specifier of type 'ACTTYPE'.
++
+See the ``<<action-spec,Action specifier>>'' section above to learn
+more.
+
+
+include::common-lttng-cmd-help-options.txt[]
+
+
+include::common-lttng-cmd-after-options.txt[]
+
+
+[[examples]]
+EXAMPLES
+--------
+.Add an ``event rule matches'' trigger of which the action is to send a notification.
+====
+The `event-rule-matches` trigger condition below specifies an event rule
+which matches any Linux system call entry event with a name starting
+with `exec`.
+
+[role="term"]
+----
+$ lttng add-trigger --condition=event-rule-matches \
+                    --type=syscall:entry \
+                    --name='exec*' --action=notify
+----
+====
+
+.Add an ``event rule matches'' trigger of which the action is to stop a recording session and then rotate it.
+====
+The `event-rule-matches` trigger condition below specifies an event rule
+which matches any user space tracepoint event with a name starting with
+`my_app:` and with a log level at least as severe as a warning.
+
+The order of the option:--action options below is significant.
+
+[role="term"]
+----
+$ lttng add-trigger --condition=event-rule-matches \
+                    --type=user --name='my_app:*' \
+                    --log-level=TRACE_WARNING.. \
+                    --action=stop-session my-session \
+                    --action=rotate-session my-session
+----
+
+See man:lttng-concepts(7) to learn more about recording sessions and
+rotations.
+====
+
+.Add an ``event rule matches'' trigger with a specific name.
+====
+The `event-rule-matches` trigger condition below specifies an event rule
+which matches events which LTTng creates from the `my-logger` Python
+logger.
+
+The added trigger is named `my-trigger`, a unique name for your Unix
+user.
+
+See the option:--name option.
+
+[role="term"]
+----
+$ lttng add-trigger --name=my-trigger \
+                    --condition=event-rule-matches \
+                    --type=python --name=my-logger \
+                    --action=snapshot-session my-session
+----
+====
+
+.Add an ``event rule matches'' trigger as another Unix user.
+====
+The command line below adds a trigger as the `mireille` Unix user.
+
+Your Unix user must be `root` to use the option:--owner-uid option.
+
+The condition of the trigger specifies an event rule which matches LTTng
+kernel tracepoint events with a name which starts with `sched`.
+
+[role="term"]
+----
+# lttng add-trigger --owner-uid=$(id --user mireille) \
+                    --condition=event-rule-matches \
+                    --type=kernel --name='sched*' \
+                    --action=notify
+----
+====
+
+.Add an ``event rule matches'' trigger with a notification action to be executed every 10{nbsp}times.
+====
+The `event-rule-matches` trigger condition below specifies an event rule
+which matches all user space tracepoint events.
+
+See the nloption:--rate-policy option above.
+
+[role="term"]
+----
+$ lttng add-trigger --condition=event-rule-matches \
+                    --type=user --action=notify \
+                    --rate-policy=every:10
+----
+====
+
+.Add an ``event rule matches'' trigger with a recording session starting action to be executed a single time after 40{nbsp}times.
+====
+The `event-rule-matches` trigger condition below specifies an event rule
+which matches any Linux system call event (entry and exit) of which the
+`fd` event record field is less than{nbsp}3.
+
+See the nloption:--rate-policy option above.
+
+[role="term"]
+----
+$ lttng add-trigger --condition=event-rule-matches \
+                    --type=syscall --filter='fd < 3' \
+                    --action=start-session my-session \
+                    --rate-policy=once-after:40
+----
+====
+
+
+include::common-footer.txt[]
+
+
+SEE ALSO
+--------
+man:lttng(1),
+man:lttng-list-triggers(1),
+man:lttng-remove-trigger(1),
+man:lttng-concepts(7)

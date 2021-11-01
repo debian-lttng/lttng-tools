@@ -60,16 +60,15 @@
  * but the /tmp/test1 does, the real path for /tmp/test1 is concatened with
  * /test2/test3 then returned. In normal time, realpath(3) fails if the end
  * point directory does not exist.
- * In case resolved_path is NULL, the string returned was allocated in the
- * function and thus need to be freed by the caller. The size argument allows
- * to specify the size of the resolved_path argument if given, or the size to
- * allocate.
+ *
+ * Return a newly-allocated string.
  */
-LTTNG_HIDDEN
-char *utils_partial_realpath(const char *path, char *resolved_path, size_t size)
+static
+char *utils_partial_realpath(const char *path)
 {
 	char *cut_path = NULL, *try_path = NULL, *try_path_prev = NULL;
 	const char *next, *prev, *end;
+	char *resolved_path = NULL;
 
 	/* Safety net */
 	if (path == NULL) {
@@ -150,13 +149,11 @@ char *utils_partial_realpath(const char *path, char *resolved_path, size_t size)
 		cut_path = NULL;
 	}
 
-	/* Allocate memory for the resolved path if necessary */
+	/* Allocate memory for the resolved path. */
+	resolved_path = zmalloc(LTTNG_PATH_MAX);
 	if (resolved_path == NULL) {
-		resolved_path = zmalloc(size);
-		if (resolved_path == NULL) {
-			PERROR("zmalloc resolved path");
-			goto error;
-		}
+		PERROR("zmalloc resolved path");
+		goto error;
 	}
 
 	/*
@@ -180,7 +177,8 @@ char *utils_partial_realpath(const char *path, char *resolved_path, size_t size)
 		}
 
 		/* Concatenate the strings */
-		snprintf(resolved_path, size, "%s%s", try_path_prev, cut_path);
+		snprintf(resolved_path, LTTNG_PATH_MAX, "%s%s",
+				try_path_prev, cut_path);
 
 		/* Free the allocated memory */
 		free(cut_path);
@@ -192,7 +190,7 @@ char *utils_partial_realpath(const char *path, char *resolved_path, size_t size)
 	 * return it as is
 	 */
 	} else {
-		strncpy(resolved_path, path, size);
+		strncpy(resolved_path, path, LTTNG_PATH_MAX);
 	}
 
 	/* Then we return the 'partially' resolved path */
@@ -371,11 +369,13 @@ char *_utils_expand_path(const char *path, bool keep_symlink)
 
 	if (keep_symlink) {
 		/* Resolve partially our path */
-		absolute_path = utils_partial_realpath(absolute_path,
-				absolute_path, LTTNG_PATH_MAX);
-		if (!absolute_path) {
+		char *new_absolute_path = utils_partial_realpath(absolute_path);
+		if (!new_absolute_path) {
 			goto error;
 		}
+
+		free(absolute_path);
+		absolute_path = new_absolute_path;
 	}
 
 	ret = expand_double_slashes_dot_and_dotdot(absolute_path);
@@ -679,8 +679,8 @@ int utils_mkdir(const char *path, mode_t mode, int uid, int gid)
 	int ret;
 	struct lttng_directory_handle *handle;
 	const struct lttng_credentials creds = {
-		.uid = (uid_t) uid,
-		.gid = (gid_t) gid,
+		.uid = LTTNG_OPTIONAL_INIT_VALUE(uid),
+		.gid = LTTNG_OPTIONAL_INIT_VALUE(gid),
 	};
 
 	handle = lttng_directory_handle_create(NULL);
@@ -708,8 +708,8 @@ int utils_mkdir_recursive(const char *path, mode_t mode, int uid, int gid)
 	int ret;
 	struct lttng_directory_handle *handle;
 	const struct lttng_credentials creds = {
-		.uid = (uid_t) uid,
-		.gid = (gid_t) gid,
+		.uid = LTTNG_OPTIONAL_INIT_VALUE(uid),
+		.gid = LTTNG_OPTIONAL_INIT_VALUE(gid),
 	};
 
 	handle = lttng_directory_handle_create(NULL);
@@ -736,7 +736,7 @@ int utils_stream_file_path(const char *path_name, const char *file_name,
 		char *out_stream_path, size_t stream_path_len)
 {
 	int ret;
-        char count_str[MAX_INT_DEC_LEN(count) + 1] = {};
+	char count_str[MAX_INT_DEC_LEN(count) + 1] = {};
 	const char *path_separator;
 
 	if (path_name && (path_name[0] == '\0' ||
@@ -754,7 +754,7 @@ int utils_stream_file_path(const char *path_name, const char *file_name,
 		assert(ret > 0 && ret < sizeof(count_str));
 	}
 
-        ret = snprintf(out_stream_path, stream_path_len, "%s%s%s%s%s",
+	ret = snprintf(out_stream_path, stream_path_len, "%s%s%s%s%s",
 			path_name, path_separator, file_name, count_str,
 			suffix);
 	if (ret < 0 || ret >= stream_path_len) {
@@ -1668,4 +1668,40 @@ end_loop:
 end:
 	free(buf);
 	return ret_val;
+}
+
+LTTNG_HIDDEN
+int utils_parse_unsigned_long_long(const char *str,
+		unsigned long long *value)
+{
+	int ret;
+	char *endptr;
+
+	assert(str);
+	assert(value);
+
+	errno = 0;
+	*value = strtoull(str, &endptr, 10);
+
+	/* Conversion failed. Out of range? */
+	if (errno != 0) {
+		/* Don't print an error; allow the caller to log a better error. */
+		DBG("Failed to parse string as unsigned long long number: string = '%s', errno = %d",
+				str, errno);
+		ret = -1;
+		goto end;
+	}
+
+	/* Not the end of the string or empty string. */
+	if (*endptr || endptr == str) {
+		DBG("Failed to parse string as unsigned long long number: string = '%s'",
+				str);
+		ret = -1;
+		goto end;
+	}
+
+	ret = 0;
+
+end:
+	return ret;
 }

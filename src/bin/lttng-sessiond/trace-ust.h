@@ -24,8 +24,8 @@ struct agent;
 
 struct ltt_ust_ht_key {
 	const char *name;
-	const struct lttng_filter_bytecode *filter;
-	enum lttng_ust_loglevel_type loglevel_type;
+	const struct lttng_bytecode *filter;
+	enum lttng_ust_abi_loglevel_type loglevel_type;
 	int loglevel_value;
 	const struct lttng_event_exclusion *exclusion;
 };
@@ -40,10 +40,10 @@ struct ltt_ust_context {
 /* UST event */
 struct ltt_ust_event {
 	unsigned int enabled;
-	struct lttng_ust_event attr;
+	struct lttng_ust_abi_event attr;
 	struct lttng_ht_node_str node;
 	char *filter_expression;
-	struct lttng_filter_bytecode *filter;
+	struct lttng_bytecode *filter;
 	struct lttng_event_exclusion *exclusion;
 	/*
 	 * An internal event is an event which was created by the session daemon
@@ -63,8 +63,8 @@ struct ltt_ust_channel {
 	 * Log4j, Python.
 	 */
 	enum lttng_domain_type domain;
-	char name[LTTNG_UST_SYM_NAME_LEN];
-	struct lttng_ust_channel_attr attr;
+	char name[LTTNG_UST_ABI_SYM_NAME_LEN];
+	struct lttng_ust_abi_channel_attr attr;
 	struct lttng_ht *ctx;
 	struct cds_list_head ctx_list;
 	struct lttng_ht *events;
@@ -121,7 +121,7 @@ struct ltt_ust_session {
 	unsigned int live_timer_interval;	/* usec */
 
 	/* Metadata channel attributes. */
-	struct lttng_ust_channel_attr metadata_attr;
+	struct lttng_ust_abi_channel_attr metadata_attr;
 
 	/*
 	 * Path where to keep the shared memory files.
@@ -182,8 +182,8 @@ int trace_ust_ht_match_event_by_name(struct cds_lfht_node *node,
  * Lookup functions. NULL is returned if not found.
  */
 struct ltt_ust_event *trace_ust_find_event(struct lttng_ht *ht,
-		char *name, struct lttng_filter_bytecode *filter,
-		enum lttng_ust_loglevel_type loglevel_type, int loglevel_value,
+		char *name, struct lttng_bytecode *filter,
+		enum lttng_ust_abi_loglevel_type loglevel_type, int loglevel_value,
 		struct lttng_event_exclusion *exclusion);
 struct ltt_ust_channel *trace_ust_find_channel_by_name(struct lttng_ht *ht,
 		const char *name);
@@ -198,7 +198,7 @@ struct ltt_ust_channel *trace_ust_create_channel(struct lttng_channel *attr,
 		enum lttng_domain_type domain);
 enum lttng_error_code trace_ust_create_event(struct lttng_event *ev,
 		char *filter_expression,
-		struct lttng_filter_bytecode *filter,
+		struct lttng_bytecode *filter,
 		struct lttng_event_exclusion *exclusion,
 		bool internal_event, struct ltt_ust_event **ust_event);
 struct ltt_ust_context *trace_ust_create_context(
@@ -270,7 +270,7 @@ struct ltt_ust_channel *trace_ust_create_channel(struct lttng_channel *attr,
 static inline
 enum lttng_error_code trace_ust_create_event(struct lttng_event *ev,
 		const char *filter_expression,
-		struct lttng_filter_bytecode *filter,
+		struct lttng_bytecode *filter,
 		struct lttng_event_exclusion *exclusion,
 		bool internal_event, struct ltt_ust_event **ust_event)
 {
@@ -310,8 +310,8 @@ int trace_ust_match_context(const struct ltt_ust_context *uctx,
 }
 static inline
 struct ltt_ust_event *trace_ust_find_event(struct lttng_ht *ht,
-		char *name, struct lttng_filter_bytecode *filter,
-		enum lttng_ust_loglevel_type loglevel_type, int loglevel_value,
+		char *name, struct lttng_bytecode *filter,
+		enum lttng_ust_abi_loglevel_type loglevel_type, int loglevel_value,
 		struct lttng_event_exclusion *exclusion)
 {
 	return NULL;

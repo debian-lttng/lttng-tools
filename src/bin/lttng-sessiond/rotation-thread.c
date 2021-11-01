@@ -16,7 +16,6 @@
 #include <common/align.h>
 #include <common/time.h>
 #include <common/hashtable/utils.h>
-#include <sys/eventfd.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <signal.h>
@@ -25,6 +24,7 @@
 #include <common/kernel-ctl/kernel-ctl.h>
 #include <lttng/notification/channel-internal.h>
 #include <lttng/rotate-internal.h>
+#include <lttng/location-internal.h>
 
 #include "rotation-thread.h"
 #include "lttng-sessiond.h"
@@ -253,7 +253,7 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 			lttng_pipe_get_readfd(handle->quit_pipe),
 			LPOLLIN | LPOLLERR);
 	if (ret < 0) {
-		ERR("[rotation-thread] Failed to add quit pipe read fd to poll set");
+		ERR("Failed to add quit pipe read fd to poll set");
 		goto error;
 	}
 
@@ -261,7 +261,7 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 			lttng_pipe_get_readfd(handle->rotation_timer_queue->event_pipe),
 			LPOLLIN | LPOLLERR);
 	if (ret < 0) {
-		ERR("[rotation-thread] Failed to add rotate_pending fd to poll set");
+		ERR("Failed to add rotate_pending fd to poll set");
 		goto error;
 	}
 
@@ -291,21 +291,21 @@ int init_thread_state(struct rotation_thread_handle *handle,
 
 	ret = init_poll_set(&state->events, handle);
 	if (ret) {
-		ERR("[rotation-thread] Failed to initialize rotation thread poll set");
+		ERR("Failed to initialize rotation thread poll set");
 		goto end;
 	}
 
 	rotate_notification_channel = lttng_notification_channel_create(
 			lttng_session_daemon_notification_endpoint);
 	if (!rotate_notification_channel) {
-		ERR("[rotation-thread] Could not create notification channel");
+		ERR("Could not create notification channel");
 		ret = -1;
 		goto end;
 	}
 	ret = lttng_poll_add(&state->events, rotate_notification_channel->socket,
 			LPOLLIN | LPOLLERR);
 	if (ret < 0) {
-		ERR("[rotation-thread] Failed to add notification fd to pollset");
+		ERR("Failed to add notification fd to pollset");
 		goto end;
 	}
 
@@ -352,13 +352,13 @@ void check_session_rotation_pending_on_consumers(struct ltt_session *session,
 			goto end;
 		}
 
-                if (exists_status != CONSUMER_TRACE_CHUNK_EXISTS_STATUS_UNKNOWN_CHUNK) {
+		if (exists_status != CONSUMER_TRACE_CHUNK_EXISTS_STATUS_UNKNOWN_CHUNK) {
 			pthread_mutex_unlock(socket->lock);
 			chunk_exists_on_peer = true;
 			goto end;
-                }
+		}
 		pthread_mutex_unlock(socket->lock);
-        }
+	}
 
 skip_ust:
 	if (!session->kernel_session) {
@@ -381,11 +381,11 @@ skip_ust:
 			goto end;
 		}
 
-                if (exists_status != CONSUMER_TRACE_CHUNK_EXISTS_STATUS_UNKNOWN_CHUNK) {
+		if (exists_status != CONSUMER_TRACE_CHUNK_EXISTS_STATUS_UNKNOWN_CHUNK) {
 			pthread_mutex_unlock(socket->lock);
 			chunk_exists_on_peer = true;
 			goto end;
-                }
+		}
 		pthread_mutex_unlock(socket->lock);
 	}
 skip_kernel:
@@ -399,7 +399,7 @@ end:
 				session->chunk_being_archived,
 				&chunk_being_archived_id);
 		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
-		DBG("[rotation-thread] Rotation of trace archive %" PRIu64 " of session \"%s\" is complete on all consumers",
+		DBG("Rotation of trace archive %" PRIu64 " of session \"%s\" is complete on all consumers",
 				chunk_being_archived_id,
 				session->name);
 	}
@@ -439,7 +439,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 			&chunk_being_archived_id);
 	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 
-	DBG("[rotation-thread] Checking for pending rotation on session \"%s\", trace archive %" PRIu64,
+	DBG("Checking for pending rotation on session \"%s\", trace archive %" PRIu64,
 			session->name, chunk_being_archived_id);
 
 	/*
@@ -478,7 +478,6 @@ int check_session_rotation_pending(struct ltt_session *session,
 
 	if (!session->quiet_rotation) {
 		location = session_get_trace_archive_location(session);
-		/* Ownership of location is transferred. */
 		ret = notification_thread_command_session_rotation_completed(
 				notification_thread_handle,
 				session->name,
@@ -486,8 +485,9 @@ int check_session_rotation_pending(struct ltt_session *session,
 				session->gid,
 				session->last_archived_chunk_id.value,
 				location);
+		lttng_trace_archive_location_put(location);
 		if (ret != LTTNG_OK) {
-			ERR("[rotation-thread] Failed to notify notification thread of completed rotation for session %s",
+			ERR("Failed to notify notification thread of completed rotation for session %s",
 					session->name);
 		}
 	}
@@ -495,14 +495,12 @@ int check_session_rotation_pending(struct ltt_session *session,
 	ret = 0;
 check_ongoing_rotation:
 	if (session->rotation_state == LTTNG_ROTATION_STATE_ONGOING) {
-		uint64_t chunk_being_archived_id;
-
 		chunk_status = lttng_trace_chunk_get_id(
 				session->chunk_being_archived,
 				&chunk_being_archived_id);
 		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 
-		DBG("[rotation-thread] Rotation of trace archive %" PRIu64 " is still pending for session %s",
+		DBG("Rotation of trace archive %" PRIu64 " is still pending for session %s",
 				chunk_being_archived_id, session->name);
 		ret = timer_session_rotation_pending_check_start(session,
 				DEFAULT_ROTATE_PENDING_TIMER);
@@ -524,17 +522,17 @@ int launch_session_rotation(struct ltt_session *session)
 	int ret;
 	struct lttng_rotate_session_return rotation_return;
 
-	DBG("[rotation-thread] Launching scheduled time-based rotation on session \"%s\"",
+	DBG("Launching scheduled time-based rotation on session \"%s\"",
 			session->name);
 
 	ret = cmd_rotate_session(session, &rotation_return, false,
 		LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
 	if (ret == LTTNG_OK) {
-		DBG("[rotation-thread] Scheduled time-based rotation successfully launched on session \"%s\"",
+		DBG("Scheduled time-based rotation successfully launched on session \"%s\"",
 				session->name);
 	} else {
 		/* Don't consider errors as fatal. */
-		DBG("[rotation-thread] Scheduled time-based rotation aborted for session %s: %s",
+		DBG("Scheduled time-based rotation aborted for session %s: %s",
 				session->name, lttng_strerror(ret));
 	}
 	return 0;
@@ -548,7 +546,7 @@ int run_job(struct rotation_thread_job *job, struct ltt_session *session,
 
 	switch (job->type) {
 	case ROTATION_THREAD_JOB_TYPE_SCHEDULED_ROTATION:
-	        ret = launch_session_rotation(session);
+		ret = launch_session_rotation(session);
 		break;
 	case ROTATION_THREAD_JOB_TYPE_CHECK_PENDING_ROTATION:
 		ret = check_session_rotation_pending(session,
@@ -585,7 +583,7 @@ int handle_job_queue(struct rotation_thread_handle *handle,
 		session_lock_list();
 		session = job->session;
 		if (!session) {
-			DBG("[rotation-thread] Session \"%s\" not found",
+			DBG("Session \"%s\" not found",
 					session->name);
 			/*
 			 * This is a non-fatal error, and we cannot report it to
@@ -604,7 +602,7 @@ int handle_job_queue(struct rotation_thread_handle *handle,
 		}
 
 		session_lock(session);
-	        ret = run_job(job, session, handle->notification_thread_handle);
+		ret = run_job(job, session, handle->notification_thread_handle);
 		session_unlock(session);
 		/* Release reference held by the job. */
 		session_put(session);
@@ -638,7 +636,7 @@ int handle_condition(const struct lttng_condition *condition,
 
 	if (condition_type != LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE) {
 		ret = -1;
-		ERR("[rotation-thread] Condition type and session usage type are not the same");
+		ERR("Condition type and session usage type are not the same");
 		goto end;
 	}
 
@@ -646,14 +644,14 @@ int handle_condition(const struct lttng_condition *condition,
 	condition_status = lttng_condition_session_consumed_size_get_session_name(
 			condition, &condition_session_name);
 	if (condition_status != LTTNG_CONDITION_STATUS_OK) {
-		ERR("[rotation-thread] Session name could not be fetched");
+		ERR("Session name could not be fetched");
 		ret = -1;
 		goto end;
 	}
 	evaluation_status = lttng_evaluation_session_consumed_size_get_consumed_size(evaluation,
 			&consumed);
 	if (evaluation_status != LTTNG_EVALUATION_STATUS_OK) {
-		ERR("[rotation-thread] Failed to get evaluation");
+		ERR("Failed to get evaluation");
 		ret = -1;
 		goto end;
 	}
@@ -663,7 +661,7 @@ int handle_condition(const struct lttng_condition *condition,
 	if (!session) {
 		ret = -1;
 		session_unlock_list();
-		ERR("[rotation-thread] Session \"%s\" not found",
+		ERR("Session \"%s\" not found",
 				condition_session_name);
 		goto end;
 	}
@@ -680,7 +678,7 @@ int handle_condition(const struct lttng_condition *condition,
 	if (ret == -LTTNG_ERR_ROTATION_PENDING) {
 		DBG("Rotate already pending, subscribe to the next threshold value");
 	} else if (ret != LTTNG_OK) {
-		ERR("[rotation-thread] Failed to rotate on size notification with error: %s",
+		ERR("Failed to rotate on size notification with error: %s",
 				lttng_strerror(ret));
 		ret = -1;
 		goto end_unlock;
@@ -689,7 +687,7 @@ int handle_condition(const struct lttng_condition *condition,
 			consumed + session->rotate_size,
 			notification_thread_handle);
 	if (ret) {
-		ERR("[rotation-thread] Failed to subscribe to session consumed size condition");
+		ERR("Failed to subscribe to session consumed size condition");
 		goto end_unlock;
 	}
 	ret = 0;
@@ -717,7 +715,7 @@ int handle_notification_channel(int fd,
 	status = lttng_notification_channel_has_pending_notification(
 			rotate_notification_channel, &notification_pending);
 	if (status != LTTNG_NOTIFICATION_CHANNEL_STATUS_OK) {
-		ERR("[rotation-thread ]Error occurred while checking for pending notification");
+		ERR("Error occurred while checking for pending notification");
 		ret = -1;
 		goto end;
 	}
@@ -769,14 +767,14 @@ void *thread_rotation(void *data)
 	struct rotation_thread thread;
 	int queue_pipe_fd;
 
-	DBG("[rotation-thread] Started rotation thread");
+	DBG("Started rotation thread");
 	rcu_register_thread();
 	rcu_thread_online();
-	health_register(health_sessiond, HEALTH_SESSIOND_TYPE_ROTATION);
+	health_register(the_health_sessiond, HEALTH_SESSIOND_TYPE_ROTATION);
 	health_code_update();
 
 	if (!handle) {
-		ERR("[rotation-thread] Invalid thread context provided");
+		ERR("Invalid thread context provided");
 		goto end;
 	}
 
@@ -793,9 +791,9 @@ void *thread_rotation(void *data)
 		int fd_count, i;
 
 		health_poll_entry();
-		DBG("[rotation-thread] Entering poll wait");
+		DBG("Entering poll wait");
 		ret = lttng_poll_wait(&thread.events, -1);
-		DBG("[rotation-thread] Poll wait returned (%i)", ret);
+		DBG("Poll wait returned (%i)", ret);
 		health_poll_exit();
 		if (ret < 0) {
 			/*
@@ -804,7 +802,7 @@ void *thread_rotation(void *data)
 			if (errno == EINTR) {
 				continue;
 			}
-			ERR("[rotation-thread] Error encountered during lttng_poll_wait (%i)", ret);
+			ERR("Error encountered during lttng_poll_wait (%i)", ret);
 			goto error;
 		}
 
@@ -813,11 +811,11 @@ void *thread_rotation(void *data)
 			int fd = LTTNG_POLL_GETFD(&thread.events, i);
 			uint32_t revents = LTTNG_POLL_GETEV(&thread.events, i);
 
-			DBG("[rotation-thread] Handling fd (%i) activity (%u)",
+			DBG("Handling fd (%i) activity (%u)",
 					fd, revents);
 
 			if (revents & LPOLLERR) {
-				ERR("[rotation-thread] Polling returned an error on fd %i", fd);
+				ERR("Polling returned an error on fd %i", fd);
 				goto error;
 			}
 
@@ -825,7 +823,7 @@ void *thread_rotation(void *data)
 				ret = handle_notification_channel(fd, handle,
 						&thread);
 				if (ret) {
-					ERR("[rotation-thread] Error occurred while handling activity on notification channel socket");
+					ERR("Error occurred while handling activity on notification channel socket");
 					goto error;
 				}
 			} else {
@@ -840,7 +838,7 @@ void *thread_rotation(void *data)
 				ret = handle_job_queue(handle, &thread,
 						handle->rotation_timer_queue);
 				if (ret) {
-					ERR("[rotation-thread] Failed to handle rotation timer pipe event");
+					ERR("Failed to handle rotation timer pipe event");
 					goto error;
 				}
 
@@ -849,11 +847,11 @@ void *thread_rotation(void *data)
 
 					ret = lttng_read(fd, &buf, 1);
 					if (ret != 1) {
-						ERR("[rotation-thread] Failed to read from wakeup pipe (fd = %i)", fd);
+						ERR("Failed to read from wakeup pipe (fd = %i)", fd);
 						goto error;
 					}
 				} else {
-					DBG("[rotation-thread] Quit pipe activity");
+					DBG("Quit pipe activity");
 					goto exit;
 				}
 			}
@@ -861,10 +859,10 @@ void *thread_rotation(void *data)
 	}
 exit:
 error:
-	DBG("[rotation-thread] Exit");
+	DBG("Thread exit");
 	fini_thread_state(&thread);
 end:
-	health_unregister(health_sessiond);
+	health_unregister(the_health_sessiond);
 	rcu_thread_offline();
 	rcu_unregister_thread();
 	return NULL;

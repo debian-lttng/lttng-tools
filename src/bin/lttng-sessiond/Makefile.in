@@ -16,6 +16,7 @@
 
 # SPDX-License-Identifier: GPL-2.0-only
 
+
 VPATH = @srcdir@
 am__is_gnu_make = { \
   if test -z '$(MAKELEVEL)'; then \
@@ -92,13 +93,14 @@ build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
 @EMBED_HELP_TRUE@am__append_1 = -I$(top_builddir)/doc/man
-bin_PROGRAMS = lttng-sessiond$(EXEEXT)
 @HAVE_LIBLTTNG_UST_CTL_TRUE@am__append_2 = trace-ust.c ust-registry.c ust-app.c \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@			ust-consumer.c ust-consumer.h notify-apps.c \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@			ust-metadata.c ust-clock.h agent-thread.c agent-thread.h \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@			ust-field-utils.h ust-field-utils.c
+@HAVE_LIBLTTNG_UST_CTL_TRUE@			ust-field-utils.h ust-field-utils.c \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@			ust-sigbus.c
 
 @HAVE_LIBLTTNG_UST_CTL_TRUE@am__append_3 = $(UST_CTL_LIBS)
+bin_PROGRAMS = lttng-sessiond$(EXEEXT)
 subdir = src/bin/lttng-sessiond
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
@@ -128,6 +130,8 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
 	$(top_srcdir)/m4/lttng_check_sdt_works.m4 \
+	$(top_srcdir)/m4/lttng_pthread_getname_np.m4 \
+	$(top_srcdir)/m4/lttng_pthread_setname_np.m4 \
 	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
 	$(top_srcdir)/m4/pprint.m4 \
 	$(top_srcdir)/m4/rw_prog_cxx_works.m4 \
@@ -139,63 +143,12 @@ mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
-am__installdirs = "$(DESTDIR)$(bindir)"
-PROGRAMS = $(bin_PROGRAMS)
-am__lttng_sessiond_SOURCES_DIST = utils.c utils.h trace-kernel.c \
-	trace-kernel.h kernel.c kernel.h ust-app.h trace-ust.h \
-	notify-apps.h lttng-ust-ctl.h lttng-ust-abi.h \
-	lttng-ust-error.h ust-ctl-internal.h ust-abi-internal.h \
-	ust-error-internal.h ust-registry.h context.c context.h \
-	channel.c channel.h event.c event.h shm.c shm.h consumer.c \
-	consumer.h session.c session.h modprobe.c modprobe.h \
-	kern-modules.h fd-limit.c fd-limit.h kernel-consumer.c \
-	kernel-consumer.h health-sessiond.h cmd.c cmd.h \
-	buffer-registry.c buffer-registry.h testpoint.h ht-cleanup.c \
-	ht-cleanup.h snapshot.c snapshot.h agent.c agent.h save.h \
-	save.c lttng-syscall.h lttng-syscall.c notification-thread.h \
-	notification-thread.c notification-thread-internal.h \
-	notification-thread-commands.h notification-thread-commands.c \
-	notification-thread-events.h notification-thread-events.c \
-	sessiond-config.h sessiond-config.c rotate.h rotate.c \
-	rotation-thread.h rotation-thread.c timer.c timer.h globals.c \
-	thread-utils.c process-utils.c thread.c thread.h health.c \
-	client.c client.h dispatch.c dispatch.h register.c register.h \
-	manage-apps.c manage-apps.h manage-kernel.c manage-kernel.h \
-	manage-consumer.c manage-consumer.h clear.c clear.h tracker.c \
-	tracker.h trace-ust.c ust-registry.c ust-app.c ust-consumer.c \
-	ust-consumer.h notify-apps.c ust-metadata.c ust-clock.h \
-	agent-thread.c agent-thread.h ust-field-utils.h \
-	ust-field-utils.c lttng-sessiond.h main.c
-@HAVE_LIBLTTNG_UST_CTL_TRUE@am__objects_1 = trace-ust.$(OBJEXT) \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-registry.$(OBJEXT) \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-app.$(OBJEXT) \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-consumer.$(OBJEXT) \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	notify-apps.$(OBJEXT) \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-metadata.$(OBJEXT) \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	agent-thread.$(OBJEXT) \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-field-utils.$(OBJEXT)
-am_lttng_sessiond_OBJECTS = utils.$(OBJEXT) trace-kernel.$(OBJEXT) \
-	kernel.$(OBJEXT) context.$(OBJEXT) channel.$(OBJEXT) \
-	event.$(OBJEXT) shm.$(OBJEXT) consumer.$(OBJEXT) \
-	session.$(OBJEXT) modprobe.$(OBJEXT) fd-limit.$(OBJEXT) \
-	kernel-consumer.$(OBJEXT) cmd.$(OBJEXT) \
-	buffer-registry.$(OBJEXT) ht-cleanup.$(OBJEXT) \
-	snapshot.$(OBJEXT) agent.$(OBJEXT) save.$(OBJEXT) \
-	lttng-syscall.$(OBJEXT) notification-thread.$(OBJEXT) \
-	notification-thread-commands.$(OBJEXT) \
-	notification-thread-events.$(OBJEXT) sessiond-config.$(OBJEXT) \
-	rotate.$(OBJEXT) rotation-thread.$(OBJEXT) timer.$(OBJEXT) \
-	globals.$(OBJEXT) thread-utils.$(OBJEXT) \
-	process-utils.$(OBJEXT) thread.$(OBJEXT) health.$(OBJEXT) \
-	client.$(OBJEXT) dispatch.$(OBJEXT) register.$(OBJEXT) \
-	manage-apps.$(OBJEXT) manage-kernel.$(OBJEXT) \
-	manage-consumer.$(OBJEXT) clear.$(OBJEXT) tracker.$(OBJEXT) \
-	$(am__objects_1) main.$(OBJEXT)
-lttng_sessiond_OBJECTS = $(am_lttng_sessiond_OBJECTS)
+LTLIBRARIES = $(noinst_LTLIBRARIES)
 am__DEPENDENCIES_1 =
 @HAVE_LIBLTTNG_UST_CTL_TRUE@am__DEPENDENCIES_2 =  \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	$(am__DEPENDENCIES_1)
-lttng_sessiond_DEPENDENCIES = $(am__DEPENDENCIES_1) \
+liblttng_sessiond_common_la_DEPENDENCIES = $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) \
 	$(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la \
 	$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
 	$(top_builddir)/src/common/kernel-ctl/libkernel-ctl.la \
@@ -208,10 +161,67 @@ lttng_sessiond_DEPENDENCIES = $(am__DEPENDENCIES_1) \
 	$(top_builddir)/src/common/config/libconfig.la \
 	$(top_builddir)/src/common/string-utils/libstring-utils.la \
 	$(am__DEPENDENCIES_2)
+am__liblttng_sessiond_common_la_SOURCES_DIST = utils.c utils.h \
+	trace-kernel.c trace-kernel.h kernel.c kernel.h ust-app.h \
+	ust-sigbus.h trace-ust.h notify-apps.h lttng-ust-ctl.h \
+	lttng-ust-abi.h lttng-ust-error.h ust-ctl-internal.h \
+	ust-abi-internal.h ust-error-internal.h ust-registry.h \
+	condition-internal.c condition-internal.h context.c context.h \
+	channel.c channel.h event.c event.h consumer.c consumer.h \
+	session.c session.h modprobe.c modprobe.h kern-modules.h \
+	fd-limit.c fd-limit.h kernel-consumer.c kernel-consumer.h \
+	health-sessiond.h cmd.c cmd.h buffer-registry.c \
+	buffer-registry.h testpoint.h ht-cleanup.c ht-cleanup.h \
+	snapshot.c snapshot.h agent.c agent.h save.h save.c \
+	lttng-syscall.h lttng-syscall.c notification-thread.h \
+	notification-thread.c notification-thread-internal.h \
+	notification-thread-commands.h notification-thread-commands.c \
+	notification-thread-events.h notification-thread-events.c \
+	sessiond-config.h sessiond-config.c rotate.h rotate.c \
+	rotation-thread.h rotation-thread.c timer.c timer.h globals.c \
+	thread-utils.c process-utils.c thread.c thread.h health.c \
+	client.c client.h dispatch.c dispatch.h register.c register.h \
+	manage-apps.c manage-apps.h manage-kernel.c manage-kernel.h \
+	manage-consumer.c manage-consumer.h clear.c clear.h tracker.c \
+	tracker.h event-notifier-error-accounting.c \
+	event-notifier-error-accounting.h action-executor.c \
+	action-executor.h trigger-error-query.c trace-ust.c \
+	ust-registry.c ust-app.c ust-consumer.c ust-consumer.h \
+	notify-apps.c ust-metadata.c ust-clock.h agent-thread.c \
+	agent-thread.h ust-field-utils.h ust-field-utils.c \
+	ust-sigbus.c
+@HAVE_LIBLTTNG_UST_CTL_TRUE@am__objects_1 = trace-ust.lo \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-registry.lo ust-app.lo \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-consumer.lo notify-apps.lo \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-metadata.lo agent-thread.lo \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-field-utils.lo ust-sigbus.lo
+am_liblttng_sessiond_common_la_OBJECTS = utils.lo trace-kernel.lo \
+	kernel.lo condition-internal.lo context.lo channel.lo event.lo \
+	consumer.lo session.lo modprobe.lo fd-limit.lo \
+	kernel-consumer.lo cmd.lo buffer-registry.lo ht-cleanup.lo \
+	snapshot.lo agent.lo save.lo lttng-syscall.lo \
+	notification-thread.lo notification-thread-commands.lo \
+	notification-thread-events.lo sessiond-config.lo rotate.lo \
+	rotation-thread.lo timer.lo globals.lo thread-utils.lo \
+	process-utils.lo thread.lo health.lo client.lo dispatch.lo \
+	register.lo manage-apps.lo manage-kernel.lo manage-consumer.lo \
+	clear.lo tracker.lo event-notifier-error-accounting.lo \
+	action-executor.lo trigger-error-query.lo $(am__objects_1)
+liblttng_sessiond_common_la_OBJECTS =  \
+	$(am_liblttng_sessiond_common_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
+am__installdirs = "$(DESTDIR)$(bindir)"
+PROGRAMS = $(bin_PROGRAMS)
+am_lttng_sessiond_OBJECTS = main.$(OBJEXT)
+lttng_sessiond_OBJECTS = $(am_lttng_sessiond_OBJECTS)
+lttng_sessiond_DEPENDENCIES = liblttng-sessiond-common.la
+lttng_sessiond_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
+	$(AM_CFLAGS) $(CFLAGS) $(lttng_sessiond_LDFLAGS) $(LDFLAGS) -o \
+	$@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -246,8 +256,10 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(lttng_sessiond_SOURCES)
-DIST_SOURCES = $(am__lttng_sessiond_SOURCES_DIST)
+SOURCES = $(liblttng_sessiond_common_la_SOURCES) \
+	$(lttng_sessiond_SOURCES)
+DIST_SOURCES = $(am__liblttng_sessiond_common_la_SOURCES_DIST) \
+	$(lttng_sessiond_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -296,6 +308,7 @@ CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_ADD_TRIGGER = @CMD_DESCR_ADD_TRIGGER@
 CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
@@ -307,8 +320,10 @@ CMD_DESCR_ENABLE_EVENT = @CMD_DESCR_ENABLE_EVENT@
 CMD_DESCR_ENABLE_ROTATION = @CMD_DESCR_ENABLE_ROTATION@
 CMD_DESCR_HELP = @CMD_DESCR_HELP@
 CMD_DESCR_LIST = @CMD_DESCR_LIST@
+CMD_DESCR_LIST_TRIGGERS = @CMD_DESCR_LIST_TRIGGERS@
 CMD_DESCR_LOAD = @CMD_DESCR_LOAD@
 CMD_DESCR_REGENERATE = @CMD_DESCR_REGENERATE@
+CMD_DESCR_REMOVE_TRIGGER = @CMD_DESCR_REMOVE_TRIGGER@
 CMD_DESCR_ROTATE = @CMD_DESCR_ROTATE@
 CMD_DESCR_SAVE = @CMD_DESCR_SAVE@
 CMD_DESCR_SET_SESSION = @CMD_DESCR_SET_SESSION@
@@ -340,6 +355,7 @@ DEFAULT_APP_SOCKET_RW_TIMEOUT = @DEFAULT_APP_SOCKET_RW_TIMEOUT@
 DEFAULT_CHANNEL_SUBBUF_SIZE = @DEFAULT_CHANNEL_SUBBUF_SIZE@
 DEFAULT_CHANNEL_TRACEFILE_COUNT = @DEFAULT_CHANNEL_TRACEFILE_COUNT@
 DEFAULT_CHANNEL_TRACEFILE_SIZE = @DEFAULT_CHANNEL_TRACEFILE_SIZE@
+DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE = @DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE@
 DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT = @DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT@
 DEFAULT_KERNEL_CHANNEL_LIVE_TIMER = @DEFAULT_KERNEL_CHANNEL_LIVE_TIMER@
 DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER = @DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER@
@@ -429,6 +445,7 @@ NMEDIT = @NMEDIT@
 OBJCOPY = @OBJCOPY@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
+OSTYPE = @OSTYPE@
 OTOOL = @OTOOL@
 OTOOL64 = @OTOOL64@
 PACKAGE = @PACKAGE@
@@ -469,6 +486,12 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
+URCU_BP_CFLAGS = @URCU_BP_CFLAGS@
+URCU_BP_LIBS = @URCU_BP_LIBS@
+URCU_CDS_CFLAGS = @URCU_CDS_CFLAGS@
+URCU_CDS_LIBS = @URCU_CDS_LIBS@
+URCU_CFLAGS = @URCU_CFLAGS@
+URCU_LIBS = @URCU_LIBS@
 UST_CFLAGS = @UST_CFLAGS@
 UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
 UST_CTL_LIBS = @UST_CTL_LIBS@
@@ -520,6 +543,7 @@ localedir = @localedir@
 localstatedir = @localstatedir@
 lttngactionincludedir = @lttngactionincludedir@
 lttngconditionincludedir = @lttngconditionincludedir@
+lttngeventruleincludedir = @lttngeventruleincludedir@
 lttngincludedir = @lttngincludedir@
 lttnglibexecdir = @lttnglibexecdir@
 lttngnotificationincludedir = @lttngnotificationincludedir@
@@ -551,14 +575,14 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-
-# Add main.c at the end for compile order
-lttng_sessiond_SOURCES = utils.c utils.h trace-kernel.c trace-kernel.h \
-	kernel.c kernel.h ust-app.h trace-ust.h notify-apps.h \
-	lttng-ust-ctl.h lttng-ust-abi.h lttng-ust-error.h \
-	ust-ctl-internal.h ust-abi-internal.h ust-error-internal.h \
-	ust-registry.h context.c context.h channel.c channel.h event.c \
-	event.h shm.c shm.h consumer.c consumer.h session.c session.h \
+noinst_LTLIBRARIES = liblttng-sessiond-common.la
+liblttng_sessiond_common_la_SOURCES = utils.c utils.h trace-kernel.c \
+	trace-kernel.h kernel.c kernel.h ust-app.h ust-sigbus.h \
+	trace-ust.h notify-apps.h lttng-ust-ctl.h lttng-ust-abi.h \
+	lttng-ust-error.h ust-ctl-internal.h ust-abi-internal.h \
+	ust-error-internal.h ust-registry.h condition-internal.c \
+	condition-internal.h context.c context.h channel.c channel.h \
+	event.c event.h consumer.c consumer.h session.c session.h \
 	modprobe.c modprobe.h kern-modules.h fd-limit.c fd-limit.h \
 	kernel-consumer.c kernel-consumer.h consumer.h \
 	health-sessiond.h cmd.c cmd.h buffer-registry.c \
@@ -574,10 +598,12 @@ lttng_sessiond_SOURCES = utils.c utils.h trace-kernel.c trace-kernel.h \
 	client.c client.h dispatch.c dispatch.h register.c register.h \
 	manage-apps.c manage-apps.h manage-kernel.c manage-kernel.h \
 	manage-consumer.c manage-consumer.h clear.c clear.h tracker.c \
-	tracker.h $(am__append_2) lttng-sessiond.h main.c
+	tracker.h event-notifier-error-accounting.c \
+	event-notifier-error-accounting.h action-executor.c \
+	action-executor.h trigger-error-query.c $(am__append_2)
 
 # link on liblttngctl for check if sessiond is already alive.
-lttng_sessiond_LDADD = -lurcu-common -lurcu $(KMOD_LIBS) \
+liblttng_sessiond_common_la_LIBADD = $(URCU_LIBS) $(KMOD_LIBS) \
 	$(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la \
 	$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
 	$(top_builddir)/src/common/kernel-ctl/libkernel-ctl.la \
@@ -590,6 +616,9 @@ lttng_sessiond_LDADD = -lurcu-common -lurcu $(KMOD_LIBS) \
 	$(top_builddir)/src/common/config/libconfig.la \
 	$(top_builddir)/src/common/string-utils/libstring-utils.la \
 	$(am__append_3)
+lttng_sessiond_SOURCES = lttng-sessiond.h main.c
+lttng_sessiond_LDFLAGS = -rdynamic
+lttng_sessiond_LDADD = liblttng-sessiond-common.la
 all: all-am
 
 .SUFFIXES:
@@ -623,6 +652,20 @@ $(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
+
+clean-noinstLTLIBRARIES:
+	-test -z "$(noinst_LTLIBRARIES)" || rm -f $(noinst_LTLIBRARIES)
+	@list='$(noinst_LTLIBRARIES)'; \
+	locs=`for p in $$list; do echo $$p; done | \
+	      sed 's|^[^/]*$$|.|; s|/[^/]*$$||; s|$$|/so_locations|' | \
+	      sort -u`; \
+	test -z "$$locs" || { \
+	  echo rm -f $${locs}; \
+	  rm -f $${locs}; \
+	}
+
+liblttng-sessiond-common.la: $(liblttng_sessiond_common_la_OBJECTS) $(liblttng_sessiond_common_la_DEPENDENCIES) $(EXTRA_liblttng_sessiond_common_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(LINK)  $(liblttng_sessiond_common_la_OBJECTS) $(liblttng_sessiond_common_la_LIBADD) $(LIBS)
 install-binPROGRAMS: $(bin_PROGRAMS)
 	@$(NORMAL_INSTALL)
 	@list='$(bin_PROGRAMS)'; test -n "$(bindir)" || list=; \
@@ -675,7 +718,7 @@ clean-binPROGRAMS:
 
 lttng-sessiond$(EXEEXT): $(lttng_sessiond_OBJECTS) $(lttng_sessiond_DEPENDENCIES) $(EXTRA_lttng_sessiond_DEPENDENCIES) 
 	@rm -f lttng-sessiond$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(lttng_sessiond_OBJECTS) $(lttng_sessiond_LDADD) $(LIBS)
+	$(AM_V_CCLD)$(lttng_sessiond_LINK) $(lttng_sessiond_OBJECTS) $(lttng_sessiond_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -683,54 +726,58 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/agent-thread.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/agent.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/buffer-registry.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/channel.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/clear.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/client.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cmd.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/consumer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/context.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dispatch.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/event.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fd-limit.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/globals.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/health.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ht-cleanup.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kernel-consumer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kernel.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-syscall.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/action-executor.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/agent-thread.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/agent.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/buffer-registry.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/channel.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/clear.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/client.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cmd.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/condition-internal.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/consumer.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/context.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dispatch.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/event-notifier-error-accounting.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/event.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fd-limit.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/globals.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/health.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ht-cleanup.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kernel-consumer.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kernel.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-syscall.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/main.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/manage-apps.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/manage-consumer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/manage-kernel.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/modprobe.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notification-thread-commands.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notification-thread-events.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notification-thread.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notify-apps.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/process-utils.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/register.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/rotate.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/rotation-thread.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/save.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sessiond-config.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/shm.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/snapshot.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/thread-utils.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/thread.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/timer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trace-kernel.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trace-ust.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tracker.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-app.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-consumer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-field-utils.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-metadata.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-registry.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utils.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/manage-apps.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/manage-consumer.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/manage-kernel.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/modprobe.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notification-thread-commands.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notification-thread-events.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notification-thread.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notify-apps.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/process-utils.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/register.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/rotate.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/rotation-thread.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/save.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sessiond-config.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/snapshot.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/thread-utils.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/thread.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/timer.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trace-kernel.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trace-ust.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tracker.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trigger-error-query.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-app.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-consumer.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-field-utils.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-metadata.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-registry.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ust-sigbus.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utils.Plo@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
@@ -843,7 +890,7 @@ distdir: $(DISTFILES)
 	done
 check-am: all-am
 check: check-am
-all-am: Makefile $(PROGRAMS)
+all-am: Makefile $(LTLIBRARIES) $(PROGRAMS)
 installdirs:
 	for dir in "$(DESTDIR)$(bindir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
@@ -880,7 +927,8 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-clean-am: clean-binPROGRAMS clean-generic clean-libtool mostlyclean-am
+clean-am: clean-binPROGRAMS clean-generic clean-libtool \
+	clean-noinstLTLIBRARIES mostlyclean-am
 
 distclean: distclean-am
 	-rm -rf ./$(DEPDIR)
@@ -951,15 +999,16 @@ uninstall-am: uninstall-binPROGRAMS
 .MAKE: install-am install-strip
 
 .PHONY: CTAGS GTAGS TAGS all all-am check check-am clean \
-	clean-binPROGRAMS clean-generic clean-libtool cscopelist-am \
-	ctags ctags-am distclean distclean-compile distclean-generic \
-	distclean-libtool distclean-tags distdir dvi dvi-am html \
-	html-am info info-am install install-am install-binPROGRAMS \
-	install-data install-data-am install-dvi install-dvi-am \
-	install-exec install-exec-am install-html install-html-am \
-	install-info install-info-am install-man install-pdf \
-	install-pdf-am install-ps install-ps-am install-strip \
-	installcheck installcheck-am installdirs maintainer-clean \
+	clean-binPROGRAMS clean-generic clean-libtool \
+	clean-noinstLTLIBRARIES cscopelist-am ctags ctags-am distclean \
+	distclean-compile distclean-generic distclean-libtool \
+	distclean-tags distdir dvi dvi-am html html-am info info-am \
+	install install-am install-binPROGRAMS install-data \
+	install-data-am install-dvi install-dvi-am install-exec \
+	install-exec-am install-html install-html-am install-info \
+	install-info-am install-man install-pdf install-pdf-am \
+	install-ps install-ps-am install-strip installcheck \
+	installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
 	tags tags-am uninstall uninstall-am uninstall-binPROGRAMS

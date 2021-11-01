@@ -370,10 +370,10 @@ struct consumer_socket *consumer_find_socket_by_bitness(int bits,
 
 	switch (bits) {
 	case 64:
-		consumer_fd = uatomic_read(&ust_consumerd64_fd);
+		consumer_fd = uatomic_read(&the_ust_consumerd64_fd);
 		break;
 	case 32:
-		consumer_fd = uatomic_read(&ust_consumerd32_fd);
+		consumer_fd = uatomic_read(&the_ust_consumerd32_fd);
 		break;
 	default:
 		assert(0);
@@ -938,21 +938,23 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 {
 	assert(msg);
 
-        /* Zeroed structure */
+	/* Zeroed structure */
 	memset(msg, 0, sizeof(struct lttcomm_consumer_msg));
 	msg->u.ask_channel.buffer_credentials.uid = UINT32_MAX;
 	msg->u.ask_channel.buffer_credentials.gid = UINT32_MAX;
 
-        if (trace_chunk) {
+	if (trace_chunk) {
 		uint64_t chunk_id;
 		enum lttng_trace_chunk_status chunk_status;
 
 		chunk_status = lttng_trace_chunk_get_id(trace_chunk, &chunk_id);
 		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 		LTTNG_OPTIONAL_SET(&msg->u.ask_channel.chunk_id, chunk_id);
-        }
-	msg->u.ask_channel.buffer_credentials.uid = buffer_credentials->uid;
-	msg->u.ask_channel.buffer_credentials.gid = buffer_credentials->gid;
+	}
+	msg->u.ask_channel.buffer_credentials.uid =
+			lttng_credentials_get_uid(buffer_credentials);
+	msg->u.ask_channel.buffer_credentials.gid =
+			lttng_credentials_get_gid(buffer_credentials);
 
 	msg->cmd_type = LTTNG_CONSUMER_ASK_CHANNEL_CREATION;
 	msg->u.ask_channel.subbuf_size = subbuf_size;
@@ -1026,14 +1028,14 @@ void consumer_init_add_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 	/* Zeroed structure */
 	memset(msg, 0, sizeof(struct lttcomm_consumer_msg));
 
-        if (trace_chunk) {
+	if (trace_chunk) {
 		uint64_t chunk_id;
 		enum lttng_trace_chunk_status chunk_status;
 
 		chunk_status = lttng_trace_chunk_get_id(trace_chunk, &chunk_id);
 		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 		LTTNG_OPTIONAL_SET(&msg->u.channel.chunk_id, chunk_id);
-        }
+	}
 
 	/* Send channel */
 	msg->cmd_type = LTTNG_CONSUMER_ADD_CHANNEL;
@@ -1151,12 +1153,10 @@ int consumer_send_relayd_socket(struct consumer_socket *consumer_sock,
 		char output_path[LTTNG_PATH_MAX] = {};
 		uint64_t relayd_session_id;
 
-		ret = relayd_create_session(rsock,
-				&relayd_session_id,
+		ret = relayd_create_session(rsock, &relayd_session_id,
 				session_name, hostname, base_path,
-				session_live_timer,
-				consumer->snapshot, session_id,
-				sessiond_uuid, current_chunk_id,
+				session_live_timer, consumer->snapshot,
+				session_id, the_sessiond_uuid, current_chunk_id,
 				session_creation_time,
 				session_name_contains_creation_time,
 				output_path);
@@ -1930,9 +1930,9 @@ int consumer_create_trace_chunk(struct consumer_socket *socket,
 		assert(domain_dirfd >= 0);
 
 		msg.u.create_trace_chunk.credentials.value.uid =
-				chunk_credentials.uid;
+				lttng_credentials_get_uid(&chunk_credentials);
 		msg.u.create_trace_chunk.credentials.value.gid =
-				chunk_credentials.gid;
+				lttng_credentials_get_gid(&chunk_credentials);
 		msg.u.create_trace_chunk.credentials.is_set = 1;
 	}
 

@@ -6,13 +6,13 @@
  */
 
 #include <assert.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
 
+#include <common/compat/errno.h>
 #include <bin/lttng-sessiond/trace-kernel.h>
 #include <common/defaults.h>
 
@@ -23,10 +23,10 @@
 /* Number of TAP tests in this file */
 #define NUM_TESTS 11
 
-/* For error.h */
-int lttng_opt_quiet = 1;
-int lttng_opt_verbose;
-int lttng_opt_mi;
+#ifdef HAVE_LIBLTTNG_UST_CTL
+#include <lttng/ust-sigbus.h>
+DEFINE_LTTNG_UST_SIGBUS_STATE();
+#endif
 
 static const char alphanum[] =
 	"0123456789"
@@ -149,7 +149,7 @@ static void test_create_kernel_event(void)
 
 	ok(event->fd == -1 &&
 	   event->enabled == 1 &&
-	   event->event->instrumentation == LTTNG_KERNEL_TRACEPOINT &&
+	   event->event->instrumentation == LTTNG_KERNEL_ABI_TRACEPOINT &&
 	   strlen(event->event->name),
 	   "Validate kernel event");
 

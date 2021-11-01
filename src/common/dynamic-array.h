@@ -57,6 +57,25 @@ void *lttng_dynamic_array_get_element(const struct lttng_dynamic_array *array,
 }
 
 /*
+ * Set the array's element count to new_element_count. Any added element will
+ * be zeroed.
+ *
+ * Be careful to expand the array's element count _before_ calling out external
+ * APIs (e.g. read(3)) which may populate the buffer as setting the element
+ * count after will zero-out the result of the operation.
+ *
+ * Shrinking an array does not zero the old content. If the buffer may contain
+ * sensititve information, it must be cleared manually _before_ changing the
+ * size.
+ *
+ * NOTE: It is striclty _invalid_ to access memory after _size_, regardless
+ *       of prior calls to set_capacity().
+ */
+LTTNG_HIDDEN
+int lttng_dynamic_array_set_count(struct lttng_dynamic_array *array,
+		size_t new_element_count);
+
+/*
  * Add an element to the end of a dynamic array. The array's element count is
  * increased by one and its underlying capacity is adjusted automatically.
  *
@@ -119,6 +138,23 @@ void *lttng_dynamic_pointer_array_get_pointer(
 	void **element = lttng_dynamic_array_get_element(&array->array, index);
 
 	return *element;
+}
+
+/*
+ * Returns the pointer at index `index`, sets the array slot to NULL. Does not
+ * run the destructor.
+ */
+
+static inline
+void *lttng_dynamic_pointer_array_steal_pointer(
+		struct lttng_dynamic_pointer_array *array, size_t index)
+{
+	void **p_element = lttng_dynamic_array_get_element(&array->array, index);
+	void *element = *p_element;
+
+	*p_element = NULL;
+
+	return element;
 }
 
 /*

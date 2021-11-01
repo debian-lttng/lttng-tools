@@ -54,7 +54,7 @@ static int ht_match_event(struct cds_lfht_node *node, const void *_key)
 
 	/* Compare each field individually. */
 	for (i = 0; i < event->nr_fields; i++) {
-		if (!match_ustctl_field(&event->fields[i], &key->fields[i])) {
+		if (!match_lttng_ust_ctl_field(&event->fields[i], &key->fields[i])) {
 			goto no_match;
 		}
 	}
@@ -101,7 +101,7 @@ static int compare_enums(const struct ust_registry_enum *reg_enum_a,
 		goto end;
 	}
 	for (i = 0; i < reg_enum_a->nr_entries; i++) {
-		const struct ustctl_enum_entry *entries_a, *entries_b;
+		const struct lttng_ust_ctl_enum_entry *entries_a, *entries_b;
 
 		entries_a = &reg_enum_a->entries[i];
 		entries_b = &reg_enum_b->entries[i];
@@ -149,7 +149,7 @@ static int ht_match_enum(struct cds_lfht_node *node, const void *_key)
 	assert(_enum);
 	key = _key;
 
-	if (strncmp(_enum->name, key->name, LTTNG_UST_SYM_NAME_LEN)) {
+	if (strncmp(_enum->name, key->name, LTTNG_UST_ABI_SYM_NAME_LEN)) {
 		goto no_match;
 	}
 	if (compare_enums(_enum, key)) {
@@ -209,35 +209,46 @@ static unsigned long ht_hash_enum(void *_key, unsigned long seed)
  * trace reader.
  */
 static
-int validate_event_field(struct ustctl_field *field,
+int validate_event_field(struct lttng_ust_ctl_field *field,
 		const char *event_name,
 		struct ust_app *app)
 {
 	int ret = 0;
 
 	switch(field->type.atype) {
-	case ustctl_atype_integer:
-	case ustctl_atype_enum:
-	case ustctl_atype_array:
-	case ustctl_atype_sequence:
-	case ustctl_atype_string:
-	case ustctl_atype_variant:
+	case lttng_ust_ctl_atype_integer:
+	case lttng_ust_ctl_atype_enum:
+	case lttng_ust_ctl_atype_array:
+	case lttng_ust_ctl_atype_sequence:
+	case lttng_ust_ctl_atype_string:
+	case lttng_ust_ctl_atype_variant:
+	case lttng_ust_ctl_atype_array_nestable:
+	case lttng_ust_ctl_atype_sequence_nestable:
+	case lttng_ust_ctl_atype_enum_nestable:
+	case lttng_ust_ctl_atype_variant_nestable:
 		break;
-	case ustctl_atype_struct:
-		if (field->type.u._struct.nr_fields != 0) {
+	case lttng_ust_ctl_atype_struct:
+		if (field->type.u.legacy._struct.nr_fields != 0) {
+			WARN("Unsupported non-empty struct field.");
+			ret = -EINVAL;
+			goto end;
+		}
+		break;
+	case lttng_ust_ctl_atype_struct_nestable:
+		if (field->type.u.struct_nestable.nr_fields != 0) {
 			WARN("Unsupported non-empty struct field.");
 			ret = -EINVAL;
 			goto end;
 		}
 		break;
 
-	case ustctl_atype_float:
-		switch (field->type.u.basic._float.mant_dig) {
+	case lttng_ust_ctl_atype_float:
+		switch (field->type.u._float.mant_dig) {
 		case 0:
 			WARN("UST application '%s' (pid: %d) has unknown float mantissa '%u' "
 				"in field '%s', rejecting event '%s'",
 				app->name, app->pid,
-				field->type.u.basic._float.mant_dig,
+				field->type.u._float.mant_dig,
 				field->name,
 				event_name);
 			ret = -EINVAL;
@@ -256,7 +267,7 @@ end:
 }
 
 static
-int validate_event_fields(size_t nr_fields, struct ustctl_field *fields,
+int validate_event_fields(size_t nr_fields, struct lttng_ust_ctl_field *fields,
 		const char *event_name, struct ust_app *app)
 {
 	unsigned int i;
@@ -274,7 +285,7 @@ int validate_event_fields(size_t nr_fields, struct ustctl_field *fields,
  */
 static struct ust_registry_event *alloc_event(int session_objd,
 		int channel_objd, char *name, char *sig, size_t nr_fields,
-		struct ustctl_field *fields, int loglevel_value,
+		struct lttng_ust_ctl_field *fields, int loglevel_value,
 		char *model_emf_uri, struct ust_app *app)
 {
 	struct ust_registry_event *event = NULL;
@@ -389,7 +400,7 @@ end:
  */
 int ust_registry_create_event(struct ust_registry_session *session,
 		uint64_t chan_key, int session_objd, int channel_objd, char *name,
-		char *sig, size_t nr_fields, struct ustctl_field *fields,
+		char *sig, size_t nr_fields, struct lttng_ust_ctl_field *fields,
 		int loglevel_value, char *model_emf_uri, int buffer_type,
 		uint32_t *event_id_p, struct ust_app *app)
 {
@@ -573,8 +584,8 @@ struct ust_registry_enum *
 	struct ust_registry_enum reg_enum_lookup;
 
 	memset(&reg_enum_lookup, 0, sizeof(reg_enum_lookup));
-	strncpy(reg_enum_lookup.name, enum_name, LTTNG_UST_SYM_NAME_LEN);
-	reg_enum_lookup.name[LTTNG_UST_SYM_NAME_LEN - 1] = '\0';
+	strncpy(reg_enum_lookup.name, enum_name, LTTNG_UST_ABI_SYM_NAME_LEN);
+	reg_enum_lookup.name[LTTNG_UST_ABI_SYM_NAME_LEN - 1] = '\0';
 	reg_enum_lookup.id = enum_id;
 	cds_lfht_lookup(session->enums->ht,
 			ht_hash_enum((void *) &reg_enum_lookup, lttng_ht_seed),
@@ -600,7 +611,7 @@ end:
  */
 int ust_registry_create_or_find_enum(struct ust_registry_session *session,
 		int session_objd, char *enum_name,
-		struct ustctl_enum_entry *entries, size_t nr_entries,
+		struct lttng_ust_ctl_enum_entry *entries, size_t nr_entries,
 		uint64_t *enum_id)
 {
 	int ret = 0;
@@ -628,8 +639,8 @@ int ust_registry_create_or_find_enum(struct ust_registry_session *session,
 		ret = -ENOMEM;
 		goto end;
 	}
-	strncpy(reg_enum->name, enum_name, LTTNG_UST_SYM_NAME_LEN);
-	reg_enum->name[LTTNG_UST_SYM_NAME_LEN - 1] = '\0';
+	strncpy(reg_enum->name, enum_name, LTTNG_UST_ABI_SYM_NAME_LEN);
+	reg_enum->name[LTTNG_UST_ABI_SYM_NAME_LEN - 1] = '\0';
 	/* entries will be owned by reg_enum. */
 	reg_enum->entries = entries;
 	reg_enum->nr_entries = nr_entries;
@@ -721,8 +732,8 @@ static void destroy_channel(struct ust_registry_channel *chan, bool notif)
 
 	if (notif) {
 		cmd_ret = notification_thread_command_remove_channel(
-				notification_thread_handle, chan->consumer_key,
-				LTTNG_DOMAIN_UST);
+				the_notification_thread_handle,
+				chan->consumer_key, LTTNG_DOMAIN_UST);
 		if (cmd_ret != LTTNG_OK) {
 			ERR("Failed to remove channel from notification thread");
 		}

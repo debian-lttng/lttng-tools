@@ -68,7 +68,7 @@ static void setmask(sigset_t *mask)
 	}
 }
 
-static int channel_monitor_pipe = -1;
+static int the_channel_monitor_pipe = -1;
 
 /*
  * Execute action on a timer switch.
@@ -237,7 +237,11 @@ int consumer_flush_ust_index(struct lttng_consumer_stream *stream)
 		ERR("Failed to get the current timestamp");
 		goto end;
 	}
-	lttng_ustconsumer_flush_buffer(stream, 1);
+	ret = lttng_ustconsumer_flush_buffer(stream, 1);
+	if (ret < 0) {
+		ERR("Failed to flush buffer while flushing index");
+		goto end;
+	}
 	ret = lttng_ustconsumer_take_snapshot(stream);
 	if (ret < 0) {
 		if (ret != -EAGAIN) {
@@ -247,7 +251,7 @@ int consumer_flush_ust_index(struct lttng_consumer_stream *stream)
 		}
 		ret = lttng_ustconsumer_get_stream_id(stream, &stream_id);
 		if (ret < 0) {
-			PERROR("ustctl_get_stream_id");
+			PERROR("lttng_ust_ctl_get_stream_id");
 			goto end;
 		}
 		DBG("Stream %" PRIu64 " empty, sending beacon", stream->key);
@@ -271,7 +275,7 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 	struct lttng_consumer_channel *channel;
 	struct lttng_consumer_stream *stream;
 	struct lttng_ht_iter iter;
-	const struct lttng_ht *ht = consumer_data.stream_per_chan_id_ht;
+	const struct lttng_ht *ht = the_consumer_data.stream_per_chan_id_ht;
 	const flush_index_cb flush_index =
 			ctx->type == LTTNG_CONSUMER_KERNEL ?
 					consumer_flush_kernel_index :
@@ -368,7 +372,7 @@ int consumer_channel_timer_start(timer_t *timer_id,
 		unsigned int timer_interval_us, int signal)
 {
 	int ret = 0, delete_ret;
-	struct sigevent sev;
+	struct sigevent sev = {};
 	struct itimerspec its;
 
 	assert(channel);
@@ -570,7 +574,7 @@ int sample_channel_positions(struct lttng_consumer_channel *channel,
 	struct lttng_consumer_stream *stream;
 	bool empty_channel = true;
 	uint64_t high = 0, low = UINT64_MAX;
-	struct lttng_ht *ht = consumer_data.stream_per_chan_id_ht;
+	struct lttng_ht *ht = the_consumer_data.stream_per_chan_id_ht;
 
 	*_total_consumed = 0;
 
@@ -657,7 +661,7 @@ void monitor_timer(struct lttng_consumer_channel *channel)
 		return;
 	}
 
-	switch (consumer_data.type) {
+	switch (the_consumer_data.type) {
 	case LTTNG_CONSUMER_KERNEL:
 		sample = lttng_kconsumer_sample_snapshot_positions;
 		get_consumed = lttng_kconsumer_get_consumed_snapshot;
@@ -708,14 +712,14 @@ void monitor_timer(struct lttng_consumer_channel *channel)
 
 int consumer_timer_thread_get_channel_monitor_pipe(void)
 {
-	return uatomic_read(&channel_monitor_pipe);
+	return uatomic_read(&the_channel_monitor_pipe);
 }
 
 int consumer_timer_thread_set_channel_monitor_pipe(int fd)
 {
 	int ret;
 
-	ret = uatomic_cmpxchg(&channel_monitor_pipe, -1, fd);
+	ret = uatomic_cmpxchg(&the_channel_monitor_pipe, -1, fd);
 	if (ret != -1) {
 		ret = -1;
 		goto end;

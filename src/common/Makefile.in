@@ -17,6 +17,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 
+
 VPATH = @srcdir@
 am__is_gnu_make = { \
   if test -z '$(MAKELEVEL)'; then \
@@ -95,19 +96,16 @@ target_triplet = @target@
 @HAVE_ELF_H_TRUE@am__append_1 = \
 @HAVE_ELF_H_TRUE@	lttng-elf.c lttng-elf.h
 
-@BUILD_LIB_COMPAT_TRUE@am__append_2 = compat
-@BUILD_LIB_HEALTH_TRUE@am__append_3 = health
-@BUILD_LIB_HASHTABLE_TRUE@am__append_4 = hashtable
-@BUILD_LIB_KERNEL_CTL_TRUE@am__append_5 = kernel-ctl
-@BUILD_LIB_SESSIOND_COMM_TRUE@am__append_6 = sessiond-comm
-@BUILD_LIB_RELAYD_TRUE@am__append_7 = relayd
-@BUILD_LIB_FD_TRACKER_TRUE@am__append_8 = fd-tracker
-@BUILD_LIB_KERNEL_CONSUMER_TRUE@am__append_9 = kernel-consumer
-@BUILD_LIB_UST_CONSUMER_TRUE@am__append_10 = ust-consumer
-@BUILD_LIB_TESTPOINT_TRUE@am__append_11 = testpoint
-@BUILD_LIB_INDEX_TRUE@am__append_12 = index
-@BUILD_LIB_CONFIG_TRUE@am__append_13 = config
-@BUILD_LIB_CONSUMER_TRUE@am__append_14 = consumer
+@BUILD_LIB_HEALTH_TRUE@am__append_2 = health
+@BUILD_LIB_KERNEL_CTL_TRUE@am__append_3 = kernel-ctl
+@BUILD_LIB_SESSIOND_COMM_TRUE@am__append_4 = sessiond-comm
+@BUILD_LIB_RELAYD_TRUE@am__append_5 = relayd
+@BUILD_LIB_KERNEL_CONSUMER_TRUE@am__append_6 = kernel-consumer
+@BUILD_LIB_UST_CONSUMER_TRUE@am__append_7 = ust-consumer
+@BUILD_LIB_TESTPOINT_TRUE@am__append_8 = testpoint
+@BUILD_LIB_INDEX_TRUE@am__append_9 = index
+@BUILD_LIB_CONSUMER_TRUE@am__append_10 = consumer
+noinst_PROGRAMS = filter-grammar-test$(EXEEXT)
 subdir = src/common
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
@@ -137,6 +135,8 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/ax_append_compile_flags.m4 \
 	$(top_srcdir)/m4/libtool.m4 $(top_srcdir)/m4/ltoptions.m4 \
 	$(top_srcdir)/m4/ltsugar.m4 \
 	$(top_srcdir)/m4/lttng_check_sdt_works.m4 \
+	$(top_srcdir)/m4/lttng_pthread_getname_np.m4 \
+	$(top_srcdir)/m4/lttng_pthread_setname_np.m4 \
 	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
 	$(top_srcdir)/m4/pprint.m4 \
 	$(top_srcdir)/m4/rw_prog_cxx_works.m4 \
@@ -151,40 +151,76 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 libcommon_la_DEPENDENCIES =  \
+	$(top_builddir)/src/common/bytecode/libbytecode.la \
 	$(top_builddir)/src/common/config/libconfig.la \
 	$(top_builddir)/src/common/compat/libcompat.la \
 	$(top_builddir)/src/common/hashtable/libhashtable.la \
-	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la
-am__libcommon_la_SOURCES_DIST = action.c buffer-usage.c buffer-view.h \
-	buffer-view.c common.h condition.c context.c context.h \
-	credentials.h daemonize.c daemonize.h defaults.c \
-	dynamic-array.c dynamic-array.h dynamic-buffer.c \
-	dynamic-buffer.h endpoint.c error.c error.h evaluation.c \
-	event.c filter.c filter.h futex.c futex.h location.c \
-	mi-lttng.c mi-lttng.h notification.c notify.c optional.h \
-	pipe.c pipe.h readwrite.c readwrite.h runas.c runas.h \
-	session-consumed-size.c session-descriptor.c \
-	session-rotation.c spawn-viewer.c spawn-viewer.h time.c \
-	trace-chunk.c trace-chunk.h trace-chunk-registry.h trigger.c \
-	unix.c unix.h uri.c uri.h userspace-probe.c utils.c utils.h \
-	uuid.c uuid.h tracker.c tracker.h waiter.c waiter.h \
-	fs-handle.h fs-handle-internal.h fs-handle.c lttng-elf.c \
-	lttng-elf.h
+	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la \
+	$(top_builddir)/src/common/filter/libfilter.la \
+	$(top_builddir)/src/vendor/msgpack/libmsgpack.la
+am__libcommon_la_SOURCES_DIST = actions/action.c actions/list.c \
+	actions/notify.c actions/path.c actions/rotate-session.c \
+	actions/snapshot-session.c actions/start-session.c \
+	actions/stop-session.c actions/rate-policy.c buffer-view.h \
+	buffer-view.c common.h conditions/buffer-usage.c \
+	conditions/condition.c conditions/event-rule-matches.c \
+	conditions/session-consumed-size.c \
+	conditions/session-rotation.c context.c context.h \
+	credentials.c credentials.h daemonize.c daemonize.h defaults.c \
+	domain.c dynamic-array.c dynamic-array.h dynamic-buffer.c \
+	dynamic-buffer.h endpoint.c error.c error.h error-query.c \
+	evaluation.c event.c event-expr/event-expr.c \
+	event-field-value.c event-rule/event-rule.c \
+	event-rule/kernel-kprobe.c event-rule/kernel-syscall.c \
+	event-rule/kernel-uprobe.c event-rule/kernel-tracepoint.c \
+	event-rule/user-tracepoint.c event-rule/log4j-logging.c \
+	event-rule/jul-logging.c event-rule/python-logging.c filter.c \
+	filter.h fd-handle.c fd-handle.h fs-handle.c fs-handle.h \
+	fs-handle-internal.h futex.c futex.h kernel-probe.c \
+	index-allocator.c index-allocator.h location.c \
+	log-level-rule.c mi-lttng.c mi-lttng.h notification.c \
+	optional.h payload.c payload.h payload-view.c payload-view.h \
+	pipe.c pipe.h readwrite.c readwrite.h runas.c runas.h shm.c \
+	shm.h session-descriptor.c snapshot.c snapshot.h \
+	spawn-viewer.c spawn-viewer.h time.c trace-chunk.c \
+	trace-chunk.h trace-chunk-registry.h trigger.c unix.c unix.h \
+	uri.c uri.h userspace-probe.c utils.c utils.h uuid.c uuid.h \
+	thread.c thread.h tracker.c tracker.h waiter.c waiter.h \
+	lttng-elf.c lttng-elf.h
+am__dirstamp = $(am__leading_dot)dirstamp
 @HAVE_ELF_H_TRUE@am__objects_1 = lttng-elf.lo
-am_libcommon_la_OBJECTS = action.lo buffer-usage.lo buffer-view.lo \
-	condition.lo context.lo daemonize.lo defaults.lo \
-	dynamic-array.lo dynamic-buffer.lo endpoint.lo error.lo \
-	evaluation.lo event.lo filter.lo futex.lo location.lo \
-	mi-lttng.lo notification.lo notify.lo pipe.lo readwrite.lo \
-	runas.lo session-consumed-size.lo session-descriptor.lo \
-	session-rotation.lo spawn-viewer.lo time.lo trace-chunk.lo \
-	trigger.lo unix.lo uri.lo userspace-probe.lo utils.lo uuid.lo \
-	tracker.lo waiter.lo fs-handle.lo $(am__objects_1)
+am_libcommon_la_OBJECTS = actions/action.lo actions/list.lo \
+	actions/notify.lo actions/path.lo actions/rotate-session.lo \
+	actions/snapshot-session.lo actions/start-session.lo \
+	actions/stop-session.lo actions/rate-policy.lo buffer-view.lo \
+	conditions/buffer-usage.lo conditions/condition.lo \
+	conditions/event-rule-matches.lo \
+	conditions/session-consumed-size.lo \
+	conditions/session-rotation.lo context.lo credentials.lo \
+	daemonize.lo defaults.lo domain.lo dynamic-array.lo \
+	dynamic-buffer.lo endpoint.lo error.lo error-query.lo \
+	evaluation.lo event.lo event-expr/event-expr.lo \
+	event-field-value.lo event-rule/event-rule.lo \
+	event-rule/kernel-kprobe.lo event-rule/kernel-syscall.lo \
+	event-rule/kernel-uprobe.lo event-rule/kernel-tracepoint.lo \
+	event-rule/user-tracepoint.lo event-rule/log4j-logging.lo \
+	event-rule/jul-logging.lo event-rule/python-logging.lo \
+	filter.lo fd-handle.lo fs-handle.lo futex.lo kernel-probe.lo \
+	index-allocator.lo location.lo log-level-rule.lo mi-lttng.lo \
+	notification.lo payload.lo payload-view.lo pipe.lo \
+	readwrite.lo runas.lo shm.lo session-descriptor.lo snapshot.lo \
+	spawn-viewer.lo time.lo trace-chunk.lo trigger.lo unix.lo \
+	uri.lo userspace-probe.lo utils.lo uuid.lo thread.lo \
+	tracker.lo waiter.lo $(am__objects_1)
 libcommon_la_OBJECTS = $(am_libcommon_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
+PROGRAMS = $(noinst_PROGRAMS)
+am_filter_grammar_test_OBJECTS = filter-grammar-test.$(OBJEXT)
+filter_grammar_test_OBJECTS = $(am_filter_grammar_test_OBJECTS)
+filter_grammar_test_DEPENDENCIES = libcommon.la
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -219,8 +255,9 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(libcommon_la_SOURCES)
-DIST_SOURCES = $(am__libcommon_la_SOURCES_DIST)
+SOURCES = $(libcommon_la_SOURCES) $(filter_grammar_test_SOURCES)
+DIST_SOURCES = $(am__libcommon_la_SOURCES_DIST) \
+	$(filter_grammar_test_SOURCES)
 RECURSIVE_TARGETS = all-recursive check-recursive cscopelist-recursive \
 	ctags-recursive dvi-recursive html-recursive info-recursive \
 	install-data-recursive install-dvi-recursive \
@@ -309,6 +346,7 @@ CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CMD_DESCR_ADD_CONTEXT = @CMD_DESCR_ADD_CONTEXT@
+CMD_DESCR_ADD_TRIGGER = @CMD_DESCR_ADD_TRIGGER@
 CMD_DESCR_CLEAR = @CMD_DESCR_CLEAR@
 CMD_DESCR_CREATE = @CMD_DESCR_CREATE@
 CMD_DESCR_DESTROY = @CMD_DESCR_DESTROY@
@@ -320,8 +358,10 @@ CMD_DESCR_ENABLE_EVENT = @CMD_DESCR_ENABLE_EVENT@
 CMD_DESCR_ENABLE_ROTATION = @CMD_DESCR_ENABLE_ROTATION@
 CMD_DESCR_HELP = @CMD_DESCR_HELP@
 CMD_DESCR_LIST = @CMD_DESCR_LIST@
+CMD_DESCR_LIST_TRIGGERS = @CMD_DESCR_LIST_TRIGGERS@
 CMD_DESCR_LOAD = @CMD_DESCR_LOAD@
 CMD_DESCR_REGENERATE = @CMD_DESCR_REGENERATE@
+CMD_DESCR_REMOVE_TRIGGER = @CMD_DESCR_REMOVE_TRIGGER@
 CMD_DESCR_ROTATE = @CMD_DESCR_ROTATE@
 CMD_DESCR_SAVE = @CMD_DESCR_SAVE@
 CMD_DESCR_SET_SESSION = @CMD_DESCR_SET_SESSION@
@@ -353,6 +393,7 @@ DEFAULT_APP_SOCKET_RW_TIMEOUT = @DEFAULT_APP_SOCKET_RW_TIMEOUT@
 DEFAULT_CHANNEL_SUBBUF_SIZE = @DEFAULT_CHANNEL_SUBBUF_SIZE@
 DEFAULT_CHANNEL_TRACEFILE_COUNT = @DEFAULT_CHANNEL_TRACEFILE_COUNT@
 DEFAULT_CHANNEL_TRACEFILE_SIZE = @DEFAULT_CHANNEL_TRACEFILE_SIZE@
+DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE = @DEFAULT_EVENT_NOTIFIER_ERROR_COUNT_MAP_SIZE@
 DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT = @DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT@
 DEFAULT_KERNEL_CHANNEL_LIVE_TIMER = @DEFAULT_KERNEL_CHANNEL_LIVE_TIMER@
 DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER = @DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER@
@@ -442,6 +483,7 @@ NMEDIT = @NMEDIT@
 OBJCOPY = @OBJCOPY@
 OBJDUMP = @OBJDUMP@
 OBJEXT = @OBJEXT@
+OSTYPE = @OSTYPE@
 OTOOL = @OTOOL@
 OTOOL64 = @OTOOL64@
 PACKAGE = @PACKAGE@
@@ -482,6 +524,12 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 SWIG = @SWIG@
 SWIG_LIB = @SWIG_LIB@
+URCU_BP_CFLAGS = @URCU_BP_CFLAGS@
+URCU_BP_LIBS = @URCU_BP_LIBS@
+URCU_CDS_CFLAGS = @URCU_CDS_CFLAGS@
+URCU_CDS_LIBS = @URCU_CDS_LIBS@
+URCU_CFLAGS = @URCU_CFLAGS@
+URCU_LIBS = @URCU_LIBS@
 UST_CFLAGS = @UST_CFLAGS@
 UST_CTL_CFLAGS = @UST_CTL_CFLAGS@
 UST_CTL_LIBS = @UST_CTL_LIBS@
@@ -533,6 +581,7 @@ localedir = @localedir@
 localstatedir = @localstatedir@
 lttngactionincludedir = @lttngactionincludedir@
 lttngconditionincludedir = @lttngconditionincludedir@
+lttngeventruleincludedir = @lttngeventruleincludedir@
 lttngincludedir = @lttngincludedir@
 lttnglibexecdir = @lttnglibexecdir@
 lttngnotificationincludedir = @lttngnotificationincludedir@
@@ -565,11 +614,10 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = subdir-objects
-SUBDIRS = string-utils $(am__append_2) $(am__append_3) $(am__append_4) \
+SUBDIRS = argpar bytecode compat config fd-tracker string-utils filter \
+	hashtable $(am__append_2) $(am__append_3) $(am__append_4) \
 	$(am__append_5) $(am__append_6) $(am__append_7) \
-	$(am__append_8) $(am__append_9) $(am__append_10) \
-	$(am__append_11) $(am__append_12) $(am__append_13) \
-	$(am__append_14)
+	$(am__append_8) $(am__append_9) $(am__append_10)
 
 # Make sure to always distribute all folders
 # since SUBDIRS is decided at configure time.
@@ -587,31 +635,52 @@ DIST_SUBDIRS = \
 	config \
 	consumer \
 	string-utils \
-	fd-tracker
+	fd-tracker \
+	bytecode \
+	filter \
+	argpar
 
 
 # Common library
 noinst_LTLIBRARIES = libcommon.la
-EXTRA_DIST = mi-lttng-4.0.xsd
-libcommon_la_SOURCES = action.c buffer-usage.c buffer-view.h \
-	buffer-view.c common.h condition.c context.c context.h \
-	credentials.h daemonize.c daemonize.h defaults.c \
-	dynamic-array.c dynamic-array.h dynamic-buffer.c \
-	dynamic-buffer.h endpoint.c error.c error.h evaluation.c \
-	event.c filter.c filter.h futex.c futex.h location.c \
-	mi-lttng.c mi-lttng.h notification.c notify.c optional.h \
-	pipe.c pipe.h readwrite.c readwrite.h runas.c runas.h \
-	session-consumed-size.c session-descriptor.c \
-	session-rotation.c spawn-viewer.c spawn-viewer.h time.c \
-	trace-chunk.c trace-chunk.h trace-chunk-registry.h trigger.c \
-	unix.c unix.h uri.c uri.h userspace-probe.c utils.c utils.h \
-	uuid.c uuid.h tracker.c tracker.h waiter.c waiter.h \
-	fs-handle.h fs-handle-internal.h fs-handle.c $(am__append_1)
+EXTRA_DIST = mi-lttng-4.1.xsd
+libcommon_la_SOURCES = actions/action.c actions/list.c \
+	actions/notify.c actions/path.c actions/rotate-session.c \
+	actions/snapshot-session.c actions/start-session.c \
+	actions/stop-session.c actions/rate-policy.c buffer-view.h \
+	buffer-view.c common.h conditions/buffer-usage.c \
+	conditions/condition.c conditions/event-rule-matches.c \
+	conditions/session-consumed-size.c \
+	conditions/session-rotation.c context.c context.h \
+	credentials.c credentials.h daemonize.c daemonize.h defaults.c \
+	domain.c dynamic-array.c dynamic-array.h dynamic-buffer.c \
+	dynamic-buffer.h endpoint.c error.c error.h error-query.c \
+	evaluation.c event.c event-expr/event-expr.c \
+	event-field-value.c event-rule/event-rule.c \
+	event-rule/kernel-kprobe.c event-rule/kernel-syscall.c \
+	event-rule/kernel-uprobe.c event-rule/kernel-tracepoint.c \
+	event-rule/user-tracepoint.c event-rule/log4j-logging.c \
+	event-rule/jul-logging.c event-rule/python-logging.c filter.c \
+	filter.h fd-handle.c fd-handle.h fs-handle.c fs-handle.h \
+	fs-handle-internal.h futex.c futex.h kernel-probe.c \
+	index-allocator.c index-allocator.h location.c \
+	log-level-rule.c mi-lttng.c mi-lttng.h notification.c \
+	optional.h payload.c payload.h payload-view.c payload-view.h \
+	pipe.c pipe.h readwrite.c readwrite.h runas.c runas.h shm.c \
+	shm.h session-descriptor.c snapshot.c snapshot.h \
+	spawn-viewer.c spawn-viewer.h time.c trace-chunk.c \
+	trace-chunk.h trace-chunk-registry.h trigger.c unix.c unix.h \
+	uri.c uri.h userspace-probe.c utils.c utils.h uuid.c uuid.h \
+	thread.c thread.h tracker.c tracker.h waiter.c waiter.h \
+	$(am__append_1)
 libcommon_la_LIBADD = \
+	$(top_builddir)/src/common/bytecode/libbytecode.la \
 	$(top_builddir)/src/common/config/libconfig.la \
 	$(top_builddir)/src/common/compat/libcompat.la \
 	$(top_builddir)/src/common/hashtable/libhashtable.la \
-	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la
+	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la \
+	$(top_builddir)/src/common/filter/libfilter.la \
+	$(top_builddir)/src/vendor/msgpack/libmsgpack.la
 
 noinst_HEADERS = \
 	align.h \
@@ -625,6 +694,10 @@ noinst_HEADERS = \
 	time.h \
 	uri.h \
 	utils.h
+
+filter_grammar_test_SOURCES = filter-grammar-test.c
+filter_grammar_test_LDADD = \
+	libcommon.la
 
 all: all-recursive
 
@@ -670,44 +743,145 @@ clean-noinstLTLIBRARIES:
 	  echo rm -f $${locs}; \
 	  rm -f $${locs}; \
 	}
+actions/$(am__dirstamp):
+	@$(MKDIR_P) actions
+	@: > actions/$(am__dirstamp)
+actions/$(DEPDIR)/$(am__dirstamp):
+	@$(MKDIR_P) actions/$(DEPDIR)
+	@: > actions/$(DEPDIR)/$(am__dirstamp)
+actions/action.lo: actions/$(am__dirstamp) \
+	actions/$(DEPDIR)/$(am__dirstamp)
+actions/list.lo: actions/$(am__dirstamp) \
+	actions/$(DEPDIR)/$(am__dirstamp)
+actions/notify.lo: actions/$(am__dirstamp) \
+	actions/$(DEPDIR)/$(am__dirstamp)
+actions/path.lo: actions/$(am__dirstamp) \
+	actions/$(DEPDIR)/$(am__dirstamp)
+actions/rotate-session.lo: actions/$(am__dirstamp) \
+	actions/$(DEPDIR)/$(am__dirstamp)
+actions/snapshot-session.lo: actions/$(am__dirstamp) \
+	actions/$(DEPDIR)/$(am__dirstamp)
+actions/start-session.lo: actions/$(am__dirstamp) \
+	actions/$(DEPDIR)/$(am__dirstamp)
+actions/stop-session.lo: actions/$(am__dirstamp) \
+	actions/$(DEPDIR)/$(am__dirstamp)
+actions/rate-policy.lo: actions/$(am__dirstamp) \
+	actions/$(DEPDIR)/$(am__dirstamp)
+conditions/$(am__dirstamp):
+	@$(MKDIR_P) conditions
+	@: > conditions/$(am__dirstamp)
+conditions/$(DEPDIR)/$(am__dirstamp):
+	@$(MKDIR_P) conditions/$(DEPDIR)
+	@: > conditions/$(DEPDIR)/$(am__dirstamp)
+conditions/buffer-usage.lo: conditions/$(am__dirstamp) \
+	conditions/$(DEPDIR)/$(am__dirstamp)
+conditions/condition.lo: conditions/$(am__dirstamp) \
+	conditions/$(DEPDIR)/$(am__dirstamp)
+conditions/event-rule-matches.lo: conditions/$(am__dirstamp) \
+	conditions/$(DEPDIR)/$(am__dirstamp)
+conditions/session-consumed-size.lo: conditions/$(am__dirstamp) \
+	conditions/$(DEPDIR)/$(am__dirstamp)
+conditions/session-rotation.lo: conditions/$(am__dirstamp) \
+	conditions/$(DEPDIR)/$(am__dirstamp)
+event-expr/$(am__dirstamp):
+	@$(MKDIR_P) event-expr
+	@: > event-expr/$(am__dirstamp)
+event-expr/$(DEPDIR)/$(am__dirstamp):
+	@$(MKDIR_P) event-expr/$(DEPDIR)
+	@: > event-expr/$(DEPDIR)/$(am__dirstamp)
+event-expr/event-expr.lo: event-expr/$(am__dirstamp) \
+	event-expr/$(DEPDIR)/$(am__dirstamp)
+event-rule/$(am__dirstamp):
+	@$(MKDIR_P) event-rule
+	@: > event-rule/$(am__dirstamp)
+event-rule/$(DEPDIR)/$(am__dirstamp):
+	@$(MKDIR_P) event-rule/$(DEPDIR)
+	@: > event-rule/$(DEPDIR)/$(am__dirstamp)
+event-rule/event-rule.lo: event-rule/$(am__dirstamp) \
+	event-rule/$(DEPDIR)/$(am__dirstamp)
+event-rule/kernel-kprobe.lo: event-rule/$(am__dirstamp) \
+	event-rule/$(DEPDIR)/$(am__dirstamp)
+event-rule/kernel-syscall.lo: event-rule/$(am__dirstamp) \
+	event-rule/$(DEPDIR)/$(am__dirstamp)
+event-rule/kernel-uprobe.lo: event-rule/$(am__dirstamp) \
+	event-rule/$(DEPDIR)/$(am__dirstamp)
+event-rule/kernel-tracepoint.lo: event-rule/$(am__dirstamp) \
+	event-rule/$(DEPDIR)/$(am__dirstamp)
+event-rule/user-tracepoint.lo: event-rule/$(am__dirstamp) \
+	event-rule/$(DEPDIR)/$(am__dirstamp)
+event-rule/log4j-logging.lo: event-rule/$(am__dirstamp) \
+	event-rule/$(DEPDIR)/$(am__dirstamp)
+event-rule/jul-logging.lo: event-rule/$(am__dirstamp) \
+	event-rule/$(DEPDIR)/$(am__dirstamp)
+event-rule/python-logging.lo: event-rule/$(am__dirstamp) \
+	event-rule/$(DEPDIR)/$(am__dirstamp)
 
 libcommon.la: $(libcommon_la_OBJECTS) $(libcommon_la_DEPENDENCIES) $(EXTRA_libcommon_la_DEPENDENCIES) 
 	$(AM_V_CCLD)$(LINK)  $(libcommon_la_OBJECTS) $(libcommon_la_LIBADD) $(LIBS)
 
+clean-noinstPROGRAMS:
+	@list='$(noinst_PROGRAMS)'; test -n "$$list" || exit 0; \
+	echo " rm -f" $$list; \
+	rm -f $$list || exit $$?; \
+	test -n "$(EXEEXT)" || exit 0; \
+	list=`for p in $$list; do echo "$$p"; done | sed 's/$(EXEEXT)$$//'`; \
+	echo " rm -f" $$list; \
+	rm -f $$list
+
+filter-grammar-test$(EXEEXT): $(filter_grammar_test_OBJECTS) $(filter_grammar_test_DEPENDENCIES) $(EXTRA_filter_grammar_test_DEPENDENCIES) 
+	@rm -f filter-grammar-test$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(filter_grammar_test_OBJECTS) $(filter_grammar_test_LDADD) $(LIBS)
+
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
+	-rm -f actions/*.$(OBJEXT)
+	-rm -f actions/*.lo
+	-rm -f conditions/*.$(OBJEXT)
+	-rm -f conditions/*.lo
+	-rm -f event-expr/*.$(OBJEXT)
+	-rm -f event-expr/*.lo
+	-rm -f event-rule/*.$(OBJEXT)
+	-rm -f event-rule/*.lo
 
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/action.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/buffer-usage.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/buffer-view.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/condition.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/context.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/credentials.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/daemonize.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/defaults.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/domain.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dynamic-array.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dynamic-buffer.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/endpoint.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/error-query.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/error.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/evaluation.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/event-field-value.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/event.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fd-handle.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/filter-grammar-test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/filter.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fs-handle.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/futex.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/index-allocator.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kernel-probe.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/location.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/log-level-rule.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-elf.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mi-lttng.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notification.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notify.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/payload-view.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/payload.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pipe.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/readwrite.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/runas.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session-consumed-size.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session-descriptor.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session-rotation.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/shm.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/snapshot.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/spawn-viewer.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/thread.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/time.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/trace-chunk.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tracker.Plo@am__quote@
@@ -718,6 +892,30 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utils.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/uuid.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/waiter.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@actions/$(DEPDIR)/action.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@actions/$(DEPDIR)/list.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@actions/$(DEPDIR)/notify.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@actions/$(DEPDIR)/path.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@actions/$(DEPDIR)/rate-policy.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@actions/$(DEPDIR)/rotate-session.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@actions/$(DEPDIR)/snapshot-session.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@actions/$(DEPDIR)/start-session.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@actions/$(DEPDIR)/stop-session.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@conditions/$(DEPDIR)/buffer-usage.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@conditions/$(DEPDIR)/condition.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@conditions/$(DEPDIR)/event-rule-matches.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@conditions/$(DEPDIR)/session-consumed-size.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@conditions/$(DEPDIR)/session-rotation.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@event-expr/$(DEPDIR)/event-expr.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@event-rule/$(DEPDIR)/event-rule.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@event-rule/$(DEPDIR)/jul-logging.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@event-rule/$(DEPDIR)/kernel-kprobe.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@event-rule/$(DEPDIR)/kernel-syscall.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@event-rule/$(DEPDIR)/kernel-tracepoint.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@event-rule/$(DEPDIR)/kernel-uprobe.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@event-rule/$(DEPDIR)/log4j-logging.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@event-rule/$(DEPDIR)/python-logging.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@event-rule/$(DEPDIR)/user-tracepoint.Plo@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\
@@ -748,6 +946,10 @@ mostlyclean-libtool:
 
 clean-libtool:
 	-rm -rf .libs _libs
+	-rm -rf actions/.libs actions/_libs
+	-rm -rf conditions/.libs conditions/_libs
+	-rm -rf event-expr/.libs event-expr/_libs
+	-rm -rf event-rule/.libs event-rule/_libs
 
 # This directory's subdirectories are mostly independent; you can cd
 # into them and run 'make' without going through this Makefile.
@@ -905,7 +1107,7 @@ distdir: $(DISTFILES)
 	done
 check-am: all-am
 check: check-recursive
-all-am: Makefile $(LTLIBRARIES) $(HEADERS) all-local
+all-am: Makefile $(LTLIBRARIES) $(PROGRAMS) $(HEADERS) all-local
 installdirs: installdirs-recursive
 installdirs-am:
 install: install-recursive
@@ -934,6 +1136,14 @@ clean-generic:
 distclean-generic:
 	-test -z "$(CONFIG_CLEAN_FILES)" || rm -f $(CONFIG_CLEAN_FILES)
 	-test . = "$(srcdir)" || test -z "$(CONFIG_CLEAN_VPATH_FILES)" || rm -f $(CONFIG_CLEAN_VPATH_FILES)
+	-rm -f actions/$(DEPDIR)/$(am__dirstamp)
+	-rm -f actions/$(am__dirstamp)
+	-rm -f conditions/$(DEPDIR)/$(am__dirstamp)
+	-rm -f conditions/$(am__dirstamp)
+	-rm -f event-expr/$(DEPDIR)/$(am__dirstamp)
+	-rm -f event-expr/$(am__dirstamp)
+	-rm -f event-rule/$(DEPDIR)/$(am__dirstamp)
+	-rm -f event-rule/$(am__dirstamp)
 
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
@@ -941,10 +1151,10 @@ maintainer-clean-generic:
 clean: clean-recursive
 
 clean-am: clean-generic clean-libtool clean-local \
-	clean-noinstLTLIBRARIES mostlyclean-am
+	clean-noinstLTLIBRARIES clean-noinstPROGRAMS mostlyclean-am
 
 distclean: distclean-recursive
-	-rm -rf ./$(DEPDIR)
+	-rm -rf ./$(DEPDIR) actions/$(DEPDIR) conditions/$(DEPDIR) event-expr/$(DEPDIR) event-rule/$(DEPDIR)
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -990,7 +1200,7 @@ install-ps-am:
 installcheck-am:
 
 maintainer-clean: maintainer-clean-recursive
-	-rm -rf ./$(DEPDIR)
+	-rm -rf ./$(DEPDIR) actions/$(DEPDIR) conditions/$(DEPDIR) event-expr/$(DEPDIR) event-rule/$(DEPDIR)
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 
@@ -1013,18 +1223,18 @@ uninstall-am:
 
 .PHONY: $(am__recursive_targets) CTAGS GTAGS TAGS all all-am all-local \
 	check check-am clean clean-generic clean-libtool clean-local \
-	clean-noinstLTLIBRARIES cscopelist-am ctags ctags-am distclean \
-	distclean-compile distclean-generic distclean-libtool \
-	distclean-tags distdir dvi dvi-am html html-am info info-am \
-	install install-am install-data install-data-am install-dvi \
-	install-dvi-am install-exec install-exec-am install-html \
-	install-html-am install-info install-info-am install-man \
-	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs \
-	installdirs-am maintainer-clean maintainer-clean-generic \
-	mostlyclean mostlyclean-compile mostlyclean-generic \
-	mostlyclean-libtool pdf pdf-am ps ps-am tags tags-am uninstall \
-	uninstall-am
+	clean-noinstLTLIBRARIES clean-noinstPROGRAMS cscopelist-am \
+	ctags ctags-am distclean distclean-compile distclean-generic \
+	distclean-libtool distclean-tags distdir dvi dvi-am html \
+	html-am info info-am install install-am install-data \
+	install-data-am install-dvi install-dvi-am install-exec \
+	install-exec-am install-html install-html-am install-info \
+	install-info-am install-man install-pdf install-pdf-am \
+	install-ps install-ps-am install-strip installcheck \
+	installcheck-am installdirs installdirs-am maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-compile \
+	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
+	tags tags-am uninstall uninstall-am
 
 .PRECIOUS: Makefile
 

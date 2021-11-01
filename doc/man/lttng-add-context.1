@@ -2,12 +2,12 @@
 .\"     Title: lttng-add-context
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 5 Februrary 2018
+.\"      Date: 14 June 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.12.3
+.\"    Source: LTTng 2.13.1
 .\"  Language: English
 .\"
-.TH "LTTNG\-ADD\-CONTEXT" "1" "5 Februrary 2018" "LTTng 2\&.12\&.3" "LTTng Manual"
+.TH "LTTNG\-ADD\-CONTEXT" "1" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -28,10 +28,10 @@
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
 .SH "NAME"
-lttng-add-context \- Add context fields to an LTTng channel
+lttng-add-context \- Add context fields to be recorded by LTTng
 .SH "SYNOPSIS"
 .sp
-Add context fields to a channel:
+Add context fields to be recorded to the event records of one or more channels:
 .sp
 .nf
 \fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBadd\-context\fR
@@ -40,39 +40,131 @@ Add context fields to a channel:
       \fB--type\fR=\fITYPE\fR [\fB--type\fR=\fITYPE\fR]\&...
 .fi
 .sp
-List the available context fields:
+List the available context field types:
 .sp
 .nf
 \fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBadd\-context\fR \fB--list\fR
 .fi
 .SH "DESCRIPTION"
 .sp
-The \fBlttng add-context\fR command adds one or more context fields to a channel\&.
-.sp
-Channels are created with the \fBlttng-enable-channel\fR(1) command\&.
-.sp
-When context fields are added to a channel, all the events emitted within this channel contain the dynamic values of those context fields\&.
-.sp
-If the \fB--session\fR option is omitted, the current tracing session is used\&. If the \fB--channel\fR option is omitted, the context fields are added to all the selected tracing session\(cqs channels\&.
-.sp
-Many context fields can be added to a channel at once by repeating the \fB--type\fR option\&.
-.sp
-perf counters are available as per\-CPU (\fBperf:cpu:\fR prefix) as well as per\-thread (\fBperf:thread:\fR prefix) counters\&. Currently, per\-CPU counters can only be used in the Linux kernel tracing domain, while per\-thread counters can only be used in the user space tracing domain\&.
-.sp
-It is also possible to enable PMU counters by raw ID using the \fBperf:cpu:raw:rN:NAME\fR (Linux kernel tracing domain) or \fBperf:thread:raw:rN:NAME\fR (user space tracing domain), with:
+The \fBlttng add-context\fR command can:
 .PP
-\fBN\fR
+Without the \fB--list\fR option
 .RS 4
-A hexadecimal event descriptor which is the same format as used by
-\fBperf-record\fR(1): a concatenation of the event number and umask value provided by the processor\(cqs manufacturer\&. The possible values for this field are processor\-specific\&.
+Add one or more context fields to be recorded by LTTng to the event records of:
+.PP
+With the \fB--session\fR=\fISESSION\fR option
+.RS 4
+The recording session named
+\fISESSION\fR\&.
 .RE
 .PP
-\fBNAME\fR
+Without the \fB--session\fR option
 .RS 4
-Custom name to easily recognize the counter\&.
+The current recording session (see
+\fBlttng-concepts\fR(7)
+to learn more about the current recording session)\&.
+.RE
+.PP
+With the \fB--channel\fR=\fICHANNEL\fR
+.RS 4
+The channel named
+\fICHANNEL\fR\&.
+.RE
+.PP
+Without the \fB--channel\fR option
+.RS 4
+\fBAll\fR
+the channels of the selected recording session\&.
+.RE
+.RE
+.PP
+With the \fB--list\fR option
+.RS 4
+List the available context field types\&.
 .RE
 .sp
-Application\-specific context fields can be added to a channel using the following syntax:
+See \fBlttng-concepts\fR(7) to learn more about recording sessions and channels\&.
+.sp
+Repeat the \fB--type\fR=\fITYPE\fR option to add more than one context field to be recorded\&. \fITYPE\fR is one of:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A statically\-known, or built\-in context field named\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A perf counter name:
+.PP
+Per\-CPU
+.RS 4
+Prefix:
+\fBperf:cpu:\fR
+.sp
+Only available with the
+\fB--kernel\fR
+option\&.
+.RE
+.PP
+Per\-thread
+.RS 4
+Prefix:
+\fBperf:thread:\fR
+.sp
+Only available with the
+\fB--userspace\fR,
+\fB--jul\fR, or
+\fB--log4j\fR
+option\&.
+.RE
+.sp
+Add Performance Monitoring Unit (PMU) counter context fields by raw ID with the
+\fBperf:cpu:raw:r\fR\fIN\fR\fB:\fR\fINAME\fR
+(\fB--kernel\fR
+option) or
+\fBperf:thread:raw:r\fR\fIN\fR\fB:\fR\fINAME\fR
+(\fB--userspace\fR,
+\fB--jul\fR, or
+\fB--log4j\fR
+option) types, with:
+.PP
+\fIN\fR
+.RS 4
+A hexadecimal event descriptor which follows the
+\fBperf-record\fR(1)
+format: a concatenation of the event number and umask value which the manufacturer of the processor provides\&.
+.sp
+The possible values for this part are processor\-specific\&.
+.RE
+.PP
+\fINAME\fR
+.RS 4
+Custom name to identify the counter\&.
+.RE
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An LTTng application\-specific context field name:
 .sp
 .if n \{\
 .RS 4
@@ -83,22 +175,39 @@ $app\&.\fIPROVIDER\fR:\fITYPE\fR
 .if n \{\
 .RE
 .\}
-.sp
-with:
-.PP
-\fIPROVIDER\fR
-.RS 4
-Provider name\&.
-.RE
++
+\fIPROVIDER\fR:: Provider name\&.
 .PP
 \fITYPE\fR
 .RS 4
 Context type name\&.
 .RE
+.sp
+Only available with the
+\fB--jul\fR
+and
+\fB--log4j\fR
+options\&.
+.RE
 .if n \{\
 .sp
 .\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBImportant\fR
+.ps -1
+.br
 .RS 4
+.sp
+Make sure to \fBsingle\-quote\fR \fITYPE\fR when you run the \fBadd-context\fR command from a shell, as \fB$\fR is a special character for variable substitution in most shells\&.
+.sp .5v
+.RE
+.if n \{\
+.sp
+.\}
 .it 1 an-trap
 .nr an-no-space-flag 1
 .nr an-break-flag 1
@@ -107,186 +216,93 @@ Context type name\&.
 \fBNote\fR
 .ps -1
 .br
+.RS 4
 .sp
-Make sure to \fBsingle\-quote\fR the type when running the command from a shell, as \fB$\fR is a special character for variable substitution in most shells\&.
+As of LTTng\ \&2\&.13\&.1, you may NOT add context fields to be recorded to the event records of a given channel once its recording session has been started (see \fBlttng-start\fR(1)) at least once\&.
 .sp .5v
 .RE
 .sp
-Use the \fB--list\fR option without other arguments to list the available context field names\&.
-.sp
-See the \fILIMITATIONS\fR section below for a list of limitations to consider\&.
+See the \(lqEXAMPLES\(rq section below for usage examples\&.
 .SH "OPTIONS"
 .sp
-General options are described in \fBlttng\fR(1)\&.
-.SS "Domain"
+See \fBlttng\fR(1) for \fIGENERAL OPTIONS\fR\&.
+.SS "Tracing domain"
 .sp
 One of:
 .PP
 \fB-j\fR, \fB--jul\fR
 .RS 4
-Add context to channel in the
+Add context fields to be recorded to the event records of one or more channels of the
 \fBjava.util.logging\fR
-(JUL) domain\&.
+(JUL) tracing domain\&.
 .RE
 .PP
 \fB-k\fR, \fB--kernel\fR
 .RS 4
-Add context to channel in the Linux kernel domain\&.
+Add context fields to be recorded to the event records of one or more channels of the Linux kernel tracing domain\&.
 .RE
 .PP
 \fB-l\fR, \fB--log4j\fR
 .RS 4
-Add context to channel in the Apache log4j domain\&.
+Add context fields to be recorded to the event records of one or more channels of the Apache log4j tracing domain\&.
 .RE
 .PP
 \fB-u\fR, \fB--userspace\fR
 .RS 4
-Add context to channel in the user space domain\&.
+Add context fields to be recorded to the event records of one or more channels of the user space tracing domain\&.
 .RE
-.SS "Target"
+.SS "Recording target"
 .PP
 \fB-c\fR \fICHANNEL\fR, \fB--channel\fR=\fICHANNEL\fR
 .RS 4
-Add context fields to a channel named
+Add context fields to be recorded to the event records of a channel named
 \fICHANNEL\fR
-instead of adding them to all the channels\&.
+instead of all the channels of the selected recording session\&.
 .RE
 .PP
 \fB-s\fR \fISESSION\fR, \fB--session\fR=\fISESSION\fR
 .RS 4
-Add context fields to a channel in the tracing session named
+Add context fields to be recorded to the event records of one or more channels of the recording session named
 \fISESSION\fR
-instead of the current tracing session\&.
+instead of the current recording session\&.
 .RE
-.SS "Context"
+.SS "Context field type"
 .PP
 \fB--list\fR
 .RS 4
-List the available context fields\&. Use this option alone\&.
+List the available context field types\&.
+.sp
+You may NOT use this option with the
+\fB--channel\fR,
+\fB--session\fR, or
+\fB--type\fR
+options\&.
 .RE
 .PP
 \fB-t\fR \fITYPE\fR, \fB--type\fR=\fITYPE\fR
 .RS 4
-Add context field named
-\fITYPE\fR\&. This option can be repeated as many times as needed on the command\-line\&.
+Add a context field having the type
+\fITYPE\fR
+to be recorded\&.
+.sp
+Repeat this option to add more than one context field\&.
 .RE
 .SS "Program information"
 .PP
 \fB-h\fR, \fB--help\fR
 .RS 4
-Show command help\&.
+Show help\&.
 .sp
-This option, like
-\fBlttng-help\fR(1), attempts to launch
+This option attempts to launch
 \fB/usr/bin/man\fR
-to view the command\(cqs man page\&. The path to the man pager can be overridden by the
+to view this manual page\&. Override the manual pager path with the
 \fBLTTNG_MAN_BIN_PATH\fR
 environment variable\&.
 .RE
 .PP
 \fB--list-options\fR
 .RS 4
-List available command options\&.
-.RE
-.SH "LIMITATIONS"
-.sp
-As of this version of LTTng, it is not possible to add context fields to a channel once its tracing session has been started (see \fBlttng-start\fR(1)) at least once\&.
-.SH "ENVIRONMENT VARIABLES"
-.PP
-\fBLTTNG_ABORT_ON_ERROR\fR
-.RS 4
-Set to 1 to abort the process after the first error is encountered\&.
-.RE
-.PP
-\fBLTTNG_HOME\fR
-.RS 4
-Overrides the
-\fB$HOME\fR
-environment variable\&. Useful when the user running the commands has a non\-writable home directory\&.
-.RE
-.PP
-\fBLTTNG_MAN_BIN_PATH\fR
-.RS 4
-Absolute path to the man pager to use for viewing help information about LTTng commands (using
-\fBlttng-help\fR(1)
-or
-\fBlttng COMMAND --help\fR)\&.
-.RE
-.PP
-\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
-.RS 4
-Path in which the
-\fBsession.xsd\fR
-session configuration XML schema may be found\&.
-.RE
-.PP
-\fBLTTNG_SESSIOND_PATH\fR
-.RS 4
-Full session daemon binary path\&.
-.sp
-The
-\fB--sessiond-path\fR
-option has precedence over this environment variable\&.
-.RE
-.sp
-Note that the \fBlttng-create\fR(1) command can spawn an LTTng session daemon automatically if none is running\&. See \fBlttng-sessiond\fR(8) for the environment variables influencing the execution of the session daemon\&.
-.SH "FILES"
-.PP
-\fB$LTTNG_HOME/.lttngrc\fR
-.RS 4
-User LTTng runtime configuration\&.
-.sp
-This is where the per\-user current tracing session is stored between executions of
-\fBlttng\fR(1)\&. The current tracing session can be set with
-\fBlttng-set-session\fR(1)\&. See
-\fBlttng-create\fR(1)
-for more information about tracing sessions\&.
-.RE
-.PP
-\fB$LTTNG_HOME/lttng-traces\fR
-.RS 4
-Default output directory of LTTng traces\&. This can be overridden with the
-\fB--output\fR
-option of the
-\fBlttng-create\fR(1)
-command\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng\fR
-.RS 4
-User LTTng runtime and configuration directory\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng/sessions\fR
-.RS 4
-Default location of saved user tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.PP
-\fB/usr/local/etc/lttng/sessions\fR
-.RS 4
-System\-wide location of saved tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-.sp
-\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR when not explicitly set\&.
-.sp .5v
+List available command options and quit\&.
 .RE
 .SH "EXIT STATUS"
 .PP
@@ -314,9 +330,194 @@ Fatal error
 .RS 4
 Command warning (something went wrong during the command)
 .RE
-.SH "BUGS"
+.SH "ENVIRONMENT"
+.PP
+\fBLTTNG_ABORT_ON_ERROR\fR
+.RS 4
+Set to
+\fB1\fR
+to abort the process after the first error is encountered\&.
+.RE
+.PP
+\fBLTTNG_HOME\fR
+.RS 4
+Path to the LTTng home directory\&.
 .sp
-If you encounter any issue or usability problem, please report it on the LTTng bug tracker <https://bugs.lttng.org/projects/lttng-tools>\&.
+Defaults to
+\fB$HOME\fR\&.
+.sp
+Useful when the Unix user running the commands has a non\-writable home directory\&.
+.RE
+.PP
+\fBLTTNG_MAN_BIN_PATH\fR
+.RS 4
+Absolute path to the manual pager to use to read the LTTng command\-line help (with
+\fBlttng-help\fR(1)
+or with the
+\fB--help\fR
+option) instead of
+\fB/usr/bin/man\fR\&.
+.RE
+.PP
+\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
+.RS 4
+Path to the directory containing the
+\fBsession.xsd\fR
+recording session configuration XML schema\&.
+.RE
+.PP
+\fBLTTNG_SESSIOND_PATH\fR
+.RS 4
+Absolute path to the LTTng session daemon binary (see
+\fBlttng-sessiond\fR(8)) to spawn from the
+\fBlttng-create\fR(1)
+command\&.
+.sp
+The
+\fB--sessiond-path\fR
+general option overrides this environment variable\&.
+.RE
+.SH "FILES"
+.PP
+\fB$LTTNG_HOME/.lttngrc\fR
+.RS 4
+Unix user\(cqs LTTng runtime configuration\&.
+.sp
+This is where LTTng stores the name of the Unix user\(cqs current recording session between executions of
+\fBlttng\fR(1)\&.
+\fBlttng-create\fR(1)
+and
+\fBlttng-set-session\fR(1)
+set the current recording session\&.
+.RE
+.PP
+\fB$LTTNG_HOME/lttng-traces\fR
+.RS 4
+Default output directory of LTTng traces in local and snapshot modes\&.
+.sp
+Override this path with the
+\fB--output\fR
+option of the
+\fBlttng-create\fR(1)
+command\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng\fR
+.RS 4
+Unix user\(cqs LTTng runtime and configuration directory\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng/sessions\fR
+.RS 4
+Default directory containing the Unix user\(cqs saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.PP
+\fB/usr/local/etc/lttng/sessions\fR
+.RS 4
+Directory containing the system\-wide saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+\fB$LTTNG_HOME\fR defaults to the value of the \fBHOME\fR environment variable\&.
+.sp .5v
+.RE
+.SH "EXAMPLES"
+.PP
+\fBExample\ \&1.\ \&List the available context field types\&.\fR
+.RS 4
+.sp
+See the \fB--list\fR option\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng add\-context \-\-list
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&2.\ \&Add a single statically\-known context field to be recorded to all the Linux kernel channels of the current recording session\&.\fR
+.RS 4
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng add\-context \-\-kernel \-\-type=pid
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&3.\ \&Add three statically\-known context fields to be recorded to a specific user space channel of a specific recording session\&.\fR
+.RS 4
+.sp
+See the \fB--session\fR and \fB--channel\fR options\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng add\-context \-\-userspace \-\-session=my\-session \e
+                    \-\-channel=my\-channel \e
+                    \-\-type=vpid \-\-type=procname \-\-type=ip
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&4.\ \&Add a perf counter context field to be recorded to a specific Linux kernel channel of the current recording session\&.\fR
+.RS 4
+.sp
+See the \fB--channel\fR option\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng add\-context \-\-kernel \-\-channel=my\-channel \e
+                    \-\-type=perf:cpu:cache\-misses
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&5.\ \&Add an LTTng application\-specific context field to be recorded to all the JUL channels of the current recording session\&.\fR
+.RS 4
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng add\-context \-\-jul \-\-type=\*(Aq$app\&.my_server:user_cnt\*(Aq
+.fi
+.if n \{\
+.RE
+.\}
+.RE
 .SH "RESOURCES"
 .sp
 .RS 4
@@ -349,7 +550,7 @@ LTTng documentation <https://lttng.org/docs>
 .sp -1
 .IP \(bu 2.3
 .\}
-Git repositories <http://git.lttng.org>
+LTTng bug tracker <https://bugs.lttng.org>
 .RE
 .sp
 .RS 4
@@ -360,7 +561,7 @@ Git repositories <http://git.lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-GitHub organization <http://github.com/lttng>
+Git repositories <https://git.lttng.org>
 .RE
 .sp
 .RS 4
@@ -371,7 +572,7 @@ GitHub organization <http://github.com/lttng>
 .sp -1
 .IP \(bu 2.3
 .\}
-Continuous integration <http://ci.lttng.org/>
+GitHub organization <https://github.com/lttng>
 .RE
 .sp
 .RS 4
@@ -382,7 +583,18 @@ Continuous integration <http://ci.lttng.org/>
 .sp -1
 .IP \(bu 2.3
 .\}
-Mailing list <http://lists.lttng.org>
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
 for support and development:
 \fBlttng-dev@lists.lttng.org\fR
 .RE
@@ -400,11 +612,11 @@ IRC channel <irc://irc.oftc.net/lttng>:
 on
 \fBirc.oftc.net\fR
 .RE
-.SH "COPYRIGHTS"
+.SH "COPYRIGHT"
 .sp
 This program is part of the LTTng\-tools project\&.
 .sp
-LTTng\-tools is distributed under the GNU General Public License version 2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
 .SH "THANKS"
 .sp
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
@@ -412,4 +624,4 @@ Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.p
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
 .SH "SEE ALSO"
 .sp
-\fBlttng\fR(1)
+\fBlttng\fR(1), \fBlttng-enable-channel\fR(1), \fBlttng-concepts\fR(7)

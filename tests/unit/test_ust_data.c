@@ -6,7 +6,6 @@
  */
 
 #include <assert.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,9 +16,12 @@
 #include <lttng/lttng.h>
 #include <bin/lttng-sessiond/lttng-ust-abi.h>
 #include <common/defaults.h>
+#include <common/compat/errno.h>
 #include <bin/lttng-sessiond/trace-ust.h>
 #include <bin/lttng-sessiond/ust-app.h>
 #include <bin/lttng-sessiond/notification-thread.h>
+
+#include <lttng/ust-sigbus.h>
 
 #include <tap/tap.h>
 
@@ -31,10 +33,7 @@
 /* Number of TAP tests in this file */
 #define NUM_TESTS 16
 
-/* For error.h */
-int lttng_opt_quiet = 1;
-int lttng_opt_verbose;
-int lttng_opt_mi;
+DEFINE_LTTNG_UST_SIGBUS_STATE();
 
 static const char alphanum[] =
 	"0123456789"
@@ -103,7 +102,7 @@ static void test_create_ust_channel(void)
 
 	ok(uchan->enabled == 0 &&
 	   strncmp(uchan->name, "channel0", 8) == 0 &&
-	   uchan->name[LTTNG_UST_SYM_NAME_LEN - 1] == '\0' &&
+	   uchan->name[LTTNG_UST_ABI_SYM_NAME_LEN - 1] == '\0' &&
 	   uchan->ctx != NULL &&
 	   uchan->events != NULL &&
 	   uchan->attr.overwrite  == attr.attr.overwrite,
@@ -135,9 +134,9 @@ static void test_create_ust_event(void)
 	}
 
 	ok(event->enabled == 0 &&
-	   event->attr.instrumentation == LTTNG_UST_TRACEPOINT &&
+	   event->attr.instrumentation == LTTNG_UST_ABI_TRACEPOINT &&
 	   strcmp(event->attr.name, ev.name) == 0 &&
-	   event->attr.name[LTTNG_UST_SYM_NAME_LEN - 1] == '\0',
+	   event->attr.name[LTTNG_UST_ABI_SYM_NAME_LEN - 1] == '\0',
 	   "Validate UST event");
 
 	trace_ust_destroy_event(event);
@@ -229,13 +228,13 @@ static void test_create_ust_event_exclusion(void)
 	}
 
 	ok(event->enabled == 0 &&
-		event->attr.instrumentation == LTTNG_UST_TRACEPOINT &&
+		event->attr.instrumentation == LTTNG_UST_ABI_TRACEPOINT &&
 		strcmp(event->attr.name, ev.name) == 0 &&
 		event->exclusion != NULL &&
 		event->exclusion->count == exclusion_count &&
 		!memcmp(event->exclusion->names, exclusion_copy->names,
 			LTTNG_SYMBOL_NAME_LEN * exclusion_count) &&
-		event->attr.name[LTTNG_UST_SYM_NAME_LEN - 1] == '\0',
+		event->attr.name[LTTNG_UST_ABI_SYM_NAME_LEN - 1] == '\0',
 		"Validate UST event and exclusion");
 
 	trace_ust_destroy_event(event);
@@ -257,7 +256,7 @@ static void test_create_ust_context(void)
 	ok(uctx != NULL, "Create UST context");
 
 	if (uctx) {
-		ok((int) uctx->ctx.ctx == LTTNG_UST_CONTEXT_VTID,
+		ok((int) uctx->ctx.ctx == LTTNG_UST_ABI_CONTEXT_VTID,
 		   "Validate UST context");
 	} else {
 		skip(1, "Skipping UST context validation as creation failed");

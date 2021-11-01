@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 
+#include <common/index-allocator.h>
 #include <common/uuid.h>
 
 #include "trace-ust.h"
@@ -22,10 +23,10 @@
 /* Process name (short). */
 #define UST_APP_PROCNAME_LEN	16
 
-struct lttng_filter_bytecode;
+struct lttng_bytecode;
 struct lttng_ust_filter_bytecode;
 
-extern int ust_consumerd64_fd, ust_consumerd32_fd;
+extern int the_ust_consumerd64_fd, the_ust_consumerd32_fd;
 
 /*
  * Object used to close the notify socket in a call_rcu(). Since the
@@ -39,8 +40,8 @@ struct ust_app_notify_sock_obj {
 
 struct ust_app_ht_key {
 	const char *name;
-	const struct lttng_filter_bytecode *filter;
-	enum lttng_ust_loglevel_type loglevel_type;
+	const struct lttng_bytecode *filter;
+	enum lttng_ust_abi_loglevel_type loglevel_type;
 	const struct lttng_event_exclusion *exclusion;
 };
 
@@ -48,7 +49,7 @@ struct ust_app_ht_key {
  * Application registration data structure.
  */
 struct ust_register_msg {
-	enum ustctl_socket_type type;
+	enum lttng_ust_ctl_socket_type type;
 	uint32_t major;
 	uint32_t minor;
 	uint32_t abi_major;
@@ -96,7 +97,7 @@ struct ust_app_stream_list {
 struct ust_app_ctx {
 	int handle;
 	struct lttng_ust_context_attr ctx;
-	struct lttng_ust_object_data *obj;
+	struct lttng_ust_abi_object_data *obj;
 	struct lttng_ht_node_ulong node;
 	struct cds_list_head list;
 };
@@ -104,12 +105,30 @@ struct ust_app_ctx {
 struct ust_app_event {
 	int enabled;
 	int handle;
-	struct lttng_ust_object_data *obj;
-	struct lttng_ust_event attr;
-	char name[LTTNG_UST_SYM_NAME_LEN];
+	struct lttng_ust_abi_object_data *obj;
+	struct lttng_ust_abi_event attr;
+	char name[LTTNG_UST_ABI_SYM_NAME_LEN];
 	struct lttng_ht_node_str node;
-	struct lttng_filter_bytecode *filter;
+	struct lttng_bytecode *filter;
 	struct lttng_event_exclusion *exclusion;
+};
+
+struct ust_app_event_notifier_rule {
+	int enabled;
+	uint64_t error_counter_index;
+	int handle;
+	struct lttng_ust_abi_object_data *obj;
+	/* Holds a strong reference. */
+	struct lttng_trigger *trigger;
+	/* Unique ID returned by the tracer to identify this event notifier. */
+	uint64_t token;
+	struct lttng_ht_node_u64 node;
+	/* The trigger object owns the filter. */
+	const struct lttng_bytecode *filter;
+	/* Owned by this. */
+	struct lttng_event_exclusion *exclusion;
+	/* For delayed reclaim. */
+	struct rcu_head rcu_head;
 };
 
 struct ust_app_stream {
@@ -117,7 +136,7 @@ struct ust_app_stream {
 	char pathname[PATH_MAX];
 	/* Format is %s_%d respectively channel name and CPU number. */
 	char name[DEFAULT_STREAM_NAME_LEN];
-	struct lttng_ust_object_data *obj;
+	struct lttng_ust_abi_object_data *obj;
 	/* Using a list of streams to keep order. */
 	struct cds_list_head list;
 };
@@ -137,9 +156,9 @@ struct ust_app_channel {
 	uint64_t tracing_channel_id;
 	/* Number of stream that this channel is expected to receive. */
 	unsigned int expected_stream_count;
-	char name[LTTNG_UST_SYM_NAME_LEN];
-	struct lttng_ust_object_data *obj;
-	struct ustctl_consumer_channel_attr attr;
+	char name[LTTNG_UST_ABI_SYM_NAME_LEN];
+	struct lttng_ust_abi_object_data *obj;
+	struct lttng_ust_ctl_consumer_channel_attr attr;
 	struct ust_app_stream_list streams;
 	/* Session pointer that owns this object. */
 	struct ust_app_session *session;
@@ -218,7 +237,7 @@ struct ust_app_session {
 	unsigned int live_timer_interval;	/* usec */
 
 	/* Metadata channel attributes. */
-	struct ustctl_consumer_channel_attr metadata_attr;
+	struct lttng_ust_ctl_consumer_channel_attr metadata_attr;
 
 	char root_shm_path[PATH_MAX];
 	char shm_path[PATH_MAX];
@@ -250,7 +269,7 @@ struct ust_app {
 	int compatible; /* If the lttng-ust tracer version does not match the
 					   supported version of the session daemon, this flag is
 					   set to 0 (NOT compatible) else 1. */
-	struct lttng_ust_tracer_version version;
+	struct lttng_ust_abi_tracer_version version;
 	uint32_t v_major;    /* Version major number */
 	uint32_t v_minor;    /* Version minor number */
 	/* Extra for the NULL byte. */
@@ -292,6 +311,25 @@ struct ust_app {
 	 * Used for path creation
 	 */
 	time_t registration_time;
+	/*
+	 * Event notifier
+	 */
+	struct {
+		/*
+		 * Handle to the lttng_ust object representing the event
+		 * notifier group.
+		 */
+		struct lttng_ust_abi_object_data *object;
+		struct lttng_pipe *event_pipe;
+		struct lttng_ust_abi_object_data *counter;
+		struct lttng_ust_abi_object_data **counter_cpu;
+		int nr_counter_cpu;
+	} event_notifier_group;
+	/*
+	 * Hashtable indexing the application's event notifier rule's
+	 * (ust_app_event_notifier_rule) by their token's value.
+	 */
+	struct lttng_ht *token_to_event_notifier_rule_ht;
 };
 
 #ifdef HAVE_LIBLTTNG_UST_CTL
@@ -319,6 +357,8 @@ int ust_app_add_ctx_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_context *uctx);
 void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app);
 void ust_app_global_update_all(struct ltt_ust_session *usess);
+void ust_app_global_update_event_notifier_rules(struct ust_app *app);
+void ust_app_global_update_all_event_notifier_rules(void);
 
 void ust_app_clean_list(void);
 int ust_app_ht_alloc(void);
@@ -352,15 +392,20 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session);
 enum lttng_error_code ust_app_create_channel_subdirectories(
 		const struct ltt_ust_session *session);
 int ust_app_release_object(struct ust_app *app,
-		struct lttng_ust_object_data *data);
+		struct lttng_ust_abi_object_data *data);
 enum lttng_error_code ust_app_clear_session(struct ltt_session *session);
 enum lttng_error_code ust_app_open_packets(struct ltt_session *session);
+
+int ust_app_setup_event_notifier_group(struct ust_app *app);
 
 static inline
 int ust_app_supported(void)
 {
 	return 1;
 }
+
+bool ust_app_supports_notifiers(const struct ust_app *app);
+bool ust_app_supports_counters(const struct ust_app *app);
 
 #else /* HAVE_LIBLTTNG_UST_CTL */
 
@@ -443,6 +488,17 @@ int ust_app_ht_alloc(void)
 static inline
 void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app)
 {}
+static inline
+void ust_app_global_update_event_notifier_rules(struct ust_app *app)
+{}
+static inline
+void ust_app_global_update_all_event_notifier_rules(void)
+{}
+static inline
+int ust_app_setup_event_notifier_group(struct ust_app *app)
+{
+	return 0;
+}
 static inline
 int ust_app_disable_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan)
@@ -531,11 +587,26 @@ unsigned int ust_app_get_nb_stream(struct ltt_ust_session *usess)
 {
 	return 0;
 }
-
+static inline
+void ust_app_update_event_notifier_error_count(
+		struct lttng_trigger *lttng_trigger)
+{
+	return;
+}
 static inline
 int ust_app_supported(void)
 {
 	return 0;
+}
+static inline
+bool ust_app_supports_notifiers(const struct ust_app *app)
+{
+	return false;
+}
+static inline
+bool ust_app_supports_counters(const struct ust_app *app)
+{
+	return false;
 }
 static inline
 struct ust_app *ust_app_find_by_sock(int sock)
@@ -590,7 +661,7 @@ enum lttng_error_code ust_app_create_channel_subdirectories(
 }
 
 static inline
-int ust_app_release_object(struct ust_app *app, struct lttng_ust_object_data *data)
+int ust_app_release_object(struct ust_app *app, struct lttng_ust_abi_object_data *data)
 {
 	return 0;
 }

@@ -86,11 +86,11 @@ int cmd_add_context(struct ltt_session *session, enum lttng_domain_type domain,
 		char *channel_name, const struct lttng_event_context *ctx, int kwpipe);
 int cmd_set_filter(struct ltt_session *session, enum lttng_domain_type domain,
 		char *channel_name, struct lttng_event *event,
-		struct lttng_filter_bytecode *bytecode);
+		struct lttng_bytecode *bytecode);
 int cmd_enable_event(struct ltt_session *session, const struct lttng_domain *domain,
 		char *channel_name, struct lttng_event *event,
 		char *filter_expression,
-		struct lttng_filter_bytecode *filter,
+		struct lttng_bytecode *filter,
 		struct lttng_event_exclusion *exclusion,
 		int wpipe);
 
@@ -111,7 +111,7 @@ ssize_t cmd_list_domains(struct ltt_session *session,
 		struct lttng_domain **domains);
 ssize_t cmd_list_events(enum lttng_domain_type domain,
 		struct ltt_session *session, char *channel_name,
-		struct lttng_event **events, size_t *total_size);
+		struct lttng_payload *payload);
 ssize_t cmd_list_channels(enum lttng_domain_type domain,
 		struct ltt_session *session, struct lttng_channel **channels);
 ssize_t cmd_list_domains(struct ltt_session *session,
@@ -141,10 +141,24 @@ int cmd_set_session_shm_path(struct ltt_session *session,
 int cmd_regenerate_metadata(struct ltt_session *session);
 int cmd_regenerate_statedump(struct ltt_session *session);
 
-int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
+enum lttng_error_code cmd_register_trigger(
+		const struct lttng_credentials *cmd_creds,
+		struct lttng_trigger *trigger,
+		bool is_anonymous_trigger,
+		struct notification_thread_handle *notification_thread_handle,
+		struct lttng_trigger **return_trigger);
+enum lttng_error_code cmd_unregister_trigger(
+		const struct lttng_credentials *cmd_creds,
+		const struct lttng_trigger *trigger,
 		struct notification_thread_handle *notification_thread_handle);
-int cmd_unregister_trigger(struct command_ctx *cmd_ctx, int sock,
-		struct notification_thread_handle *notification_thread_handle);
+
+enum lttng_error_code cmd_list_triggers(struct command_ctx *cmd_ctx,
+		struct notification_thread_handle *notification_thread_handle,
+		struct lttng_triggers **return_triggers);
+enum lttng_error_code cmd_execute_error_query(const struct lttng_credentials *cmd_creds,
+		const struct lttng_error_query *query,
+		struct lttng_error_query_results **_results,
+		struct notification_thread_handle *notification_thread);
 
 int cmd_rotate_session(struct ltt_session *session,
 		struct lttng_rotate_session_return *rotate_return,

@@ -520,7 +520,7 @@ static int set_options(int argc, char **argv)
 	int c, ret = 0, option_index = 0, retval = 0;
 	int orig_optopt = optopt, orig_optind = optind;
 	char *default_address, *optstring;
-	const char *config_path = NULL;
+	char *config_path = NULL;
 
 	optstring = utils_generate_optstring(long_options,
 			sizeof(long_options) / sizeof(struct option));
@@ -544,6 +544,7 @@ static int set_options(int argc, char **argv)
 			WARN("Getting '%s' argument from setuid/setgid binary refused for security reasons.",
 				"-f, --config");
 		} else {
+			free(config_path);
 			config_path = utils_expand_path(optarg);
 			if (!config_path) {
 				ERR("Failed to resolve path: %s", optarg);
@@ -656,6 +657,7 @@ static int set_options(int argc, char **argv)
 	}
 
 exit:
+	free(config_path);
 	free(optstring);
 	return retval;
 }
@@ -917,7 +919,7 @@ static int create_named_thread_poll_set(struct lttng_poll_event *events,
 	}
 
 	ret = fd_tracker_util_poll_create(the_fd_tracker,
-		        name, events, 1, LTTNG_CLOEXEC);
+			name, events, 1, LTTNG_CLOEXEC);
 	if (ret) {
 		PERROR("Failed to create \"%s\" poll file descriptor", name);
 		goto error;
@@ -978,7 +980,7 @@ static int accept_sock(void *data, int *out_fd)
 	struct lttcomm_sock **socks = data;
 	struct lttcomm_sock *in_sock = socks[0];
 
-        socks[1] = in_sock->ops->accept(in_sock);
+	socks[1] = in_sock->ops->accept(in_sock);
 	if (!socks[1]) {
 		ret = -1;
 		goto end;
@@ -1060,7 +1062,7 @@ struct lttcomm_sock *accept_relayd_sock(struct lttcomm_sock *listening_sock,
 	struct lttcomm_sock *socks[2] = { listening_sock, NULL };
 	struct lttcomm_sock *new_sock = NULL;
 
-        ret = fd_tracker_open_unsuspendable_fd(
+	ret = fd_tracker_open_unsuspendable_fd(
 			the_fd_tracker, &out_fd,
 			(const char **) &name,
 			1, accept_sock, &socks);
@@ -1961,7 +1963,7 @@ static int relay_recv_metadata(const struct lttcomm_relayd_hdr *recv_hdr,
 
 	packet_view = lttng_buffer_view_from_view(payload,
 			sizeof(metadata_payload_header), metadata_payload_size);
-	if (!packet_view.data) {
+	if (!lttng_buffer_view_is_valid(&packet_view)) {
 		ERR("Invalid metadata packet length announced by header");
 		ret = -1;
 		goto end_put;
@@ -2667,7 +2669,6 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	struct lttcomm_relayd_create_trace_chunk *msg;
 	struct lttcomm_relayd_generic_reply reply = {};
 	struct lttng_buffer_view header_view;
-	struct lttng_buffer_view chunk_name_view;
 	struct lttng_trace_chunk *chunk = NULL, *published_chunk = NULL;
 	enum lttng_error_code reply_code = LTTNG_OK;
 	enum lttng_trace_chunk_status chunk_status;
@@ -2686,7 +2687,7 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	}
 
 	header_view = lttng_buffer_view_from_view(payload, 0, sizeof(*msg));
-	if (!header_view.data) {
+	if (!lttng_buffer_view_is_valid(&header_view)) {
 		ERR("Failed to receive payload of chunk creation command");
 		ret = -1;
 		goto end_no_reply;
@@ -2731,13 +2732,21 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 
 	if (msg->override_name_length) {
 		const char *name;
+		const struct lttng_buffer_view chunk_name_view =
+				lttng_buffer_view_from_view(payload,
+						sizeof(*msg),
+						msg->override_name_length);
 
-		chunk_name_view = lttng_buffer_view_from_view(payload,
-				sizeof(*msg),
-				msg->override_name_length);
+		if (!lttng_buffer_view_is_valid(&chunk_name_view)) {
+			ERR("Invalid payload of chunk creation command (protocol error): buffer too short for expected name length");
+			ret = -1;
+			reply_code = LTTNG_ERR_INVALID;
+			goto end;
+		}
+
 		name = chunk_name_view.data;
-		if (!name || name[msg->override_name_length - 1]) {
-			ERR("Failed to receive payload of chunk creation command");
+		if (name[msg->override_name_length - 1]) {
+			ERR("Invalid payload of chunk creation command (protocol error): name is not null-terminated");
 			ret = -1;
 			reply_code = LTTNG_ERR_INVALID;
 			goto end;
@@ -2872,7 +2881,7 @@ static int relay_close_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	}
 
 	header_view = lttng_buffer_view_from_view(payload, 0, sizeof(*msg));
-	if (!header_view.data) {
+	if (!lttng_buffer_view_is_valid(&header_view)) {
 		ERR("Failed to receive payload of chunk close command");
 		ret = -1;
 		goto end_no_reply;
@@ -3105,20 +3114,20 @@ static int relay_trace_chunk_exists(const struct lttcomm_relayd_hdr *recv_hdr,
 	bool chunk_exists;
 
 	if (!session || !conn->version_check_done) {
-		ERR("Trying to close a trace chunk before version check");
+		ERR("Trying to check for the existance of a trace chunk before version check");
 		ret = -1;
 		goto end_no_reply;
 	}
 
 	if (session->major == 2 && session->minor < 11) {
-		ERR("Chunk close command is unsupported before 2.11");
+		ERR("Chunk exists command is unsupported before 2.11");
 		ret = -1;
 		goto end_no_reply;
 	}
 
 	header_view = lttng_buffer_view_from_view(payload, 0, sizeof(*msg));
-	if (!header_view.data) {
-		ERR("Failed to receive payload of chunk close command");
+	if (!lttng_buffer_view_is_valid(&header_view)) {
+		ERR("Failed to receive payload of chunk exists command");
 		ret = -1;
 		goto end_no_reply;
 	}
@@ -3169,7 +3178,7 @@ static int relay_get_configuration(const struct lttcomm_relayd_hdr *recv_hdr,
 	uint64_t result_flags = 0;
 
 	header_view = lttng_buffer_view_from_view(payload, 0, sizeof(*msg));
-	if (!header_view.data) {
+	if (!lttng_buffer_view_is_valid(&header_view)) {
 		ERR("Failed to receive payload of chunk close command");
 		ret = -1;
 		goto end_no_reply;

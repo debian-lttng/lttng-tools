@@ -15,7 +15,6 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <stdio.h>
-#include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -24,6 +23,7 @@
 #include <urcu.h>
 
 #include <common/compat/directory-handle.h>
+#include <common/compat/errno.h>
 #include <common/error.h>
 #include <common/fd-tracker/fd-tracker.h>
 
@@ -39,6 +39,13 @@ int lttng_opt_mi;
 #define TRACKER_FD_LIMIT 50
 #define TMP_DIR_PATTERN "/tmp/fd-tracker-XXXXXX"
 #define TEST_UNLINK_DIRECTORY_NAME "unlinked_files"
+
+#ifdef __linux__
+#define SELF_FD_DIR "/proc/self/fd"
+#else
+/* Most Unices have /dev/fd */
+#define SELF_FD_DIR "/dev/fd"
+#endif
 
 /*
  * Count of fds, beyond stdin, stderr, stdout that were open
@@ -82,12 +89,12 @@ int fd_count(void)
 {
 	DIR *dir;
 	struct dirent *entry;
-        int count = 0;
+	int count = 0;
 
-	dir = opendir("/proc/self/fd");
+	dir = opendir(SELF_FD_DIR);
 	if (!dir) {
-		perror("# Failed to enumerate /proc/self/fd/ to count the number of used file descriptors");
-	        count = -1;
+		perror("# Failed to enumerate " SELF_FD_DIR " to count the number of used file descriptors");
+		count = -1;
 		goto end;
 	}
 
@@ -95,12 +102,12 @@ int fd_count(void)
 		if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) {
 			continue;
 		}
-	        count++;
+		count++;
 	}
 	/* Don't account for the file descriptor opened by opendir(). */
-        count--;
+	count--;
 	if (closedir(dir)) {
-		perror("# Failed to close test program's self/fd directory file descriptor");
+		perror("# Failed to close test program's " SELF_FD_DIR " directory file descriptor");
 	}
 end:
 	return count;
@@ -109,9 +116,9 @@ end:
 static
 void check_fd_count(int expected_count)
 {
-        int count = 0;
+	int count = 0;
 
-        count = fd_count();
+	count = fd_count();
 	ok(count == expected_count, "Expected %d open file descriptors (%d are open)",
 			expected_count, count);
 }
@@ -119,7 +126,7 @@ void check_fd_count(int expected_count)
 static
 int noop_open(void *data, int *fds)
 {
-        *fds = *((int *) data);
+	*fds = *((int *) data);
 	return 0;
 }
 
@@ -133,7 +140,7 @@ static
 void track_std_fds(struct fd_tracker *tracker)
 {
 	int i;
-        struct { int fd; const char *name; } files[] = {
+	struct { int fd; const char *name; } files[] = {
 		{ .fd = fileno(stdin), .name = "stdin" },
 		{ .fd = fileno(stdout), .name = "stdout" },
 		{ .fd = fileno(stderr), .name = "stderr" },
@@ -155,7 +162,7 @@ static
 void untrack_std_fds(struct fd_tracker *tracker)
 {
 	int i;
-        struct { int fd; const char *name; } files[] = {
+	struct { int fd; const char *name; } files[] = {
 		{ .fd = fileno(stdin), .name = "stdin" },
 		{ .fd = fileno(stdout), .name = "stdout" },
 		{ .fd = fileno(stderr), .name = "stderr" },
@@ -185,7 +192,7 @@ void test_unsuspendable_basic(void)
 
 	get_temporary_directories(&test_directory, &unlinked_files_directory);
 
-        tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
+	tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
 	ok(tracker, "Created an fd tracker with a limit of %d simulateously opened file descriptors",
 			TRACKER_FD_LIMIT);
 	if (!tracker) {
@@ -229,7 +236,7 @@ void test_unsuspendable_cb_return(void)
 
 	get_temporary_directories(&test_directory, &unlinked_files_directory);
 
-        tracker = fd_tracker_create(test_directory, TRACKER_FD_LIMIT);
+	tracker = fd_tracker_create(test_directory, TRACKER_FD_LIMIT);
 	assert(tracker);
 
 	/* The error_open callback should fail and return 'expected_error'. */
@@ -274,7 +281,7 @@ void test_unsuspendable_duplicate(void)
 
 	get_temporary_directories(&test_directory, &unlinked_files_directory);
 
-        tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
+	tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
 	assert(tracker);
 
 	ret = fd_tracker_open_unsuspendable_fd(tracker, &out_fd,
@@ -344,7 +351,7 @@ void test_unsuspendable_limit(void)
 	/* This test assumes TRACKER_FD_LIMIT is a multiple of 2. */
 	assert((TRACKER_FD_LIMIT % 2 == 0) && TRACKER_FD_LIMIT);
 
-        tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
+	tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
 	assert(tracker);
 
 	ret = fd_tracker_open_unsuspendable_fd(tracker, fds,
@@ -380,15 +387,17 @@ void test_unsuspendable_close_untracked(void)
 
 	get_temporary_directories(&test_directory, &unlinked_files_directory);
 
-        tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
+	tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
 	if (!tracker) {
 		goto end;;
 	}
 
 	ret = pipe(unknown_fds);
 	assert(!ret);
-	assert(close(unknown_fds[0]) == 0);
-	assert(close(unknown_fds[1]) == 0);
+	ret = close(unknown_fds[0]);
+	assert(ret == 0);
+	ret = close(unknown_fds[1]);
+	assert(ret == 0);
 
 	ret = fd_tracker_open_unsuspendable_fd(tracker, &out_fd,
 			NULL, 1, noop_open, &stdout_fd);
@@ -421,13 +430,13 @@ static int open_files(struct fd_tracker *tracker,
 
 	for (i = 0; i < count; i++) {
 		int p_ret;
-	        char *file_path;
+		char *file_path;
 		struct fs_handle *handle;
 		mode_t mode = S_IWUSR | S_IRUSR;
 
 		p_ret = asprintf(&file_path, "file-%u", i);
 		assert(p_ret >= 0);
-	        file_paths[i] = file_path;
+		file_paths[i] = file_path;
 
 		handle = fd_tracker_open_fs_handle(tracker, directory, file_path,
 				O_RDWR | O_CREAT, &mode);
@@ -482,7 +491,7 @@ int cleanup_files(struct fd_tracker *tracker, const char *dir,
 			diag("Failed to unlink fs_handle to file %s", file_path);
 			ret = -1;
 		}
-	        if (fs_handle_close(handles[i])) {
+		if (fs_handle_close(handles[i])) {
 			diag("Failed to close fs_handle to file %s", file_path);
 			ret = -1;
 		}
@@ -508,7 +517,7 @@ void test_suspendable_limit(void)
 
 	get_temporary_directories(&test_directory, &unlinked_files_directory);
 
-        tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
+	tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
 	if (!tracker) {
 		goto end;
 	}
@@ -626,7 +635,7 @@ void test_suspendable_restore(void)
 
 	get_temporary_directories(&test_directory, &unlinked_files_directory);
 
-        tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
+	tracker = fd_tracker_create(unlinked_files_directory, TRACKER_FD_LIMIT);
 	if (!tracker) {
 		goto end;
 	}
@@ -652,8 +661,8 @@ void test_suspendable_restore(void)
 			fd = fs_handle_get_fd(handle);
 			if (fd < 0) {
 				write_success = false;
-			        diag("Failed to restore fs_handle to %s",
-					        path);
+				diag("Failed to restore fs_handle to %s",
+						path);
 				goto skip_write;
 			}
 
@@ -663,7 +672,7 @@ void test_suspendable_restore(void)
 
 			if (ret != 1) {
 				write_success = false;
-			        PERROR("write() to %s failed", path);
+				PERROR("write() to %s failed", path);
 				goto skip_write;
 			}
 

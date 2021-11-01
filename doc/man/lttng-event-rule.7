@@ -1,0 +1,2147 @@
+'\" t
+.\"     Title: lttng-event-rule
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
+.\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
+.\"      Date: 18 May 2021
+.\"    Manual: LTTng Manual
+.\"    Source: LTTng 2.13.1
+.\"  Language: English
+.\"
+.TH "LTTNG\-EVENT\-RULE" "7" "18 May 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+lttng-event-rule \- Common LTTng event rule specification
+.SH "SYNOPSIS"
+.sp
+Specify an event rule to match Linux kernel tracepoint or system call events:
+.sp
+.nf
+\fB--type\fR=(\fBkernel:tracepoint\fR | \fBkernel:syscall\fR[\fB:entry\fR|\fB:exit\fR|\fB:entry+exit\fR])]
+[\fB--name\fR=\fINAME\fR] [\fB--filter\fR=\fIEXPR\fR]
+.fi
+.sp
+Specify an event rule to match Linux kernel kprobe or user space probe events:
+.sp
+.nf
+\fB--type\fR=(\fBkernel:kprobe\fR | \fBkernel:uprobe\fR) \fB--location\fR=\fILOC\fR
+[\fB--event-name\fR=\fIEVENTNAME\fR]
+.fi
+.sp
+Specify an event rule to match user space tracepoint events:
+.sp
+.nf
+\fB--type\fR=\fBuser:tracepoint\fR [\fB--name\fR=\fINAME\fR] [\fB--exclude-name\fR=\fIXNAME\fR]\&...
+[\fB--log-level\fR=(\fILOGLEVEL\fR | \fILOGLEVEL\fR\&.\&. | \&.\&.)] [\fB--filter\fR=\fIEXPR\fR]
+.fi
+.sp
+Specify an event rule to match Java/Python logging events:
+.sp
+.nf
+\fB--type\fR=(\fBjul\fR | \fBlog4j\fR | \fBpython\fR)\fB:logging\fR [\fB--name\fR=\fINAME\fR]
+[\fB--log-level\fR=(\fILOGLEVEL\fR | \fILOGLEVEL\fR\&.\&. | \&.\&.)] [\fB--filter\fR=\fIEXPR\fR]
+.fi
+.SH "DESCRIPTION"
+.sp
+This manual page shows how to specify an LTTng event rule on the command line\&.
+.sp
+As of LTTng\ \&2\&.13\&.1, the command\-line options documented here only apply to the \fBevent-rule-matches\fR trigger condition specifier (see \fBlttng-add-trigger\fR(1))\&.
+.sp
+See \fBlttng-concepts\fR(7) to learn more about instrumentation points, events, and event rules\&.
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+This manual page only describes the common event rule options\&. The \fBlttng\fR(1) commands which require an event rule specification may accept or require other options and arguments, depending on the context\&.
+.sp
+For example, the \fBlttng-add-trigger\fR(1) command also accepts \fB--capture\fR options with the \fBevent-rule-matches\fR trigger condition\&.
+.sp .5v
+.RE
+.SS "Overview of event rule condtions"
+.sp
+For LTTng to emit an event\ \&\fIE\fR,\ \&\fIE\fR must satisfy \fBall\fR the conditions of an event rule, that is:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The instrumentation point from which LTTng creates\ \&\fIE\fR
+has a specific type\&.
+.sp
+See the \(lqInstrumentation point type condition\(rq section below\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A pattern matches the name of\ \&\fIE\fR
+while another pattern doesn\(cqt\&.
+.sp
+See the \(lqEvent name condition\(rq section below\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The log level of the instrumentation point from which LTTng creates\ \&\fIE\fR
+is at least as severe as some value, or is exactly some value\&.
+.sp
+See the \(lqInstrumentation point log level condition\(rq section below\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The fields of the payload of\ \&\fIE\fR
+and the current context fields satisfy a filter expression\&.
+.sp
+See the \(lqEvent payload and context filter condition\(rq section below\&.
+.RE
+.sp
+The dedicated command\-line options of most conditions are optional: if you don\(cqt specify the option, the associated condition is always satisfied\&.
+.SS "Instrumentation point type condition"
+.sp
+An event\ \&\fIE\fR satisfies the instrumentation point type condition of an event rule if the instrumentation point from which LTTng creates\ \&\fIE\fR is, depending on the argument of the \fB--type\fR option:
+.PP
+\fBkernel:tracepoint\fR
+.RS 4
+An LTTng kernel tracepoint, that is, a statically defined point in the source code of the kernel image or of a kernel module with LTTng kernel tracer macros\&.
+.sp
+List the available Linux kernel tracepoints with
+\fBlttng list --kernel\fR\&. See
+\fBlttng-list\fR(1)
+to learn more\&.
+.RE
+.PP
+\fBkernel:syscall:entry\fR, \fBkernel:syscall:exit\fR, \fBkernel:syscall:entry+exit\fR
+.RS 4
+The entry, exit, or entry and exit of a Linux kernel system call\&.
+.sp
+List the available Linux kernel system call instrumentation points with
+\fBlttng list --kernel --syscall\fR\&. See
+\fBlttng-list\fR(1)
+to learn more\&.
+.RE
+.PP
+\fBkernel:kprobe\fR
+.RS 4
+A Linux kprobe, that is, a single probe dynamically placed in the compiled kernel code\&.
+.sp
+You must specify the kprobe location with the
+\fB--location\fR
+option\&.
+.sp
+The payload of a Linux kprobe event is empty\&.
+.RE
+.PP
+\fBkernel:uprobe\fR
+.RS 4
+A Linux user space probe, that is, a single probe dynamically placed at the entry of a compiled user space application/library function through the kernel\&.
+.sp
+LTTng\ \&2\&.13\&.1 supports the ELF and SystemTap User\-level Statically Defined Tracing (USDT; a DTrace\-style marker) probing methods\&. LTTng only supports USDT probes which are NOT reference\-counted\&.
+.sp
+You must specify the user space probe location with the
+\fB--location\fR
+option\&.
+.sp
+The payload of a Linux user space probe event is empty\&.
+.RE
+.PP
+\fBuser:tracepoint\fR
+.RS 4
+An LTTng user space tracepoint, that is, a statically defined point in the source code of a C/C++ application/library with LTTng user space tracer macros\&.
+.sp
+List the available user space tracepoints with
+\fBlttng list --userspace\fR\&. See
+\fBlttng-list\fR(1)
+to learn more\&.
+.RE
+.PP
+\fBjul:logging\fR
+.RS 4
+A
+\fBjava.util.logging\fR
+logging statement\&.
+.sp
+List the available
+\fBjava.util.logging\fR
+loggers with
+\fBlttng list --jul\fR
+See
+\fBlttng-list\fR(1)
+to learn more\&.
+.RE
+.PP
+\fBlog4j:logging\fR
+.RS 4
+An Apache log4j logging statement\&.
+.sp
+List the available Apache log4j loggers with
+\fBlttng list --log4j\fR
+See
+\fBlttng-list\fR(1)
+to learn more\&.
+.RE
+.PP
+\fBpython:logging\fR
+.RS 4
+A Python logging statement\&.
+.sp
+List the available Python loggers with
+\fBlttng list --python\fR
+See
+\fBlttng-list\fR(1)
+to learn more\&.
+.RE
+.SS "Event name condition"
+.sp
+An event\ \&\fIE\fR satisfies the event name condition of an event rule\ \&\fIER\fR if the two following statements are true:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+You don\(cqt specify the
+\fB--name\fR=\fINAME\fR
+option or, depending on the instrumentation type condition (see the \(lqInstrumentation point type condition\(rq section above) of\ \&\fIER\fR,
+\fINAME\fR
+matches:
+.PP
+\fBkernel:tracepoint\fR, \fBuser:tracepoint\fR
+.RS 4
+The full name of the tracepoint from which LTTng creates\ \&\fIE\fR\&.
+.sp
+Note that the full name of a user space tracepoint is
+\fIPROVIDER\fR\fB:\fR\fINAME\fR, where
+\fIPROVIDER\fR
+is the tracepoint provider name and
+\fINAME\fR
+is the tracepoint name\&.
+.RE
+.PP
+\fBjul:logging\fR, \fBlog4j:logging\fR, \fBpython:logging\fR
+.RS 4
+The name of the Java or Python logger from which LTTng creates\ \&\fIE\fR\&.
+.RE
+.PP
+\fBkernel:syscall:entry\fR, \fBkernel:syscall:exit\fR, \fBkernel:syscall:entry+exit\fR
+.RS 4
+The name of the system call, without any
+\fBsys_\fR
+prefix, from which LTTng creates\ \&\fIE\fR\&.
+.RE
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+You don\(cqt specify any
+\fB--exclude-name\fR=\fIXNAME\fR
+option or none of the
+\fIXNAME\fR
+arguments matches the full name of the user space tracepoint from which LTTng creates\ \&\fIE\fR\&.
+.sp
+The
+\fB--exclude-name\fR
+option is only available with the
+\fB--type\fR=\fBuser:tracepoint\fR
+option\&.
+.RE
+.sp
+This condition is only meaningful for the LTTng tracepoint, logging statement, and Linux system call instrumentation point types: it\(cqs always satisfied for the other types\&.
+.sp
+In all cases, \fINAME\fR and \fIXNAME\fR are globbing patterns: the \fB*\fR character means \(lqmatch anything\(rq\&. To match a literal \fB*\fR character, use \fB\e*\fR\&.
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBImportant\fR
+.ps -1
+.br
+.RS 4
+.sp
+Make sure to \fBsingle\-quote\fR \fINAME\fR and \fIXNAME\fR when they contain the \fB*\fR character and when you run an \fBlttng\fR(1) command from a shell\&.
+.sp .5v
+.RE
+.sp
+As of LTTng\ \&2\&.13\&.1, not specifying the \fB--name\fR option is equivalent to specifying \fB--name\fR=\fB'*\'\fR, but this default may change in the future\&.
+.SS "Instrumentation point log level condition"
+.sp
+An event\ \&\fIE\fR satisfies the instrumentation point log level condition of an event rule if either:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+You specify the
+\fB--log-level\fR=\fB..\fR
+option or you don\(cqt specify the
+\fB--log-level\fR
+option\&.
+.sp
+Defaulting to
+\fB--log-level\fR=\fB..\fR
+when you don\(cqt specify the
+\fB--log-level\fR
+option is specific to LTTng\ \&2\&.13\&.1 and may change in the future\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The log level of the LTTng user space tracepoint or logging statement from which LTTng creates\ \&\fIE\fR
+is:
+.PP
+With the \fB--log-level\fR=\fILOGLEVEL\fR\fB..\fR option
+.RS 4
+At least as severe as
+\fILOGLEVEL\fR\&.
+.RE
+.PP
+With the \fB--log-level\fR=\fILOGLEVEL\fR option
+.RS 4
+Exactly
+\fILOGLEVEL\fR\&.
+.RE
+.RE
+.sp
+As of LTTng\ \&2\&.13\&.1, the \fB..\fR\fILOGLEVEL\fR and \fILOGLEVEL\fR\fB..\fR\fILOGLEVEL\fR formats are NOT supported\&.
+.sp
+This condition is only meaningful for the LTTng user space tracepoint and logging statement instrumentation point types: it\(cqs always satisfied for other types\&.
+.sp
+The available values of \fILOGLEVEL\fR are, depending on the argument of the \fB--type\fR option, from the most to the least severe:
+.PP
+\fBuser:tracepoint\fR
+.RS 4
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBEMERG\fR
+(0)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBALERT\fR
+(1)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBCRIT\fR
+(2)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBERR\fR
+(3)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBWARNING\fR
+(4)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBNOTICE\fR
+(5)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBINFO\fR
+(6)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBDEBUG_SYSTEM\fR
+(7)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBDEBUG_PROGRAM\fR
+(8)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBDEBUG_PROCESS\fR
+(9)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBDEBUG_MODULE\fR
+(10)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBDEBUG_UNIT\fR
+(11)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBDEBUG_FUNCTION\fR
+(12)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBDEBUG_LINE\fR
+(13)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBDEBUG\fR
+(14)
+.RE
+.RE
+.PP
+\fBjul:logging\fR
+.RS 4
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBOFF\fR
+(\fBINT32_MAX\fR)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBSEVERE\fR
+(1000)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBWARNING\fR
+(900)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBINFO\fR
+(800)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBCONFIG\fR
+(700)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBFINE\fR
+(500)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBFINER\fR
+(400)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBFINEST\fR
+(300)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBALL\fR
+(\fBINT32_MIN\fR)
+.RE
+.RE
+.PP
+\fBlog4j:logging\fR
+.RS 4
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBOFF\fR
+(\fBINT32_MAX\fR)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBFATAL\fR
+(50000)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBERROR\fR
+(40000)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBWARN\fR
+(30000)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBINFO\fR
+(20000)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBDEBUG\fR
+(10000)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBTRACE\fR
+(5000)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBALL\fR
+(\fBINT32_MIN\fR)
+.RE
+.RE
+.PP
+\fBpython:logging\fR
+.RS 4
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBCRITICAL\fR
+(50)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBERROR\fR
+(40)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBWARNING\fR
+(30)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBINFO\fR
+(20)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBDEBUG\fR
+(10)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBNOTSET\fR
+(0)
+.RE
+.RE
+.SS "Event payload and context filter condition"
+.sp
+An event\ \&\fIE\fR satisfies the event payload and context filter condition of an event rule if the \fB--filter\fR=\fIEXPR\fR option is missing or if \fIEXPR\fR is \fItrue\fR\&.
+.sp
+This condition is only meaningful for the LTTng tracepoint and Linux system call instrumentation point types: it\(cqs always satisfied for other types\&.
+.sp
+\fIEXPR\fR can contain references to the payload fields of\ \&\fIE\fR and to the current context fields\&.
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBImportant\fR
+.ps -1
+.br
+.RS 4
+.sp
+Make sure to \fBsingle\-quote\fR \fIEXPR\fR when you run an \fBlttng\fR(1) command from a shell, as filter expressions typically include characters having a special meaning for most shells\&.
+.sp .5v
+.RE
+.sp
+The expected syntax of \fIEXPR\fR is similar to the syntax of a C\ \&language conditional expression (an expression which an \fBif\fR statement can evaluate), but there are a few differences:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A
+\fINAME\fR
+expression identifies an event payload field named
+\fINAME\fR
+(a C\ \&identifier)\&.
+.sp
+Use the C\ \&language dot and square bracket notations to access nested structure and array/sequence fields\&. You can only use a constant, positive integer number within square brackets\&. If the index is out of bounds,
+\fIEXPR\fR
+is
+\fIfalse\fR\&.
+.sp
+The value of an enumeration field is an integer\&.
+.sp
+When a field expression doesn\(cqt exist,
+\fIEXPR\fR
+is
+\fIfalse\fR\&.
+.sp
+Examples:
+\fBmy_field\fR,
+\fBtarget_cpu\fR,
+\fBseq[7]\fR,
+\fBmsg.user[1].data[2][17]\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A
+\fB$ctx.\fR\fITYPE\fR
+expression identifies the statically\-known context field having the type
+\fITYPE\fR
+(a C\ \&identifier)\&.
+.sp
+List the available statically\-known context field names with the
+\fBlttng-add-context\fR(1)
+command\&.
+.sp
+When a field expression doesn\(cqt exist,
+\fIEXPR\fR
+is
+\fIfalse\fR\&.
+.sp
+Examples:
+\fB$ctx.prio\fR,
+\fB$ctx.preemptible\fR,
+\fB$ctx.perf:cpu:stalled-cycles-frontend\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A
+\fB$app.\fR\fIPROVIDER\fR\fB:\fR\fITYPE\fR
+expression identifies the application\-specific context field having the type
+\fITYPE\fR
+(a C\ \&identifier) from the provider
+\fIPROVIDER\fR
+(a C\ \&identifier)\&.
+.sp
+When a field expression doesn\(cqt exist,
+\fIEXPR\fR
+is
+\fIfalse\fR\&.
+.sp
+Example:
+\fB$app.server:cur_user\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Compare strings, either string fields or string literals (double\-quoted), with the
+\fB==\fR
+and
+\fB!=\fR
+operators\&.
+.sp
+When comparing to a string literal, the
+\fB*\fR
+character means \(lqmatch anything\(rq\&. To match a literal
+\fB*\fR
+character, use
+\fB\e*\fR\&.
+.sp
+Examples:
+\fBmy_field == "user34"\fR,
+\fBmy_field == my_other_field\fR,
+\fBmy_field == "192.168.*"\fR\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The precedence table of the operators which are supported in
+\fIEXPR\fR
+is as follows\&. In this table, the highest precedence is\ \&1:
+.TS
+allbox tab(:);
+ltB ltB ltB ltB.
+T{
+Precedence
+T}:T{
+Operator
+T}:T{
+Description
+T}:T{
+Associativity
+T}
+.T&
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt
+lt lt lt lt.
+T{
+1
+T}:T{
+\fB-\fR
+T}:T{
+Unary minus
+T}:T{
+Right\-to\-left
+T}
+T{
+1
+T}:T{
+\fB+\fR
+T}:T{
+Unary plus
+T}:T{
+Right\-to\-left
+T}
+T{
+1
+T}:T{
+\fB!\fR
+T}:T{
+Logical NOT
+T}:T{
+Right\-to\-left
+T}
+T{
+1
+T}:T{
+\fB~\fR
+T}:T{
+Bitwise NOT
+T}:T{
+Right\-to\-left
+T}
+T{
+2
+T}:T{
+\fB<<\fR
+T}:T{
+Bitwise left shift
+T}:T{
+Left\-to\-right
+T}
+T{
+2
+T}:T{
+\fB>>\fR
+T}:T{
+Bitwise right shift
+T}:T{
+Left\-to\-right
+T}
+T{
+3
+T}:T{
+\fB&\fR
+T}:T{
+Bitwise AND
+T}:T{
+Left\-to\-right
+T}
+T{
+4
+T}:T{
+\fB^\fR
+T}:T{
+Bitwise XOR
+T}:T{
+Left\-to\-right
+T}
+T{
+5
+T}:T{
+\fB|\fR
+T}:T{
+Bitwise OR
+T}:T{
+Left\-to\-right
+T}
+T{
+6
+T}:T{
+\fB<\fR
+T}:T{
+Less than
+T}:T{
+Left\-to\-right
+T}
+T{
+6
+T}:T{
+\fB<=\fR
+T}:T{
+Less than or equal to
+T}:T{
+Left\-to\-right
+T}
+T{
+6
+T}:T{
+\fB>\fR
+T}:T{
+Greater than
+T}:T{
+Left\-to\-right
+T}
+T{
+6
+T}:T{
+\fB>=\fR
+T}:T{
+Greater than or equal to
+T}:T{
+Left\-to\-right
+T}
+T{
+7
+T}:T{
+\fB==\fR
+T}:T{
+Equal to
+T}:T{
+Left\-to\-right
+T}
+T{
+7
+T}:T{
+\fB!=\fR
+T}:T{
+Not equal to
+T}:T{
+Left\-to\-right
+T}
+T{
+8
+T}:T{
+\fB&&\fR
+T}:T{
+Logical AND
+T}:T{
+Left\-to\-right
+T}
+T{
+9
+T}:T{
+\fB||\fR
+T}:T{
+Logical OR
+T}:T{
+Left\-to\-right
+T}
+.TE
+.sp 1
+Parentheses are supported to bypass the default order\&.
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBImportant\fR
+.ps -1
+.br
+.RS 4
+Unlike the C\ \&language, the bitwise AND and OR operators (\fB&\fR
+and
+\fB|\fR) in
+\fIEXPR\fR
+take precedence over relational operators (\fB<\fR,
+\fB<=\fR,
+\fB>\fR,
+\fB>=\fR,
+\fB==\fR, and
+\fB!=\fR)\&. This means the expression
+\fB2 & 2 == 2\fR
+is
+\fItrue\fR
+while the equivalent C\ \&expression is
+\fIfalse\fR\&.
+.sp .5v
+.RE
+The arithmetic operators are NOT supported\&.
+.sp
+LTTng first casts all integer constants and fields to signed 64\-bit integers\&. The representation of negative integers is two\(cqs complement\&. This means that, for example, the signed 8\-bit integer field 0xff (\-1) becomes 0xffffffffffffffff (still \-1) once casted\&.
+.sp
+Before a bitwise operator is applied, LTTng casts all its operands to unsigned 64\-bit integers, and then casts the result back to a signed 64\-bit integer\&. For the bitwise NOT operator, it\(cqs the equivalent of this C\ \&expression:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+(int64_t) ~((uint64_t) val)
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+For the binary bitwise operators, it\(cqs the equivalent of those C\ \&expressions:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+(int64_t) ((uint64_t) lhs >> (uint64_t) rhs)
+(int64_t) ((uint64_t) lhs << (uint64_t) rhs)
+(int64_t) ((uint64_t) lhs & (uint64_t) rhs)
+(int64_t) ((uint64_t) lhs ^ (uint64_t) rhs)
+(int64_t) ((uint64_t) lhs | (uint64_t) rhs)
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+If the right\-hand side of a bitwise shift operator (\fB<<\fR
+and
+\fB>>\fR) is not in the [0,\ \&63] range, then
+\fIEXPR\fR
+is
+\fIfalse\fR\&.
+.RE
+.sp
+\fIEXPR\fR examples:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+msg_id == 23 && size >= 2048
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ctx\&.procname == "lttng*" && (!flag || poel < 34)
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$app\&.my_provider:my_context == 17\&.34e9 || some_enum >= 14
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ctx\&.cpu_id == 2 && filename != "*\&.log"
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+eax_reg & 0xff7 == 0x240 && x[4] >> 12 <= 0x1234
+.fi
+.if n \{\
+.RE
+.\}
+.SS "Migration from a recording event rule specification"
+.sp
+Since LTTng\ \&2\&.13, what this manual page documents is the standard, common way to specify an LTTng event rule\&.
+.sp
+With the \fBlttng-enable-event\fR(1) command, you also specify an event rule, but with deprecated options and arguments\&.
+.sp
+The following table shows how to translate from the \fBlttng-enable-event\fR(1) options and arguments to the common event rule specification options:
+.TS
+allbox tab(:);
+ltB ltB.
+T{
+Recording event rule option(s)/argument(s)
+T}:T{
+Common event rule option(s)
+T}
+.T&
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt.
+T{
+.sp
+\fB--kernel\fR and \fB--tracepoint\fR
+T}:T{
+.sp
+\fB--type\fR=\fBkernel:tracepoint\fR
+T}
+T{
+.sp
+\fB--kernel\fR and \fB--syscall\fR
+T}:T{
+.sp
+\fB--type\fR=\fBkernel:syscall:entry+exit\fR
+T}
+T{
+.sp
+\fB--probe\fR=\fILOC\fR and \fIRECORDNAME\fR (non\-option)
+T}:T{
+.sp
+\fB--type\fR=\fBkernel:kprobe\fR, \fB--location\fR=\fILOC\fR, and \fB--event-name\fR=\fIRECORDNAME\fR
+T}
+T{
+.sp
+\fB--userspace-probe\fR=\fILOC\fR and \fIRECORDNAME\fR (non\-option)
+T}:T{
+.sp
+\fB--type\fR=\fBkernel:uprobe\fR, \fB--location\fR=\fILOC\fR, and \fB--event-name\fR=\fIRECORDNAME\fR
+T}
+T{
+.sp
+\fB--function\fR=\fILOC\fR and \fIRECORDNAME\fR (non\-option)
+T}:T{
+.sp
+Not available as of LTTng\ \&2\&.13\&.1
+T}
+T{
+.sp
+\fB--userspace\fR and \fB--tracepoint\fR
+T}:T{
+.sp
+\fB--type\fR=\fBuser:tracepoint\fR
+T}
+T{
+.sp
+\fB--jul\fR and \fB--tracepoint\fR
+T}:T{
+.sp
+\fB--type\fR=\fBjul:logging\fR
+T}
+T{
+.sp
+\fB--log4j\fR and \fB--tracepoint\fR
+T}:T{
+.sp
+\fB--type\fR=\fBlog4j:logging\fR
+T}
+T{
+.sp
+\fB--python\fR and \fB--tracepoint\fR
+T}:T{
+.sp
+\fB--type\fR=\fBpython:logging\fR
+T}
+T{
+.sp
+\fINAME\fR (non\-option)
+T}:T{
+.sp
+\fB--name\fR=\fINAME\fR
+T}
+T{
+.sp
+\fB--all\fR
+T}:T{
+.sp
+\fB--name\fR=\fB'*\'\fR or no \fB--name\fR option
+T}
+T{
+.sp
+\fB--exclude\fR=\fIXNAME\fR[\fB,\fR\fIXNAME\fR]\&...
+T}:T{
+.sp
+\fB--exclude-name\fR=\fIXNAME\fR for each \fIXNAME\fR
+T}
+T{
+.sp
+\fB--loglevel\fR=\fILOGLEVEL\fR
+T}:T{
+.sp
+\fB--log-level\fR=\fILOGLEVEL\fR\fB..\fR
+T}
+T{
+.sp
+\fB--loglevel-only\fR=\fILOGLEVEL\fR
+T}:T{
+.sp
+\fB--log-level\fR=\fILOGLEVEL\fR
+T}
+T{
+.sp
+\fB--filter\fR=\fIEXPR\fR
+T}:T{
+.sp
+\fB--filter\fR=\fIEXPR\fR
+T}
+.TE
+.sp 1
+.SH "OPTIONS"
+.SS "Instrumentation point type condition"
+.sp
+See the \(lqInstrumentation point type condition\(rq section above\&.
+.PP
+\fB-E\fR \fINAME\fR, \fB--event-name\fR=\fINAME\fR
+.RS 4
+With the
+\fB--type\fR=\fBkernel:kprobe\fR
+or
+\fB--type\fR=\fBkernel:uprobe\fR
+option, set the name of the emitted events to
+\fINAME\fR
+instead of the
+\fILOC\fR
+argument of the
+\fB--location\fR=\fILOC\fR
+option\&.
+.sp
+Defaulting to
+\fILOC\fR
+is specific to LTTng\ \&2\&.13\&.1 and may change in the future\&.
+.RE
+.PP
+\fB-L\fR \fILOC\fR, \fB--location\fR=\fILOC\fR
+.RS 4
+.PP
+With the \fB--type\fR=\fBkernel:kprobe\fR option
+.RS 4
+Set the location of the Linux kprobe to insert to
+\fILOC\fR\&.
+.sp
+\fILOC\fR
+is one of:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An address (\fB0x\fR
+hexadecimal prefix supported)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A symbol name\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A symbol name and an offset (\fISYMBOL\fR\fB+\fR\fIOFFSET\fR
+format)\&.
+.RE
+.RE
+.PP
+With the \fB--type\fR=\fBkernel:uprobe\fR option
+.RS 4
+Set the location of the user space probe to insert to
+\fILOC\fR\&.
+.sp
+\fILOC\fR
+is one of:
+.PP
+[\fBelf:\fR]\fIPATH\fR\fB:\fR\fISYMBOL\fR
+.RS 4
+An available symbol within a user space application or library\&.
+.PP
+\fIPATH\fR
+.RS 4
+Application or library path\&.
+.sp
+One of:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An absolute path\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A relative path\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The name of an application as found in the directories listed in the
+\fBPATH\fR
+environment variable\&.
+.RE
+.RE
+.PP
+\fISYMBOL\fR
+.RS 4
+Symbol name of the function of which to instrument the entry\&.
+.sp
+\fISYMBOL\fR
+can be any defined code symbol in the output of the
+\fBnm\fR(1)
+command, including with its
+\fB--dynamic\fR
+option, which lists dynamic symbols\&.
+.RE
+.sp
+As of LTTng\ \&2\&.13\&.1, not specifying
+\fBelf:\fR
+is equivalent to specifying it, but this default may change in the future\&.
+.sp
+Examples:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB/usr/lib/libc.so.6:malloc\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB./myapp:createUser\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBelf:httpd:ap_run_open_htaccess\fR
+.RE
+.RE
+.PP
+\fBsdt:\fR\fIPATH\fR\fB:\fR\fIPROVIDER\fR\fB:\fR\fINAME\fR
+.RS 4
+A SystemTap User\-level Statically Defined Tracing (USDT) probe within a user space application or library\&.
+.PP
+\fIPATH\fR
+.RS 4
+Application or library path\&.
+.sp
+This can be:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+An absolute path\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+A relative path\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+The name of an application as found in the directories listed in the
+\fBPATH\fR
+environment variable\&.
+.RE
+.RE
+.PP
+\fIPROVIDER\fR, \fINAME\fR
+.RS 4
+USDT provider and probe names\&.
+.sp
+For example, with the following USDT probe:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+DTRACE_PROBE2("server", "accept_request",
+              request_id, ip_addr);
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+The provider/probe name pair is
+\fBserver:accept_request\fR\&.
+.RE
+.sp
+Example:
+\fBsdt:./build/server:server:accept_request\fR
+.RE
+.RE
+.RE
+.PP
+\fB-t\fR \fITYPE\fR, \fB--type\fR=\fITYPE\fR
+.RS 4
+Only match events which LTTng creates from an instrumentation point having the type
+\fITYPE\fR\&.
+.sp
+\fITYPE\fR
+is one of:
+.PP
+\fBkernel:tracepoint\fR
+.RS 4
+LTTng kernel tracepoint\&.
+.sp
+As of LTTng\ \&2\&.13\&.1,
+\fBkernel\fR
+is an alias, but this may change in the future\&.
+.RE
+.PP
+\fBuser:tracepoint\fR
+.RS 4
+LTTng user space tracepoint\&.
+.sp
+As of LTTng\ \&2\&.13\&.1,
+\fBuser\fR
+is an alias, but this may change in the future\&.
+.RE
+.PP
+\fBkernel:syscall:entry\fR
+.RS 4
+Linux system call entry\&.
+.sp
+As of LTTng\ \&2\&.13\&.1,
+\fBsyscall:entry\fR
+is an alias, but this may change in the future\&.
+.RE
+.PP
+\fBkernel:syscall:exit\fR
+.RS 4
+Linux system call exit\&.
+.sp
+As of LTTng\ \&2\&.13\&.1,
+\fBsyscall:exit\fR
+is an alias, but this may change in the future\&.
+.RE
+.PP
+\fBkernel:syscall:entry+exit\fR
+.RS 4
+Linux system call entry and exit (two distinct instrumentation points)\&.
+.sp
+As of LTTng\ \&2\&.13\&.1, the following are aliases, but this may change in the future:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBsyscall:entry+exit\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBkernel:syscall\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fBsyscall\fR
+.RE
+.RE
+.PP
+\fBkernel:kprobe\fR
+.RS 4
+Linux kprobe\&.
+.sp
+As of LTTng\ \&2\&.13\&.1,
+\fBkprobe\fR
+is an alias, but this may change in the future\&.
+.sp
+You must specify the location of the kprobe to insert with the
+\fB--location\fR
+option\&.
+.sp
+You may specify the name of the emitted events with the
+\fB--event-name\fR
+option\&.
+.RE
+.PP
+\fBkernel:uprobe\fR
+.RS 4
+Linux user space probe\&.
+.sp
+You must specify the location of the user space probe to insert with the
+\fB--location\fR
+option\&.
+.sp
+You may specify the name of the emitted events with the
+\fB--event-name\fR
+option\&.
+.RE
+.PP
+\fBjul:logging\fR
+.RS 4
+\fBjava.util.logging\fR
+logging statement\&.
+.sp
+As of LTTng\ \&2\&.13\&.1,
+\fBjul\fR
+is an alias, but this may change in the future\&.
+.RE
+.PP
+\fBlog4j:logging\fR
+.RS 4
+Apache log4j logging statement\&.
+.sp
+As of LTTng\ \&2\&.13\&.1,
+\fBlog4j\fR
+is an alias, but this may change in the future\&.
+.RE
+.PP
+\fBpython:logging\fR
+.RS 4
+Python logging statement\&.
+.sp
+As of LTTng\ \&2\&.13\&.1,
+\fBpython\fR
+is an alias, but this may change in the future\&.
+.RE
+.RE
+.SS "Event name condition"
+.sp
+See the \(lqEvent name condition\(rq section above\&.
+.PP
+\fB-n\fR \fINAME\fR, \fB--name\fR=\fINAME\fR
+.RS 4
+Only match events of which
+\fINAME\fR
+matches, depending on the argument of the
+\fB--type\fR
+option:
+.PP
+\fBkernel:tracepoint\fR, \fBuser:tracepoint\fR
+.RS 4
+The full name of the LTTng tracepoint\&.
+.RE
+.PP
+\fBjul:logging\fR, \fBlog4j:logging\fR, \fBpython:logging\fR
+.RS 4
+The Java or Python logger name\&.
+.RE
+.PP
+\fBkernel:syscall:entry\fR, \fBkernel:syscall:exit\fR, \fBkernel:syscall:entry+exit\fR
+.RS 4
+The name of the system call, without any
+\fBsys_\fR
+prefix\&.
+.RE
+.sp
+This option is NOT available with other instrumentation point types\&.
+.sp
+As of LTTng\ \&2\&.13\&.1, not specifying this option is equivalent to specifying
+\fB--name\fR=\fB'*\'\fR
+(when it applies), but this default may change in the future\&.
+.RE
+.PP
+\fB-x\fR \fIXNAME\fR, \fB--exclude-name\fR=\fIXNAME\fR
+.RS 4
+Only match events of which
+\fIXNAME\fR
+does NOT match the full name of the LTTng user space tracepoint\&.
+.sp
+Only available with the
+\fB--type\fR=\fBuser:tracepoint\fR
+option\&.
+.RE
+.sp
+\fINAME\fR and \fIXNAME\fR are globbing patterns: the \fB*\fR character means \(lqmatch anything\(rq\&. To match a literal \fB*\fR character, use \fB\e*\fR\&.
+.SS "Instrumentation point log level condition"
+.sp
+See the \(lqInstrumentation point log level condition\(rq section above\&.
+.PP
+\fB-l\fR \fILOGLEVELSPEC\fR, \fB--log-level\fR=\fILOGLEVELSPEC\fR
+.RS 4
+Only match events of which the log level of the LTTng tracepoint or logging statement is, depending on the format of
+\fILOGLEVELSPEC\fR:
+.PP
+\fILOGLEVEL\fR\fB..\fR
+.RS 4
+At least as severe as
+\fILOGLEVEL\fR\&.
+.RE
+.PP
+\fILOGLEVEL\fR
+.RS 4
+Exactly
+\fILOGLEVEL\fR\&.
+.RE
+.PP
+\fB..\fR
+.RS 4
+Anything\&.
+.RE
+.sp
+This option is NOT available with the following options:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--type\fR=\fBkernel:tracepoint\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--type\fR=\fBkernel:syscall:entry\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--type\fR=\fBkernel:syscall:exit\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--type\fR=\fBkernel:syscall:entry+exit\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--type\fR=\fBkernel:kprobe\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--type\fR=\fBkernel:uprobe\fR
+.sp
+As of LTTng\ \&2\&.13\&.1, not specifying this option is equivalent to specifying
+\fB--log-level\fR=\fB..\fR
+(when it applies), but this default may change in the future\&.
+.RE
+.RE
+.SS "Event payload and context filter condition"
+.sp
+See the \(lqEvent payload and context filter condition\(rq section above\&.
+.PP
+\fB-f\fR \fIEXPR\fR, \fB--filter\fR=\fIEXPR\fR
+.RS 4
+Only match events of which
+\fIEXPR\fR, which can contain references to event payload and current context fields, is
+\fItrue\fR\&.
+.sp
+This option is only available with the following options:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--type\fR=\fBkernel:tracepoint\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--type\fR=\fBkernel:syscall:entry\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--type\fR=\fBkernel:syscall:exit\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+\fB--type\fR=\fBkernel:syscall:entry+exit\fR
+.RE
+.RE
+.SH "RESOURCES"
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng project website <https://lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng documentation <https://lttng.org/docs>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+LTTng bug tracker <https://bugs.lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Git repositories <https://git.lttng.org>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+GitHub organization <https://github.com/lttng>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
+for support and development:
+\fBlttng-dev@lists.lttng.org\fR
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+IRC channel <irc://irc.oftc.net/lttng>:
+\fB#lttng\fR
+on
+\fBirc.oftc.net\fR
+.RE
+.SH "COPYRIGHT"
+.sp
+This program is part of the LTTng\-tools project\&.
+.sp
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+.SH "THANKS"
+.sp
+Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
+.sp
+Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
+.SH "SEE ALSO"
+.sp
+\fBlttng\fR(1), \fBlttng-add-trigger\fR(1), \fBlttng-list\fR(1), \fBlttng-concepts\fR(7)

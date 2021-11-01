@@ -2,12 +2,12 @@
 .\"     Title: lttng-regenerate
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 18 January 2018
+.\"      Date: 14 June 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.12.3
+.\"    Source: LTTng 2.13.1
 .\"  Language: English
 .\"
-.TH "LTTNG\-REGENERATE" "1" "18 January 2018" "LTTng 2\&.12\&.3" "LTTng Manual"
+.TH "LTTNG\-REGENERATE" "1" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -28,164 +28,126 @@
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
 .SH "NAME"
-lttng-regenerate \- Manage an LTTng tracing session\*(Aqs data regeneration
+lttng-regenerate \- Regenerate specific data of an LTTng recording session
 .SH "SYNOPSIS"
 .sp
-Regenerate the metadata of a session:
+Regenerate the metadata of a recording session:
 .sp
 .nf
 \fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBregenerate metadata\fR [\fB--session\fR=\fISESSION\fR]
 .fi
 .sp
-Regenerate the state dump of a session:
+Regenerate the state dump event records of a recording session:
 .sp
 .nf
 \fBlttng\fR [\fIGENERAL OPTIONS\fR] \fBregenerate statedump\fR [\fB--session\fR=\fISESSION\fR]
 .fi
 .SH "DESCRIPTION"
 .sp
-The \fBlttng regenerate\fR command regenerates specific data of a tracing session\&.
+The \fBlttng regenerate\fR command regenerates specific data of:
+.PP
+With the \fB--session\fR=\fISESSION\fR option
+.RS 4
+The recording session named
+\fISESSION\fR\&.
+.RE
+.PP
+Without the \fB--session\fR option
+.RS 4
+The current recording session (see
+\fBlttng-concepts\fR(7)
+to learn more about the current recording session)\&.
+.RE
 .sp
-As of this version, the \fBmetadata\fR and \fBstatedump\fR actions are available\&.
-.SS "Regenerating a tracing session\(cqs metadata"
+See \fBlttng-concepts\fR(7) to learn more about recording sessions\&.
 .sp
-The \fBlttng regenerate metadata\fR action can be used to resample the offset between the system\(cqs monotonic clock and the wall\-clock time\&.
+As of this version, the \fBmetadata\fR and \fBstatedump\fR targets are available\&.
 .sp
-This action is meant to be used to resample the wall\-clock time following a major NTP <https://en.wikipedia.org/wiki/Network_Time_Protocol> correction\&. As such, a system booting with an incorrect wall time can be traced before its wall time is NTP\-corrected\&. Regenerating the tracing session\(cqs metadata ensures that trace viewers can accurately determine the events time relative to Unix Epoch\&.
+See the \(lqEXAMPLES\(rq section below for usage examples\&.
+.SS "Regenerate the metadata of a recording session"
 .sp
-If you use \fBlttng-rotate\fR(1) or \fBlttng-enable-rotation\fR(1) to make tracing session rotations, this action regenerates the current and next trace chunks\(cqs metadata files\&.
-.SS "Regenerating a tracing session\(cqs state dump"
+Use the \fBmetadata\fR target to resample the offset between the monotonic clock and the wall time of the system, and then regenerate the metadata stream files\&.
 .sp
-The \fBlttng regenerate statedump\fR action can be used to collect up\-to\-date state dump information during the tracing session\&. This is particularly useful in snapshot (see \fBlttng-snapshot\fR(1)) or trace file rotation (see \fBlttng-enable-channel\fR(1)) modes where the state dump information may be lost\&.
+More specifically, you may want to resample the wall time following a major NTP <https://en.wikipedia.org/wiki/Network_Time_Protocol> correction\&. As such, LTTng can trace a system booting with an incorrect wall time before its wall time is NTP\-corrected\&. Regenerating the metadata of the selected recording session ensures that trace readers can accurately determine the event record timestamps relative to the Unix epoch\&.
+.sp
+Note that if you plan to rotate (see \fBlttng-concepts\fR(7) to learn more) the selected recording session, this target only regenerates the metadata stream files of the current and next trace chunks\&.
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBImportant\fR
+.ps -1
+.br
+.RS 4
+.sp
+You can only use the \fBmetadata\fR target when the selected recording session:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Is not in live mode (\fB--live\fR
+option of
+\fBlttng-create\fR(1))\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+If it has user space channels, they\(cqre configured to use a per\-user buffering scheme (\fB--buffers-uid\fR
+option of
+\fBlttng-enable-channel\fR(1))\&.
+.sp
+See
+\fBlttng-concepts\fR(7)
+to learn more about channels\&.
+.RE
+.sp .5v
+.RE
+.SS "Regenerate the state dump event records of a recording session"
+.sp
+Use the \fBstatedump\fR target to collect up\-to\-date state dump information and create corresponding event records\&.
+.sp
+This is particularly useful if the selected recording session is in snapshot mode (\fB--snapshot\fR option of the \fBlttng-create\fR(1) command) or if LTTng rotates trace files for one of its channels (see \fBlttng-concepts\fR(7)): in both cases, the state dump information may be lost\&.
 .SH "OPTIONS"
 .sp
-General options are described in \fBlttng\fR(1)\&.
+See \fBlttng\fR(1) for \fIGENERAL OPTIONS\fR\&.
 .PP
 \fB-s\fR \fISESSION\fR, \fB--session\fR=\fISESSION\fR
 .RS 4
-Regenerate the data of the tracing session named
+Regenerate specific data of the recording session named
 \fISESSION\fR
-instead of the current tracing session\&.
+instead of the current recording session\&.
 .RE
 .SS "Program information"
 .PP
 \fB-h\fR, \fB--help\fR
 .RS 4
-Show command help\&.
+Show help\&.
 .sp
-This option, like
-\fBlttng-help\fR(1), attempts to launch
+This option attempts to launch
 \fB/usr/bin/man\fR
-to view the command\(cqs man page\&. The path to the man pager can be overridden by the
+to view this manual page\&. Override the manual pager path with the
 \fBLTTNG_MAN_BIN_PATH\fR
 environment variable\&.
 .RE
 .PP
 \fB--list-options\fR
 .RS 4
-List available command options\&.
-.RE
-.SH "LIMITATIONS"
-.sp
-The \fBlttng regenerate metadata\fR command can only be used on kernel and user space tracing sessions (using per\-user buffering), in non\-live mode\&.
-.sp
-See \fBlttng-enable-channel\fR(1) for more information about buffering schemes and \fBlttng-create\fR(1) for more information about the different tracing session modes\&.
-.SH "ENVIRONMENT VARIABLES"
-.PP
-\fBLTTNG_ABORT_ON_ERROR\fR
-.RS 4
-Set to 1 to abort the process after the first error is encountered\&.
-.RE
-.PP
-\fBLTTNG_HOME\fR
-.RS 4
-Overrides the
-\fB$HOME\fR
-environment variable\&. Useful when the user running the commands has a non\-writable home directory\&.
-.RE
-.PP
-\fBLTTNG_MAN_BIN_PATH\fR
-.RS 4
-Absolute path to the man pager to use for viewing help information about LTTng commands (using
-\fBlttng-help\fR(1)
-or
-\fBlttng COMMAND --help\fR)\&.
-.RE
-.PP
-\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
-.RS 4
-Path in which the
-\fBsession.xsd\fR
-session configuration XML schema may be found\&.
-.RE
-.PP
-\fBLTTNG_SESSIOND_PATH\fR
-.RS 4
-Full session daemon binary path\&.
-.sp
-The
-\fB--sessiond-path\fR
-option has precedence over this environment variable\&.
-.RE
-.sp
-Note that the \fBlttng-create\fR(1) command can spawn an LTTng session daemon automatically if none is running\&. See \fBlttng-sessiond\fR(8) for the environment variables influencing the execution of the session daemon\&.
-.SH "FILES"
-.PP
-\fB$LTTNG_HOME/.lttngrc\fR
-.RS 4
-User LTTng runtime configuration\&.
-.sp
-This is where the per\-user current tracing session is stored between executions of
-\fBlttng\fR(1)\&. The current tracing session can be set with
-\fBlttng-set-session\fR(1)\&. See
-\fBlttng-create\fR(1)
-for more information about tracing sessions\&.
-.RE
-.PP
-\fB$LTTNG_HOME/lttng-traces\fR
-.RS 4
-Default output directory of LTTng traces\&. This can be overridden with the
-\fB--output\fR
-option of the
-\fBlttng-create\fR(1)
-command\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng\fR
-.RS 4
-User LTTng runtime and configuration directory\&.
-.RE
-.PP
-\fB$LTTNG_HOME/.lttng/sessions\fR
-.RS 4
-Default location of saved user tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.PP
-\fB/usr/local/etc/lttng/sessions\fR
-.RS 4
-System\-wide location of saved tracing sessions (see
-\fBlttng-save\fR(1)
-and
-\fBlttng-load\fR(1))\&.
-.RE
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-.sp
-\fB$LTTNG_HOME\fR defaults to \fB$HOME\fR when not explicitly set\&.
-.sp .5v
+List available command options and quit\&.
 .RE
 .SH "EXIT STATUS"
 .PP
@@ -213,9 +175,145 @@ Fatal error
 .RS 4
 Command warning (something went wrong during the command)
 .RE
-.SH "BUGS"
+.SH "ENVIRONMENT"
+.PP
+\fBLTTNG_ABORT_ON_ERROR\fR
+.RS 4
+Set to
+\fB1\fR
+to abort the process after the first error is encountered\&.
+.RE
+.PP
+\fBLTTNG_HOME\fR
+.RS 4
+Path to the LTTng home directory\&.
 .sp
-If you encounter any issue or usability problem, please report it on the LTTng bug tracker <https://bugs.lttng.org/projects/lttng-tools>\&.
+Defaults to
+\fB$HOME\fR\&.
+.sp
+Useful when the Unix user running the commands has a non\-writable home directory\&.
+.RE
+.PP
+\fBLTTNG_MAN_BIN_PATH\fR
+.RS 4
+Absolute path to the manual pager to use to read the LTTng command\-line help (with
+\fBlttng-help\fR(1)
+or with the
+\fB--help\fR
+option) instead of
+\fB/usr/bin/man\fR\&.
+.RE
+.PP
+\fBLTTNG_SESSION_CONFIG_XSD_PATH\fR
+.RS 4
+Path to the directory containing the
+\fBsession.xsd\fR
+recording session configuration XML schema\&.
+.RE
+.PP
+\fBLTTNG_SESSIOND_PATH\fR
+.RS 4
+Absolute path to the LTTng session daemon binary (see
+\fBlttng-sessiond\fR(8)) to spawn from the
+\fBlttng-create\fR(1)
+command\&.
+.sp
+The
+\fB--sessiond-path\fR
+general option overrides this environment variable\&.
+.RE
+.SH "FILES"
+.PP
+\fB$LTTNG_HOME/.lttngrc\fR
+.RS 4
+Unix user\(cqs LTTng runtime configuration\&.
+.sp
+This is where LTTng stores the name of the Unix user\(cqs current recording session between executions of
+\fBlttng\fR(1)\&.
+\fBlttng-create\fR(1)
+and
+\fBlttng-set-session\fR(1)
+set the current recording session\&.
+.RE
+.PP
+\fB$LTTNG_HOME/lttng-traces\fR
+.RS 4
+Default output directory of LTTng traces in local and snapshot modes\&.
+.sp
+Override this path with the
+\fB--output\fR
+option of the
+\fBlttng-create\fR(1)
+command\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng\fR
+.RS 4
+Unix user\(cqs LTTng runtime and configuration directory\&.
+.RE
+.PP
+\fB$LTTNG_HOME/.lttng/sessions\fR
+.RS 4
+Default directory containing the Unix user\(cqs saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.PP
+\fB/usr/local/etc/lttng/sessions\fR
+.RS 4
+Directory containing the system\-wide saved recording session configurations (see
+\fBlttng-save\fR(1)
+and
+\fBlttng-load\fR(1))\&.
+.RE
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+.sp
+\fB$LTTNG_HOME\fR defaults to the value of the \fBHOME\fR environment variable\&.
+.sp .5v
+.RE
+.SH "EXAMPLES"
+.PP
+\fBExample\ \&1.\ \&Regenerate the metadata of the current recording session\&.\fR
+.RS 4
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng regenerate metadata
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\fBExample\ \&2.\ \&Regenerate the state dump event records of a specific recording session\&.\fR
+.RS 4
+.sp
+See the \fB--session\fR option\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ lttng regenerate statedump \-\-session=my\-session
+.fi
+.if n \{\
+.RE
+.\}
+.RE
 .SH "RESOURCES"
 .sp
 .RS 4
@@ -248,7 +346,7 @@ LTTng documentation <https://lttng.org/docs>
 .sp -1
 .IP \(bu 2.3
 .\}
-Git repositories <http://git.lttng.org>
+LTTng bug tracker <https://bugs.lttng.org>
 .RE
 .sp
 .RS 4
@@ -259,7 +357,7 @@ Git repositories <http://git.lttng.org>
 .sp -1
 .IP \(bu 2.3
 .\}
-GitHub organization <http://github.com/lttng>
+Git repositories <https://git.lttng.org>
 .RE
 .sp
 .RS 4
@@ -270,7 +368,7 @@ GitHub organization <http://github.com/lttng>
 .sp -1
 .IP \(bu 2.3
 .\}
-Continuous integration <http://ci.lttng.org/>
+GitHub organization <https://github.com/lttng>
 .RE
 .sp
 .RS 4
@@ -281,7 +379,18 @@ Continuous integration <http://ci.lttng.org/>
 .sp -1
 .IP \(bu 2.3
 .\}
-Mailing list <http://lists.lttng.org>
+Continuous integration <https://ci.lttng.org/>
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Mailing list <https://lists.lttng.org/>
 for support and development:
 \fBlttng-dev@lists.lttng.org\fR
 .RE
@@ -299,11 +408,11 @@ IRC channel <irc://irc.oftc.net/lttng>:
 on
 \fBirc.oftc.net\fR
 .RE
-.SH "COPYRIGHTS"
+.SH "COPYRIGHT"
 .sp
 This program is part of the LTTng\-tools project\&.
 .sp
-LTTng\-tools is distributed under the GNU General Public License version 2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
+LTTng\-tools is distributed under the GNU General Public License version\ \&2 <http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html>\&. See the \fBLICENSE\fR <https://github.com/lttng/lttng-tools/blob/master/LICENSE> file for details\&.
 .SH "THANKS"
 .sp
 Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.polymtl.ca/> at \('Ecole Polytechnique de Montr\('eal for the LTTng journey\&.
@@ -311,4 +420,4 @@ Special thanks to Michel Dagenais and the DORSAL laboratory <http://www.dorsal.p
 Also thanks to the Ericsson teams working on tracing which helped us greatly with detailed bug reports and unusual test cases\&.
 .SH "SEE ALSO"
 .sp
-\fBlttng\fR(1)
+\fBlttng\fR(1), \fBlttng-concepts\fR(7)

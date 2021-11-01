@@ -2,7 +2,15 @@
 
 AUTOMAKE_OPTIONS = subdir-objects
 
-SUBDIRS = string-utils
+SUBDIRS = \
+	argpar \
+	bytecode \
+	compat \
+	config \
+	fd-tracker \
+	string-utils \
+	filter \
+	hashtable
 
 # Make sure to always distribute all folders
 # since SUBDIRS is decided at configure time.
@@ -20,41 +28,74 @@ DIST_SUBDIRS = \
 	config \
 	consumer \
 	string-utils \
-	fd-tracker
+	fd-tracker \
+	bytecode \
+	filter \
+	argpar
 
 # Common library
 noinst_LTLIBRARIES = libcommon.la
-EXTRA_DIST = mi-lttng-4.0.xsd
+EXTRA_DIST = mi-lttng-4.1.xsd
 
 libcommon_la_SOURCES = \
-	action.c \
-	buffer-usage.c \
+	actions/action.c \
+	actions/list.c \
+	actions/notify.c \
+	actions/path.c \
+	actions/rotate-session.c \
+	actions/snapshot-session.c \
+	actions/start-session.c \
+	actions/stop-session.c \
+	actions/rate-policy.c \
 	buffer-view.h buffer-view.c \
 	common.h \
-	condition.c \
+	conditions/buffer-usage.c \
+	conditions/condition.c \
+	conditions/event-rule-matches.c \
+	conditions/session-consumed-size.c \
+	conditions/session-rotation.c \
 	context.c context.h \
-	credentials.h \
+	credentials.c credentials.h \
 	daemonize.c daemonize.h \
 	defaults.c \
+	domain.c \
 	dynamic-array.c dynamic-array.h \
 	dynamic-buffer.c dynamic-buffer.h \
 	endpoint.c \
 	error.c error.h \
+	error-query.c \
 	evaluation.c \
 	event.c \
+	event-expr/event-expr.c \
+	event-field-value.c \
+	event-rule/event-rule.c \
+	event-rule/kernel-kprobe.c \
+	event-rule/kernel-syscall.c \
+	event-rule/kernel-uprobe.c \
+	event-rule/kernel-tracepoint.c \
+	event-rule/user-tracepoint.c \
+	event-rule/log4j-logging.c \
+	event-rule/jul-logging.c \
+	event-rule/python-logging.c \
 	filter.c filter.h \
+	fd-handle.c fd-handle.h \
+	fs-handle.c fs-handle.h fs-handle-internal.h \
 	futex.c futex.h \
+	kernel-probe.c \
+	index-allocator.c index-allocator.h \
 	location.c \
+	log-level-rule.c \
 	mi-lttng.c mi-lttng.h \
 	notification.c \
-	notify.c \
 	optional.h \
+	payload.c payload.h \
+	payload-view.c payload-view.h \
 	pipe.c pipe.h \
 	readwrite.c readwrite.h \
 	runas.c runas.h \
-	session-consumed-size.c \
+	shm.c shm.h \
 	session-descriptor.c \
-	session-rotation.c \
+	snapshot.c snapshot.h \
 	spawn-viewer.c spawn-viewer.h \
 	time.c \
 	trace-chunk.c trace-chunk.h \
@@ -65,9 +106,9 @@ libcommon_la_SOURCES = \
 	userspace-probe.c \
 	utils.c utils.h \
 	uuid.c uuid.h \
+	thread.c thread.h \
 	tracker.c tracker.h \
-	waiter.c waiter.h \
-	fs-handle.h fs-handle-internal.h fs-handle.c
+	waiter.c waiter.h
 
 if HAVE_ELF_H
 libcommon_la_SOURCES += \
@@ -75,21 +116,16 @@ libcommon_la_SOURCES += \
 endif
 
 libcommon_la_LIBADD = \
+	$(top_builddir)/src/common/bytecode/libbytecode.la \
 	$(top_builddir)/src/common/config/libconfig.la \
 	$(top_builddir)/src/common/compat/libcompat.la \
 	$(top_builddir)/src/common/hashtable/libhashtable.la \
-	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la
-
-if BUILD_LIB_COMPAT
-SUBDIRS += compat
-endif
+	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la \
+	$(top_builddir)/src/common/filter/libfilter.la \
+	$(top_builddir)/src/vendor/msgpack/libmsgpack.la
 
 if BUILD_LIB_HEALTH
 SUBDIRS += health
-endif
-
-if BUILD_LIB_HASHTABLE
-SUBDIRS += hashtable
 endif
 
 if BUILD_LIB_KERNEL_CTL
@@ -104,9 +140,6 @@ if BUILD_LIB_RELAYD
 SUBDIRS += relayd
 endif
 
-if BUILD_LIB_FD_TRACKER
-SUBDIRS += fd-tracker
-endif
 
 if BUILD_LIB_KERNEL_CONSUMER
 SUBDIRS += kernel-consumer
@@ -122,10 +155,6 @@ endif
 
 if BUILD_LIB_INDEX
 SUBDIRS += index
-endif
-
-if BUILD_LIB_CONFIG
-SUBDIRS += config
 endif
 
 if BUILD_LIB_CONSUMER
@@ -144,6 +173,11 @@ noinst_HEADERS = \
 	time.h \
 	uri.h \
 	utils.h
+
+noinst_PROGRAMS = filter-grammar-test
+filter_grammar_test_SOURCES = filter-grammar-test.c
+filter_grammar_test_LDADD = \
+	libcommon.la
 
 all-local:
 	@if [ x"$(srcdir)" != x"$(builddir)" ]; then \
