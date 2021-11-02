@@ -1,3 +1,15 @@
+ltt-control (2.13.1-1) unstable; urgency=medium
+
+  * [787d6bd] Bump watch file version to 4
+  * [277511b] Update salsa-ci config
+  * [7a3ba1d] New upstream version 2.13.1 (Closes: #998052)
+  * [db9f6d7] Adjust builddeps for 2.13
+  * [c7075fc] Update symbols file for 2.13
+  * [ee7779b] Update to debhelper compat 12
+  * [a9c28b3] Update debian/copyright
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 02 Nov 2021 12:14:37 -0400
+
 ltt-control (2.12.3-1) unstable; urgency=medium
 
   * [1f6cda9] New upstream version 2.12.3
