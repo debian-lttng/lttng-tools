@@ -2,3 +2,7 @@
 include:
   - https://salsa.debian.org/salsa-ci-team/pipeline/raw/master/salsa-ci.yml
   - https://salsa.debian.org/salsa-ci-team/pipeline/raw/master/pipeline-jobs.yml
+
+variables:
+  # Some source files are built with -D_FORTIFY_SOURCE=0 which blhc doesn't like.
+  SALSA_CI_DISABLE_BLHC: 1
