@@ -1,3 +1,9 @@
+ltt-control (2.13.1-1~ubuntu18.04.1) bionic; urgency=medium
+
+  * [52a88eb] Prepare branch for bionic
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 02 Nov 2021 13:42:38 -0400
+
 ltt-control (2.13.1-1) unstable; urgency=medium
 
   * [787d6bd] Bump watch file version to 4
