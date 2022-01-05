@@ -7,9 +7,12 @@
 
 #define _LGPL_SOURCE
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <errno.h>
+#include <stdarg.h>
 
 #include "string-utils.h"
 #include "../macros.h"
@@ -369,4 +372,72 @@ size_t strutils_array_of_strings_len(char * const *array)
 	}
 
 	return count;
+}
+
+LTTNG_HIDDEN
+int strutils_append_str(char **s, const char *append)
+{
+	char *old = *s;
+	char *new;
+	size_t oldlen = (old == NULL) ? 0 : strlen(old);
+	size_t appendlen = strlen(append);
+
+	new = calloc(oldlen + appendlen + 1, 1);
+	if (!new) {
+		return -ENOMEM;
+	}
+	if (oldlen) {
+		strcpy(new, old);
+	}
+	strcat(new, append);
+	*s = new;
+	free(old);
+	return 0;
+}
+
+LTTNG_HIDDEN
+int strutils_appendf(char **s, const char *fmt, ...)
+{
+	char *new_str;
+	size_t oldlen = (*s) ? strlen(*s) : 0;
+	int ret;
+	va_list args;
+
+	/* Compute length of formatted string we append. */
+	va_start(args, fmt);
+	ret = vsnprintf(NULL, 0, fmt, args);
+	va_end(args);
+
+	if (ret == -1) {
+		goto end;
+	}
+
+	/* Allocate space for old string + new string + \0. */
+	new_str = calloc(oldlen + ret + 1, 1);
+	if (!new_str) {
+		ret = -ENOMEM;
+		goto end;
+	}
+
+	/* Copy old string, if there was one. */
+	if (oldlen) {
+		strcpy(new_str, *s);
+	}
+
+	/* Format new string in-place. */
+	va_start(args, fmt);
+	ret = vsprintf(&new_str[oldlen], fmt, args); 
+	va_end(args);
+
+	if (ret == -1) {
+		ret = -1;
+		goto end;
+	}
+
+	free(*s);
+	*s = new_str;
+	new_str = NULL;
+
+end:
+	return ret;
 }

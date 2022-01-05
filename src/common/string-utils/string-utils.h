@@ -34,4 +34,22 @@ void strutils_free_null_terminated_array_of_strings(char **array);
 LTTNG_HIDDEN
 size_t strutils_array_of_strings_len(char * const *array);
 
+/*
+ * Append `append` to the malloc-end string `str`.
+ *
+ * On success, `str` is free'd (if not NULL) and assigned a new malloc-ed
+ * string.  On failure, `str` is not modified.
+ *
+ * Return 0 on success, -ENOMEM on failure.
+ */
+LTTNG_HIDDEN
+int strutils_append_str(char **str, const char *append);
+
+/*
+ * Like `strutils_append_str`, but the appended string is formatted using
+ * `fmt` and the following arguments.
+ */
+LTTNG_HIDDEN
+int strutils_appendf(char **s, const char *fmt, ...);
+
 #endif /* _STRING_UTILS_H */
