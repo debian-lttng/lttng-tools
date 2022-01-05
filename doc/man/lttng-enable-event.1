@@ -4,10 +4,10 @@
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
 .\"      Date: 14 June 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.13.1
+.\"    Source: LTTng 2.13.2
 .\"  Language: English
 .\"
-.TH "LTTNG\-ENABLE\-EVENT" "1" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
+.TH "LTTNG\-ENABLE\-EVENT" "1" "14 June 2021" "LTTng 2\&.13\&.2" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -289,7 +289,7 @@ With the \fB--tracepoint\fR option or without any other instrumentation point ty
 .RS 4
 An LTTng kernel tracepoint, that is, a statically defined point in the source code of the kernel image or of a kernel module with LTTng kernel tracer macros\&.
 .sp
-As of LTTng\ \&2\&.13\&.1, this is the default instrumentation point type of the Linux kernel tracing domain, but this may change in the future\&.
+As of LTTng\ \&2\&.13\&.2, this is the default instrumentation point type of the Linux kernel tracing domain, but this may change in the future\&.
 .sp
 List the available Linux kernel tracepoints with
 \fBlttng list --kernel\fR\&. See
@@ -350,7 +350,7 @@ A path and symbol (ELF method)\&.
 .\}
 A path, provider name, and probe name (SystemTap User\-level Statically Defined Tracing (USDT) method; a DTrace\-style marker)\&.
 .sp
-As of LTTng\ \&2\&.13\&.1, LTTng only supports USDT probes which are NOT reference\-counted\&.
+As of LTTng\ \&2\&.13\&.2, LTTng only supports USDT probes which are NOT reference\-counted\&.
 .RE
 .sp
 \fIRECORDNAME\fR
@@ -382,7 +382,7 @@ With or without the \fB--tracepoint\fR option
 .RS 4
 An LTTng user space tracepoint, that is, a statically defined point in the source code of a C/C++ application/library with LTTng user space tracer macros\&.
 .sp
-As of LTTng\ \&2\&.13\&.1, this is the default and sole instrumentation point type of the user space tracing domain, but this may change in the future\&.
+As of LTTng\ \&2\&.13\&.2, this is the default and sole instrumentation point type of the user space tracing domain, but this may change in the future\&.
 .sp
 List the available user space tracepoints with
 \fBlttng list --userspace\fR\&. See
@@ -398,7 +398,7 @@ With or without the \fB--tracepoint\fR option
 .RS 4
 A logging statement\&.
 .sp
-As of LTTng\ \&2\&.13\&.1, this is the default and sole instrumentation point type of the
+As of LTTng\ \&2\&.13\&.2, this is the default and sole instrumentation point type of the
 \fBjava.util.logging\fR, Apache log4j, and Python tracing domains, but this may change in the future\&.
 .sp
 List the available Java and Python loggers with
@@ -1803,7 +1803,7 @@ command, including with its
 option, which lists dynamic symbols\&.
 .RE
 .sp
-As of LTTng\ \&2\&.13\&.1, not specifying
+As of LTTng\ \&2\&.13\&.2, not specifying
 \fBelf:\fR
 is equivalent to specifying it, but this default may change in the future\&.
 .sp

@@ -1,6 +1,6 @@
 dnl SPDX-License-Identifier: GPL-2.0-only
 AC_PREREQ([2.64])
-AC_INIT([lttng-tools],[2.13.1],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
+AC_INIT([lttng-tools],[2.13.2],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
 
 AC_CONFIG_HEADERS([include/config.h])
 AC_CONFIG_AUX_DIR([config])
@@ -204,7 +204,7 @@ AS_IF([test "x$libtool_fixup" = "xyes"],
 	    [
 	    libtool_m4="$srcdir/m4/libtool.m4"
 	    libtool_flag_pattern=".*link_all_deplibs\s*,\s*\$1\s*)"
-	    AC_MSG_CHECKING([for occurence(s) of link_all_deplibs = no in $libtool_m4])
+	    AC_MSG_CHECKING([for occurrence(s) of link_all_deplibs = no in $libtool_m4])
 	    libtool_flag_pattern_count=$($GREP -c "$libtool_flag_pattern\s*=\s*no" $libtool_m4)
 	    AS_IF([test $libtool_flag_pattern_count -ne 0],
 	    [
@@ -1091,6 +1091,7 @@ AC_CONFIG_FILES([
 	src/Makefile
 	src/common/Makefile
 	src/common/argpar/Makefile
+	src/common/argpar-utils/Makefile
 	src/common/bytecode/Makefile
 	src/common/kernel-ctl/Makefile
 	src/common/kernel-consumer/Makefile
@@ -1299,9 +1300,9 @@ PPRINT_PROP_BOOL([LTTng-UST Python2 agent tests], $value)
 test ! -z "$PYTHON3_AGENT" && value=1 || value=0
 PPRINT_PROP_BOOL([LTTng-UST Python3 agent tests], $value)
 
-# LTTng UST Java agent Log4j tests enabled/disabled
+# userspace-probe SDT instrumentation tests enabled/disabled
 test "x$test_sdt_uprobe" = "xyes" && value=1 || value=0
-PPRINT_PROP_BOOL([LTTng-UST SDT uprobe tests], $value)
+PPRINT_PROP_BOOL([LTTng-modules SDT uprobe tests], $value)
 
 #Python binding enabled/disabled
 test "x$enable_python_binding" = xyes && value=1 || value=0
