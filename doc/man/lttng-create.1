@@ -2,12 +2,12 @@
 .\"     Title: lttng-create
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 14 June 2021
+.\"      Date: 7 December 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.13.1
+.\"    Source: LTTng 2.13.2
 .\"  Language: English
 .\"
-.TH "LTTNG\-CREATE" "1" "14 June 2021" "LTTng 2\&.13\&.1" "LTTng Manual"
+.TH "LTTNG\-CREATE" "1" "7 December 2021" "LTTng 2\&.13\&.2" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -67,7 +67,7 @@ See \fBlttng-concepts\fR(7) to learn more about recording sessions\&.
 .sp
 Without the \fISESSION\fR argument, LTTng automatically generates a recording session name having the \fBauto-\fR\fIYYYYmmdd\fR\fB-\fR\fIHHMMSS\fR form, where \fIYYYYmmdd\fR and \fIHHMMSS\fR are the creation date and time\&. \fISESSION\fR may NOT contain the character \fB/\fR\&.
 .sp
-Specify the path of the directory containing the shared memory files holding the channel ring buffers with the \fB--shm-path\fR option\&. Specifying a location on an NVRAM file system makes it possible to recover the latest recorded trace data when the system reboots after a crash with the \fBlttng-crash\fR(1) utility\&.
+Specify the path of the directory containing the shared memory files holding the channel ring buffers with the \fB--shm-path\fR option\&. Specifying a location on an NVRAM file system makes it possible to recover the latest recorded trace data when the system reboots after a crash with the \fBlttng-crash\fR(1) utility\&. Note that, as of LTTng\ \&2\&.13\&.2, this feature is only available for user space channels\&.
 .sp
 By default, the \fBcreate\fR command automatically spawns:
 .sp
@@ -520,6 +520,21 @@ Equivalent to
 Set the path of the directory containing the shared memory files holding the channel ring buffers to
 \fIDIR\fR
 on the local file sytem\&.
+.if n \{\
+.sp
+.\}
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+\fBNote\fR
+.ps -1
+.br
+.RS 4
+As of LTTng\ \&2\&.13\&.2, LTTng only considers this option for user space (including Java and Python) channels, but this may change in the future\&.
+.sp .5v
+.RE
 .RE
 .SS "URL"
 .sp

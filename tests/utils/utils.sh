@@ -1006,9 +1006,25 @@ function sigstop_lttng_consumerd_notap()
 
 function list_lttng_with_opts ()
 {
+	local ret
+	local withtap=$1
+	shift
 	local opts=$1
 	$TESTDIR/../src/bin/lttng/$LTTNG_BIN list $opts 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
-	ok $? "Lttng-tool list command with option $opts"
+	ret=$?
+	if [ $withtap -eq "1" ]; then
+		ok $ret "Lttng-tool list command with option $opts"
+	fi
+}
+
+function list_lttng_ok ()
+{
+	list_lttng_with_opts 1 "$@"
+}
+
+function list_lttng_notap ()
+{
+	list_lttng_with_opts 0 "$@"
 }
 
 function create_lttng_session_no_output ()
@@ -1865,7 +1881,7 @@ function validate_trace
 			pass "Validate trace for event $i, $traced events"
 		else
 			fail "Validate trace for event $i"
-			diag "Found $traced occurences of $i"
+			diag "Found $traced occurrences of $i"
 		fi
 	done
 	ret=$?
@@ -1893,7 +1909,7 @@ function validate_trace_count
 			pass "Validate trace for event $i, $traced events"
 		else
 			fail "Validate trace for event $i"
-			diag "Found $traced occurences of $i"
+			diag "Found $traced occurrences of $i"
 		fi
 		cnt=$(($cnt + $traced))
 	done
@@ -1923,7 +1939,7 @@ function validate_trace_count_range_incl_min_excl_max
 			pass "Validate trace for event $i, $traced events"
 		else
 			fail "Validate trace for event $i"
-			diag "Found $traced occurences of $i"
+			diag "Found $traced occurrences of $i"
 		fi
 		cnt=$(($cnt + $traced))
 	done
@@ -1957,7 +1973,7 @@ function validate_trace_exp()
 		pass "Validate trace for expression '${event_exp}', $traced events"
 	else
 		fail "Validate trace for expression '${event_exp}'"
-		diag "Found $traced occurences of '${event_exp}'"
+		diag "Found $traced occurrences of '${event_exp}'"
 	fi
 	ret=$?
 	return $ret
