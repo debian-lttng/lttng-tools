@@ -1,3 +1,10 @@
+ltt-control (2.13.2-1) unstable; urgency=medium
+
+  * [d7cab8b] Disable blhc on salsa-ci
+  * [84753a7] New upstream version 2.13.2
+
+ -- Michael Jeanson <mjeanson@debian.org>  Wed, 05 Jan 2022 13:45:35 -0500
+
 ltt-control (2.13.1-1) unstable; urgency=medium
 
   * [787d6bd] Bump watch file version to 4
