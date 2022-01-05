@@ -1,3 +1,9 @@
+ltt-control (2.13.2-1~ubuntu18.04.1) bionic; urgency=medium
+
+  * [84753a7] New upstream version 2.13.2
+
+ -- Michael Jeanson <mjeanson@debian.org>  Wed, 05 Jan 2022 14:05:39 -0500
+
 ltt-control (2.13.1-1~ubuntu18.04.1) bionic; urgency=medium
 
   * [52a88eb] Prepare branch for bionic
