@@ -1,3 +1,9 @@
+ltt-control (2.13.2-1~ubuntu20.04.1) focal; urgency=medium
+
+  * [84753a7] New upstream version 2.13.2
+
+ -- Michael Jeanson <mjeanson@debian.org>  Wed, 05 Jan 2022 14:01:12 -0500
+
 ltt-control (2.13.1-1~ubuntu20.04.1) focal; urgency=medium
 
   * [44e5b88] Prepare branch for focal
