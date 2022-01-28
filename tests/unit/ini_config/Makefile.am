@@ -3,16 +3,14 @@
 AM_CPPFLAGS += -I$(top_srcdir)/tests/utils/
 
 LIBTAP=$(top_builddir)/tests/utils/tap/libtap.la
-LIBCONFIG=$(top_builddir)/src/common/config/libconfig.la
-LIBCOMMON=$(top_builddir)/src/common/libcommon.la
-LIBHASHTABLE=$(top_builddir)/src/common/hashtable/libhashtable.la
+LIBCOMMON_GPL=$(top_builddir)/src/common/libcommon-gpl.la
+LIBLTTNG_CTL=$(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la
 
 noinst_PROGRAMS = ini_config
 EXTRA_DIST = test_ini_config sample.ini
 
 ini_config_SOURCES = ini_config.c
-ini_config_LDADD = $(LIBTAP) $(LIBCONFIG) $(LIBCOMMON) $(LIBHASHTABLE) \
-	$(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la
+ini_config_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL)
 
 all-local:
 	@if [ x"$(srcdir)" != x"$(builddir)" ]; then \

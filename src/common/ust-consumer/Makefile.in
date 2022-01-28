@@ -136,8 +136,7 @@ CONFIG_CLEAN_VPATH_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 am__DEPENDENCIES_1 =
 @HAVE_LIBLTTNG_UST_CTL_TRUE@libust_consumer_la_DEPENDENCIES =  \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	$(am__DEPENDENCIES_1) \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	$(top_builddir)/src/common/relayd/librelayd.la
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	$(am__DEPENDENCIES_1)
 am__libust_consumer_la_SOURCES_DIST = ust-consumer.c ust-consumer.h
 @HAVE_LIBLTTNG_UST_CTL_TRUE@am_libust_consumer_la_OBJECTS =  \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust-consumer.lo
@@ -498,10 +497,7 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 @HAVE_LIBLTTNG_UST_CTL_TRUE@noinst_LTLIBRARIES = libust-consumer.la
 @HAVE_LIBLTTNG_UST_CTL_TRUE@libust_consumer_la_SOURCES = ust-consumer.c ust-consumer.h
-@HAVE_LIBLTTNG_UST_CTL_TRUE@libust_consumer_la_LIBADD = \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@			$(UST_CTL_LIBS) \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@			$(top_builddir)/src/common/relayd/librelayd.la
-
+@HAVE_LIBLTTNG_UST_CTL_TRUE@libust_consumer_la_LIBADD = $(UST_CTL_LIBS)
 all: all-am
 
 .SUFFIXES:

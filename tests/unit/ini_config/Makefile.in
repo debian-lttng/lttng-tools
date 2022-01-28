@@ -137,9 +137,7 @@ CONFIG_CLEAN_VPATH_FILES =
 PROGRAMS = $(noinst_PROGRAMS)
 am_ini_config_OBJECTS = ini_config.$(OBJEXT)
 ini_config_OBJECTS = $(am_ini_config_OBJECTS)
-ini_config_DEPENDENCIES = $(LIBTAP) $(LIBCONFIG) $(LIBCOMMON) \
-	$(LIBHASHTABLE) \
-	$(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la
+ini_config_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
@@ -494,14 +492,11 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 LIBTAP = $(top_builddir)/tests/utils/tap/libtap.la
-LIBCONFIG = $(top_builddir)/src/common/config/libconfig.la
-LIBCOMMON = $(top_builddir)/src/common/libcommon.la
-LIBHASHTABLE = $(top_builddir)/src/common/hashtable/libhashtable.la
+LIBCOMMON_GPL = $(top_builddir)/src/common/libcommon-gpl.la
+LIBLTTNG_CTL = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la
 EXTRA_DIST = test_ini_config sample.ini
 ini_config_SOURCES = ini_config.c
-ini_config_LDADD = $(LIBTAP) $(LIBCONFIG) $(LIBCOMMON) $(LIBHASHTABLE) \
-	$(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la
-
+ini_config_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL)
 all: all-am
 
 .SUFFIXES:

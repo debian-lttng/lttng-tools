@@ -135,14 +135,17 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 am__DEPENDENCIES_1 =
-libhashtable_la_DEPENDENCIES = $(am__DEPENDENCIES_1) \
+libhashtable_gpl_la_DEPENDENCIES = $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1)
-am_libhashtable_la_OBJECTS = hashtable.lo utils.lo
-libhashtable_la_OBJECTS = $(am_libhashtable_la_OBJECTS)
+am_libhashtable_gpl_la_OBJECTS = hashtable.lo
+libhashtable_gpl_la_OBJECTS = $(am_libhashtable_gpl_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
+libhashtable_lgpl_la_LIBADD =
+am_libhashtable_lgpl_la_OBJECTS = seed.lo utils.lo
+libhashtable_lgpl_la_OBJECTS = $(am_libhashtable_lgpl_la_OBJECTS)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -177,8 +180,10 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(libhashtable_la_SOURCES)
-DIST_SOURCES = $(libhashtable_la_SOURCES)
+SOURCES = $(libhashtable_gpl_la_SOURCES) \
+	$(libhashtable_lgpl_la_SOURCES)
+DIST_SOURCES = $(libhashtable_gpl_la_SOURCES) \
+	$(libhashtable_lgpl_la_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -492,12 +497,21 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-noinst_LTLIBRARIES = libhashtable.la
-libhashtable_la_SOURCES = hashtable.c hashtable.h \
-                         utils.c utils.h \
-                         hashtable-symbols.h
+noinst_LTLIBRARIES = libhashtable-gpl.la libhashtable-lgpl.la
+libhashtable_lgpl_la_SOURCES = \
+	seed.c \
+	utils.c \
+	utils.h
 
-libhashtable_la_LIBADD = $(URCU_LIBS) $(URCU_CDS_LIBS)
+libhashtable_gpl_la_SOURCES = \
+	hashtable.c \
+	hashtable.h \
+	hashtable-symbols.h
+
+libhashtable_gpl_la_LIBADD = \
+	$(URCU_LIBS) \
+	$(URCU_CDS_LIBS)
+
 all: all-am
 
 .SUFFIXES:
@@ -543,8 +557,11 @@ clean-noinstLTLIBRARIES:
 	  rm -f $${locs}; \
 	}
 
-libhashtable.la: $(libhashtable_la_OBJECTS) $(libhashtable_la_DEPENDENCIES) $(EXTRA_libhashtable_la_DEPENDENCIES) 
-	$(AM_V_CCLD)$(LINK)  $(libhashtable_la_OBJECTS) $(libhashtable_la_LIBADD) $(LIBS)
+libhashtable-gpl.la: $(libhashtable_gpl_la_OBJECTS) $(libhashtable_gpl_la_DEPENDENCIES) $(EXTRA_libhashtable_gpl_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(LINK)  $(libhashtable_gpl_la_OBJECTS) $(libhashtable_gpl_la_LIBADD) $(LIBS)
+
+libhashtable-lgpl.la: $(libhashtable_lgpl_la_OBJECTS) $(libhashtable_lgpl_la_DEPENDENCIES) $(EXTRA_libhashtable_lgpl_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(LINK)  $(libhashtable_lgpl_la_OBJECTS) $(libhashtable_lgpl_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -553,6 +570,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hashtable.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/seed.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utils.Plo@am__quote@
 
 .c.o:
