@@ -325,11 +325,6 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_health_thread_name@Base 2.4.0~rc4
  lttng_health_thread_state@Base 2.4.0~rc4
  lttng_ht_seed@Base 2.3.0
- lttng_index_allocator_alloc@Base 2.13.0
- lttng_index_allocator_create@Base 2.13.0
- lttng_index_allocator_destroy@Base 2.13.0
- lttng_index_allocator_get_index_count@Base 2.13.0
- lttng_index_allocator_release@Base 2.13.0
  lttng_kernel_probe_location_address_create@Base 2.13.0
  lttng_kernel_probe_location_address_get_address@Base 2.13.0
  lttng_kernel_probe_location_destroy@Base 2.13.0
