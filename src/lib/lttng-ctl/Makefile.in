@@ -165,7 +165,7 @@ am__installdirs = "$(DESTDIR)$(libdir)" "$(DESTDIR)$(pkgconfigdir)"
 LTLIBRARIES = $(lib_LTLIBRARIES)
 liblttng_ctl_la_DEPENDENCIES =  \
 	$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
-	$(top_builddir)/src/common/libcommon.la
+	$(top_builddir)/src/common/libcommon-lgpl.la
 am_liblttng_ctl_la_OBJECTS = lttng-ctl.lo snapshot.lo \
 	lttng-ctl-health.lo save.lo load.lo deprecated-symbols.lo \
 	channel.lo rotate.lo event.lo destruction-handle.lo clear.lo \
@@ -584,7 +584,7 @@ liblttng_ctl_la_LDFLAGS = \
 
 liblttng_ctl_la_LIBADD = \
 		$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
-		$(top_builddir)/src/common/libcommon.la
+		$(top_builddir)/src/common/libcommon-lgpl.la
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = lttng-ctl.pc

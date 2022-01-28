@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 EfficiOS Inc.
  * Copyright (C) 2019 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
  * SPDX-License-Identifier: GPL-2.0-only
@@ -29,6 +29,7 @@
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/uri.h>
 #include <common/utils.h>
+#include <common/path.h>
 #include <lttng/lttng.h>
 
 static char *opt_output_path;
