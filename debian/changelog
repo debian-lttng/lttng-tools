@@ -1,3 +1,10 @@
+ltt-control (2.13.4-1) unstable; urgency=medium
+
+  * [15757a9] New upstream version 2.13.4
+  * [2f458d0] Remove private symbols that were erroneously exposed
+
+ -- Michael Jeanson <mjeanson@debian.org>  Fri, 28 Jan 2022 13:08:45 -0500
+
 ltt-control (2.13.2-1) unstable; urgency=medium
 
   * [d7cab8b] Disable blhc on salsa-ci
