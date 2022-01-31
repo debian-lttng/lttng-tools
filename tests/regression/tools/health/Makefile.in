@@ -168,7 +168,7 @@ am__health_check_SOURCES_DIST = health_check.c
 @NO_SHARED_FALSE@am_health_check_OBJECTS = health_check.$(OBJEXT)
 health_check_OBJECTS = $(am_health_check_OBJECTS)
 @NO_SHARED_FALSE@health_check_DEPENDENCIES = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la \
-@NO_SHARED_FALSE@	$(top_builddir)/src/common/libcommon.la \
+@NO_SHARED_FALSE@	$(top_builddir)/src/common/libcommon-gpl.la \
 @NO_SHARED_FALSE@	$(am__DEPENDENCIES_1)
 SCRIPTS = $(dist_noinst_SCRIPTS)
 AM_V_P = $(am__v_P_@AM_V@)
@@ -553,7 +553,7 @@ dist_noinst_SCRIPTS = $(COPYSCRIPTS)
 @NO_SHARED_FALSE@noinst_LTLIBRARIES = libhealthstall.la libhealthtpfail.la
 @NO_SHARED_FALSE@health_check_SOURCES = health_check.c $(UTILS)
 @NO_SHARED_FALSE@health_check_LDADD = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la \
-@NO_SHARED_FALSE@		     $(top_builddir)/src/common/libcommon.la \
+@NO_SHARED_FALSE@		     $(top_builddir)/src/common/libcommon-gpl.la \
 @NO_SHARED_FALSE@		     $(DL_LIBS)
 
 all: all-am

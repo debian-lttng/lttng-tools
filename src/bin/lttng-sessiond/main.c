@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 EfficiOS Inc.
  * Copyright (C) 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  * Copyright (C) 2013 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
@@ -37,6 +37,7 @@
 #include <common/futex.h>
 #include <common/relayd/relayd.h>
 #include <common/utils.h>
+#include <common/path.h>
 #include <common/daemonize.h>
 #include <common/config/session-config.h>
 #include <common/dynamic-buffer.h>

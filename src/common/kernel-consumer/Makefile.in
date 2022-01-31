@@ -135,8 +135,7 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 libkernel_consumer_la_DEPENDENCIES =  \
-	$(top_builddir)/src/common/kernel-ctl/libkernel-ctl.la \
-	$(top_builddir)/src/common/relayd/librelayd.la
+	$(top_builddir)/src/common/kernel-ctl/libkernel-ctl.la
 am_libkernel_consumer_la_OBJECTS = kernel-consumer.lo
 libkernel_consumer_la_OBJECTS = $(am_libkernel_consumer_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -494,10 +493,7 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 noinst_LTLIBRARIES = libkernel-consumer.la
 libkernel_consumer_la_SOURCES = kernel-consumer.c kernel-consumer.h
-libkernel_consumer_la_LIBADD = \
-		   $(top_builddir)/src/common/kernel-ctl/libkernel-ctl.la \
-		   $(top_builddir)/src/common/relayd/librelayd.la
-
+libkernel_consumer_la_LIBADD = $(top_builddir)/src/common/kernel-ctl/libkernel-ctl.la
 all: all-am
 
 .SUFFIXES:

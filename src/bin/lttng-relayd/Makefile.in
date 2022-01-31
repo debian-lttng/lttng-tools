@@ -149,9 +149,8 @@ am_lttng_relayd_OBJECTS = main.$(OBJEXT) utils.$(OBJEXT) \
 lttng_relayd_OBJECTS = $(am_lttng_relayd_OBJECTS)
 am__DEPENDENCIES_1 =
 lttng_relayd_DEPENDENCIES = $(am__DEPENDENCIES_1) \
-	$(top_builddir)/src/common/libcommon.la \
+	$(top_builddir)/src/common/libcommon-gpl.la \
 	$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
-	$(top_builddir)/src/common/hashtable/libhashtable.la \
 	$(top_builddir)/src/common/compat/libcompat.la \
 	$(top_builddir)/src/common/index/libindex.la \
 	$(top_builddir)/src/common/health/libhealth.la \
@@ -534,9 +533,8 @@ lttng_relayd_SOURCES = main.c lttng-relayd.h utils.h utils.c cmd.h \
 
 # link on liblttngctl for check if relayd is already alive.
 lttng_relayd_LDADD = $(URCU_LIBS) \
-		$(top_builddir)/src/common/libcommon.la \
+		$(top_builddir)/src/common/libcommon-gpl.la \
 		$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
-		$(top_builddir)/src/common/hashtable/libhashtable.la \
 		$(top_builddir)/src/common/compat/libcompat.la \
 		$(top_builddir)/src/common/index/libindex.la \
 		$(top_builddir)/src/common/health/libhealth.la \

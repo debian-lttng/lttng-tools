@@ -174,7 +174,7 @@ PROGRAMS = $(noinst_PROGRAMS)
 am_test_action_OBJECTS = test_action.$(OBJEXT)
 test_action_OBJECTS = $(am_test_action_OBJECTS)
 am__DEPENDENCIES_1 =
-test_action_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) \
+test_action_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) \
 	$(am__DEPENDENCIES_1)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -182,42 +182,41 @@ am__v_lt_0 = --silent
 am__v_lt_1 = 
 am_test_buffer_view_OBJECTS = test_buffer_view.$(OBJEXT)
 test_buffer_view_OBJECTS = $(am_test_buffer_view_OBJECTS)
-test_buffer_view_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON)
+test_buffer_view_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL)
 am_test_condition_OBJECTS = test_condition.$(OBJEXT)
 test_condition_OBJECTS = $(am_test_condition_OBJECTS)
-test_condition_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) \
-	$(am__DEPENDENCIES_1)
+test_condition_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) \
+	$(LIBLTTNG_CTL) $(am__DEPENDENCIES_1)
 am_test_directory_handle_OBJECTS = test_directory_handle.$(OBJEXT)
 test_directory_handle_OBJECTS = $(am_test_directory_handle_OBJECTS)
-test_directory_handle_DEPENDENCIES = $(LIBTAP) $(LIBHASHTABLE) \
-	$(LIBCOMMON) $(am__DEPENDENCIES_1)
+test_directory_handle_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) \
+	$(am__DEPENDENCIES_1)
 am_test_event_expr_to_bytecode_OBJECTS =  \
 	test_event_expr_to_bytecode.$(OBJEXT)
 test_event_expr_to_bytecode_OBJECTS =  \
 	$(am_test_event_expr_to_bytecode_OBJECTS)
 test_event_expr_to_bytecode_DEPENDENCIES = $(LIBTAP) $(LIBLTTNG_CTL) \
-	$(LIBCOMMON)
+	$(LIBCOMMON_GPL)
 am_test_event_rule_OBJECTS = test_event_rule.$(OBJEXT)
 test_event_rule_OBJECTS = $(am_test_event_rule_OBJECTS)
-test_event_rule_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) \
-	$(am__DEPENDENCIES_1) \
+test_event_rule_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) \
+	$(LIBLTTNG_CTL) $(am__DEPENDENCIES_1) \
 	$(top_builddir)/src/bin/lttng/lttng-loglevel.$(OBJEXT)
 am_test_fd_tracker_OBJECTS = test_fd_tracker.$(OBJEXT)
 test_fd_tracker_OBJECTS = $(am_test_fd_tracker_OBJECTS)
 test_fd_tracker_DEPENDENCIES = $(LIBTAP) $(LIBFDTRACKER) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) $(LIBCOMMON) \
-	$(LIBHASHTABLE)
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) $(LIBCOMMON_GPL)
 am_test_kernel_data_OBJECTS = test_kernel_data.$(OBJEXT)
 test_kernel_data_OBJECTS = $(am_test_kernel_data_OBJECTS)
 test_kernel_data_DEPENDENCIES = $(LIBTAP) $(LIBLTTNG_SESSIOND_COMMON) \
 	$(am__DEPENDENCIES_1)
 am_test_kernel_probe_OBJECTS = test_kernel_probe.$(OBJEXT)
 test_kernel_probe_OBJECTS = $(am_test_kernel_probe_OBJECTS)
-test_kernel_probe_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON) \
+test_kernel_probe_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) \
 	$(LIBLTTNG_CTL) $(am__DEPENDENCIES_1)
 am_test_log_level_rule_OBJECTS = test_log_level_rule.$(OBJEXT)
 test_log_level_rule_OBJECTS = $(am_test_log_level_rule_OBJECTS)
-test_log_level_rule_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON) \
+test_log_level_rule_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) \
 	$(LIBLTTNG_CTL) $(am__DEPENDENCIES_1)
 am_test_notification_OBJECTS = test_notification.$(OBJEXT)
 test_notification_OBJECTS = $(am_test_notification_OBJECTS)
@@ -225,17 +224,18 @@ test_notification_DEPENDENCIES = $(LIBTAP) $(LIBLTTNG_CTL) \
 	$(am__DEPENDENCIES_1)
 am_test_payload_OBJECTS = test_payload.$(OBJEXT)
 test_payload_OBJECTS = $(am_test_payload_OBJECTS)
-test_payload_DEPENDENCIES = $(LIBTAP) $(LIBSESSIOND_COMM) $(LIBCOMMON)
+test_payload_DEPENDENCIES = $(LIBTAP) $(LIBSESSIOND_COMM) \
+	$(LIBCOMMON_GPL)
 am_test_rate_policy_OBJECTS = test_rate_policy.$(OBJEXT)
 test_rate_policy_OBJECTS = $(am_test_rate_policy_OBJECTS)
-test_rate_policy_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) \
-	$(am__DEPENDENCIES_1) \
+test_rate_policy_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) \
+	$(LIBLTTNG_CTL) $(am__DEPENDENCIES_1) \
 	$(top_builddir)/src/bin/lttng/lttng-loglevel.$(OBJEXT)
 am_test_relayd_backward_compat_group_by_session_OBJECTS = test_relayd_backward_compat_group_by_session-test_relayd_backward_compat_group_by_session.$(OBJEXT)
 test_relayd_backward_compat_group_by_session_OBJECTS =  \
 	$(am_test_relayd_backward_compat_group_by_session_OBJECTS)
 test_relayd_backward_compat_group_by_session_DEPENDENCIES = $(LIBTAP) \
-	$(LIBCOMMON) $(RELAYD_OBJS)
+	$(LIBCOMMON_GPL) $(RELAYD_OBJS)
 am__test_session_SOURCES_DIST = test_session.c ust-sigbus.c
 @HAVE_LIBLTTNG_UST_CTL_TRUE@am__objects_1 = ust-sigbus.$(OBJEXT)
 am_test_session_OBJECTS = test_session.$(OBJEXT) $(am__objects_1)
@@ -246,15 +246,15 @@ test_session_DEPENDENCIES = $(LIBTAP) $(LIBLTTNG_SESSIOND_COMMON) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_2)
 am_test_string_utils_OBJECTS = test_string_utils.$(OBJEXT)
 test_string_utils_OBJECTS = $(am_test_string_utils_OBJECTS)
-test_string_utils_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON) \
+test_string_utils_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) \
 	$(LIBSTRINGUTILS) $(am__DEPENDENCIES_1)
 am_test_unix_socket_OBJECTS = test_unix_socket.$(OBJEXT)
 test_unix_socket_OBJECTS = $(am_test_unix_socket_OBJECTS)
 test_unix_socket_DEPENDENCIES = $(LIBTAP) $(LIBSESSIOND_COMM) \
-	$(LIBCOMMON)
+	$(LIBCOMMON_GPL)
 am_test_uri_OBJECTS = test_uri.$(OBJEXT)
 test_uri_OBJECTS = $(am_test_uri_OBJECTS)
-test_uri_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON) $(LIBHASHTABLE) \
+test_uri_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) \
 	$(am__DEPENDENCIES_1)
 am__test_ust_data_SOURCES_DIST = test_ust_data.c
 @HAVE_LIBLTTNG_UST_CTL_TRUE@am_test_ust_data_OBJECTS =  \
@@ -265,34 +265,34 @@ test_ust_data_OBJECTS = $(am_test_ust_data_OBJECTS)
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	$(am__DEPENDENCIES_1)
 am_test_utils_compat_poll_OBJECTS = test_utils_compat_poll.$(OBJEXT)
 test_utils_compat_poll_OBJECTS = $(am_test_utils_compat_poll_OBJECTS)
-test_utils_compat_poll_DEPENDENCIES = $(LIBTAP) $(LIBHASHTABLE) \
-	$(am__DEPENDENCIES_1) \
-	$(top_builddir)/src/common/compat/libcompat.la $(LIBCOMMON)
+test_utils_compat_poll_DEPENDENCIES = $(LIBTAP) $(am__DEPENDENCIES_1) \
+	$(top_builddir)/src/common/compat/libcompat.la \
+	$(LIBCOMMON_GPL)
 am_test_utils_compat_pthread_OBJECTS =  \
 	test_utils_compat_pthread.$(OBJEXT)
 test_utils_compat_pthread_OBJECTS =  \
 	$(am_test_utils_compat_pthread_OBJECTS)
 test_utils_compat_pthread_DEPENDENCIES = $(LIBTAP) \
-	$(top_builddir)/src/common/compat/libcompat.la $(LIBCOMMON)
+	$(top_builddir)/src/common/compat/libcompat.la \
+	$(LIBCOMMON_GPL)
 am_test_utils_expand_path_OBJECTS = test_utils_expand_path.$(OBJEXT)
 test_utils_expand_path_OBJECTS = $(am_test_utils_expand_path_OBJECTS)
-test_utils_expand_path_DEPENDENCIES = $(LIBTAP) $(LIBHASHTABLE) \
-	$(LIBCOMMON) $(am__DEPENDENCIES_1)
+test_utils_expand_path_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) \
+	$(am__DEPENDENCIES_1)
 am_test_utils_parse_size_suffix_OBJECTS =  \
 	test_utils_parse_size_suffix.$(OBJEXT)
 test_utils_parse_size_suffix_OBJECTS =  \
 	$(am_test_utils_parse_size_suffix_OBJECTS)
-test_utils_parse_size_suffix_DEPENDENCIES = $(LIBTAP) $(LIBHASHTABLE) \
-	$(LIBCOMMON) $(am__DEPENDENCIES_1)
+test_utils_parse_size_suffix_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL) \
+	$(am__DEPENDENCIES_1)
 am_test_utils_parse_time_suffix_OBJECTS =  \
 	test_utils_parse_time_suffix.$(OBJEXT)
 test_utils_parse_time_suffix_OBJECTS =  \
 	$(am_test_utils_parse_time_suffix_OBJECTS)
-test_utils_parse_time_suffix_DEPENDENCIES = $(LIBTAP) $(LIBHASHTABLE) \
-	$(LIBCOMMON)
+test_utils_parse_time_suffix_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL)
 am_test_uuid_OBJECTS = test_uuid.$(OBJEXT)
 test_uuid_OBJECTS = $(am_test_uuid_OBJECTS)
-test_uuid_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON)
+test_uuid_DEPENDENCIES = $(LIBTAP) $(LIBCOMMON_GPL)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -922,18 +922,17 @@ LOG_DRIVER = env AM_TAP_AWK='$(AWK)' $(SHELL) \
 	$(top_srcdir)/tests/utils/tap-driver.sh
 
 LIBTAP = $(top_builddir)/tests/utils/tap/libtap.la
-LIBCOMMON = $(top_builddir)/src/common/libcommon.la
+LIBCOMMON_GPL = $(top_builddir)/src/common/libcommon-gpl.la
 LIBSTRINGUTILS = $(top_builddir)/src/common/string-utils/libstring-utils.la
 LIBFDTRACKER = $(top_builddir)/src/common/fd-tracker/libfd-tracker.la
 LIBSESSIOND_COMM = $(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la
-LIBHASHTABLE = $(top_builddir)/src/common/hashtable/libhashtable.la
 LIBRELAYD = $(top_builddir)/src/common/relayd/librelayd.la
 LIBLTTNG_CTL = $(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la
 LIBLTTNG_SESSIOND_COMMON = $(top_builddir)/src/bin/lttng-sessiond/liblttng-sessiond-common.la
 
 # URI unit tests
 test_uri_SOURCES = test_uri.c
-test_uri_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBHASHTABLE) $(DL_LIBS)
+test_uri_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(DL_LIBS)
 RELAYD_OBJS = $(top_builddir)/src/bin/lttng-relayd/backward-compatibility-group-by.$(OBJEXT)
 test_session_SOURCES = test_session.c $(am__append_3)
 test_session_LDADD = $(LIBTAP) $(LIBLTTNG_SESSIOND_COMMON) $(DL_LIBS) \
@@ -949,35 +948,35 @@ test_kernel_data_LDADD = $(LIBTAP) $(LIBLTTNG_SESSIOND_COMMON) $(DL_LIBS)
 
 # parse_size_suffix unit test
 test_utils_parse_size_suffix_SOURCES = test_utils_parse_size_suffix.c
-test_utils_parse_size_suffix_LDADD = $(LIBTAP) $(LIBHASHTABLE) $(LIBCOMMON) $(DL_LIBS)
+test_utils_parse_size_suffix_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(DL_LIBS)
 
 # parse_time_suffix unit test
 test_utils_parse_time_suffix_SOURCES = test_utils_parse_time_suffix.c
-test_utils_parse_time_suffix_LDADD = $(LIBTAP) $(LIBHASHTABLE) $(LIBCOMMON)
+test_utils_parse_time_suffix_LDADD = $(LIBTAP) $(LIBCOMMON_GPL)
 
 # compat_poll unit test
 test_utils_compat_poll_SOURCES = test_utils_compat_poll.c
-test_utils_compat_poll_LDADD = $(LIBTAP) $(LIBHASHTABLE) $(DL_LIBS) \
-		      $(top_builddir)/src/common/compat/libcompat.la $(LIBCOMMON)
+test_utils_compat_poll_LDADD = $(LIBTAP) $(DL_LIBS) \
+		      $(top_builddir)/src/common/compat/libcompat.la $(LIBCOMMON_GPL)
 
 
 # compat_pthread unit test
 test_utils_compat_pthread_SOURCES = test_utils_compat_pthread.c
 test_utils_compat_pthread_LDADD = $(LIBTAP) \
-		      $(top_builddir)/src/common/compat/libcompat.la $(LIBCOMMON)
+		      $(top_builddir)/src/common/compat/libcompat.la $(LIBCOMMON_GPL)
 
 
 # expand_path unit test
 test_utils_expand_path_SOURCES = test_utils_expand_path.c
-test_utils_expand_path_LDADD = $(LIBTAP) $(LIBHASHTABLE) $(LIBCOMMON) $(DL_LIBS)
+test_utils_expand_path_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(DL_LIBS)
 
 # directory handle unit test
 test_directory_handle_SOURCES = test_directory_handle.c
-test_directory_handle_LDADD = $(LIBTAP) $(LIBHASHTABLE) $(LIBCOMMON) $(DL_LIBS)
+test_directory_handle_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(DL_LIBS)
 
 # string utilities unit test
 test_string_utils_SOURCES = test_string_utils.c
-test_string_utils_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBSTRINGUTILS) $(DL_LIBS)
+test_string_utils_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBSTRINGUTILS) $(DL_LIBS)
 
 # Notification api
 test_notification_SOURCES = test_notification.c
@@ -985,60 +984,60 @@ test_notification_LDADD = $(LIBTAP) $(LIBLTTNG_CTL) $(DL_LIBS)
 
 # Event rule api
 test_event_rule_SOURCES = test_event_rule.c
-test_event_rule_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) $(DL_LIBS) \
+test_event_rule_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) $(DL_LIBS) \
 		      $(top_builddir)/src/bin/lttng/lttng-loglevel.$(OBJEXT)
 
 
 # Condition api
 test_condition_SOURCES = test_condition.c
-test_condition_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) $(DL_LIBS)
+test_condition_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) $(DL_LIBS)
 
 # relayd backward compat for groou-by-session utilities
 test_relayd_backward_compat_group_by_session_SOURCES = test_relayd_backward_compat_group_by_session.c
-test_relayd_backward_compat_group_by_session_LDADD = $(LIBTAP) $(LIBCOMMON) $(RELAYD_OBJS)
+test_relayd_backward_compat_group_by_session_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(RELAYD_OBJS)
 test_relayd_backward_compat_group_by_session_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_srcdir)/src/bin/lttng-relayd
 
 # rate policy object unit test
 test_rate_policy_SOURCES = test_rate_policy.c
-test_rate_policy_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) $(DL_LIBS) \
+test_rate_policy_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) $(DL_LIBS) \
 		      $(top_builddir)/src/bin/lttng/lttng-loglevel.$(OBJEXT)
 
 
 # fd tracker unit test
 test_fd_tracker_SOURCES = test_fd_tracker.c
-test_fd_tracker_LDADD = $(LIBTAP) $(LIBFDTRACKER) $(DL_LIBS) $(URCU_LIBS) $(LIBCOMMON) $(LIBHASHTABLE)
+test_fd_tracker_LDADD = $(LIBTAP) $(LIBFDTRACKER) $(DL_LIBS) $(URCU_LIBS) $(LIBCOMMON_GPL)
 
 # uuid unit test
 test_uuid_SOURCES = test_uuid.c
-test_uuid_LDADD = $(LIBTAP) $(LIBCOMMON)
+test_uuid_LDADD = $(LIBTAP) $(LIBCOMMON_GPL)
 
 # buffer view unit test
 test_buffer_view_SOURCES = test_buffer_view.c
-test_buffer_view_LDADD = $(LIBTAP) $(LIBCOMMON)
+test_buffer_view_LDADD = $(LIBTAP) $(LIBCOMMON_GPL)
 
 # payload unit test
 test_payload_SOURCES = test_payload.c
-test_payload_LDADD = $(LIBTAP) $(LIBSESSIOND_COMM) $(LIBCOMMON)
+test_payload_LDADD = $(LIBTAP) $(LIBSESSIOND_COMM) $(LIBCOMMON_GPL)
 
 # unix socket test
 test_unix_socket_SOURCES = test_unix_socket.c
-test_unix_socket_LDADD = $(LIBTAP) $(LIBSESSIOND_COMM) $(LIBCOMMON)
+test_unix_socket_LDADD = $(LIBTAP) $(LIBSESSIOND_COMM) $(LIBCOMMON_GPL)
 
 # Kernel probe location api test
 test_kernel_probe_SOURCES = test_kernel_probe.c
-test_kernel_probe_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) $(DL_LIBS)
+test_kernel_probe_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) $(DL_LIBS)
 #
 # Event expression to bytecode test
 test_event_expr_to_bytecode_SOURCES = test_event_expr_to_bytecode.c
-test_event_expr_to_bytecode_LDADD = $(LIBTAP) $(LIBLTTNG_CTL) $(LIBCOMMON)
+test_event_expr_to_bytecode_LDADD = $(LIBTAP) $(LIBLTTNG_CTL) $(LIBCOMMON_GPL)
 
 # Log level rule api
 test_log_level_rule_SOURCES = test_log_level_rule.c
-test_log_level_rule_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) $(DL_LIBS)
+test_log_level_rule_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) $(DL_LIBS)
 
 # Action api
 test_action_SOURCES = test_action.c
-test_action_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) $(DL_LIBS)
+test_action_LDADD = $(LIBTAP) $(LIBCOMMON_GPL) $(LIBLTTNG_CTL) $(DL_LIBS)
 all: all-recursive
 
 .SUFFIXES:

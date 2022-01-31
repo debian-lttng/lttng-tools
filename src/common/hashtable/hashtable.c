@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 EfficiOS Inc.
  *
  * SPDX-License-Identifier: GPL-2.0-only
  *
@@ -20,7 +20,6 @@
 /* seed_lock protects both seed_init and lttng_ht_seed. */
 static pthread_mutex_t seed_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool seed_init;
-unsigned long lttng_ht_seed;
 
 static unsigned long min_hash_alloc_size = 1;
 static unsigned long max_hash_buckets_size = 0;
