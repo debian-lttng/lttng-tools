@@ -142,8 +142,6 @@ LTLIBRARIES = $(noinst_LTLIBRARIES)
 libconsumer_la_DEPENDENCIES =  \
 	$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
 	$(top_builddir)/src/common/kernel-consumer/libkernel-consumer.la \
-	$(top_builddir)/src/common/hashtable/libhashtable.la \
-	$(top_builddir)/src/common/compat/libcompat.la \
 	$(top_builddir)/src/common/relayd/librelayd.la $(am__append_1)
 am_libconsumer_la_OBJECTS = consumer.lo consumer-metadata-cache.lo \
 	consumer-timer.lo consumer-stream.lo metadata-bucket.lo
@@ -513,8 +511,6 @@ libconsumer_la_SOURCES = consumer.c consumer.h consumer-metadata-cache.c \
 libconsumer_la_LIBADD =  \
 	$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
 	$(top_builddir)/src/common/kernel-consumer/libkernel-consumer.la \
-	$(top_builddir)/src/common/hashtable/libhashtable.la \
-	$(top_builddir)/src/common/compat/libcompat.la \
 	$(top_builddir)/src/common/relayd/librelayd.la $(am__append_1)
 all: all-am
 

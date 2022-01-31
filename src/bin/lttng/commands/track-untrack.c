@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 David Goulet <david.goulet@polymtl.ca>
+ * Copyright (C) 2011 EfficiOS Inc.
  * Copyright (C) 2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  * Copyright (C) 2020 Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
@@ -230,7 +230,7 @@ static enum cmd_error_code run_command_string(enum cmd_type cmd_type,
 		const char *_args,
 		struct mi_writer *writer)
 {
-	struct lttng_process_attr_tracker_handle *tracker_handle;
+	struct lttng_process_attr_tracker_handle *tracker_handle = NULL;
 	const enum lttng_error_code handle_ret_code =
 			lttng_session_get_tracker_handle(session_name,
 					domain_type, process_attr,

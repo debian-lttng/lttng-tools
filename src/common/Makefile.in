@@ -150,77 +150,77 @@ CONFIG_HEADER = $(top_builddir)/include/config.h
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
-libcommon_la_DEPENDENCIES =  \
+libcommon_gpl_la_DEPENDENCIES = libcommon-lgpl.la libpath.la \
+	$(top_builddir)/src/common/hashtable/libhashtable-gpl.la \
+	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la
+am_libcommon_gpl_la_OBJECTS = context.lo daemonize.lo event.lo \
+	filter.lo fs-handle.lo futex.lo index-allocator.lo pipe.lo \
+	shm.lo trace-chunk.lo uuid.lo waiter.lo
+libcommon_gpl_la_OBJECTS = $(am_libcommon_gpl_la_OBJECTS)
+AM_V_lt = $(am__v_lt_@AM_V@)
+am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
+am__v_lt_0 = --silent
+am__v_lt_1 = 
+libcommon_lgpl_la_DEPENDENCIES =  \
 	$(top_builddir)/src/common/bytecode/libbytecode.la \
-	$(top_builddir)/src/common/config/libconfig.la \
 	$(top_builddir)/src/common/compat/libcompat.la \
-	$(top_builddir)/src/common/hashtable/libhashtable.la \
-	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la \
+	$(top_builddir)/src/common/config/libconfig.la \
 	$(top_builddir)/src/common/filter/libfilter.la \
+	$(top_builddir)/src/common/hashtable/libhashtable-lgpl.la \
 	$(top_builddir)/src/vendor/msgpack/libmsgpack.la
-am__libcommon_la_SOURCES_DIST = actions/action.c actions/list.c \
+am__libcommon_lgpl_la_SOURCES_DIST = actions/action.c actions/list.c \
 	actions/notify.c actions/path.c actions/rotate-session.c \
 	actions/snapshot-session.c actions/start-session.c \
 	actions/stop-session.c actions/rate-policy.c buffer-view.h \
-	buffer-view.c common.h conditions/buffer-usage.c \
-	conditions/condition.c conditions/event-rule-matches.c \
+	buffer-view.c conditions/buffer-usage.c conditions/condition.c \
+	conditions/event-rule-matches.c \
 	conditions/session-consumed-size.c \
-	conditions/session-rotation.c context.c context.h \
-	credentials.c credentials.h daemonize.c daemonize.h defaults.c \
-	domain.c dynamic-array.c dynamic-array.h dynamic-buffer.c \
-	dynamic-buffer.h endpoint.c error.c error.h error-query.c \
-	evaluation.c event.c event-expr/event-expr.c \
+	conditions/session-rotation.c credentials.c credentials.h \
+	defaults.c domain.c dynamic-array.c dynamic-array.h \
+	dynamic-buffer.c dynamic-buffer.h endpoint.c error.c error.h \
+	error-query.c evaluation.c event-expr/event-expr.c \
 	event-field-value.c event-rule/event-rule.c \
 	event-rule/kernel-kprobe.c event-rule/kernel-syscall.c \
 	event-rule/kernel-uprobe.c event-rule/kernel-tracepoint.c \
 	event-rule/user-tracepoint.c event-rule/log4j-logging.c \
-	event-rule/jul-logging.c event-rule/python-logging.c filter.c \
-	filter.h fd-handle.c fd-handle.h fs-handle.c fs-handle.h \
-	fs-handle-internal.h futex.c futex.h kernel-probe.c \
-	index-allocator.c index-allocator.h location.c \
+	event-rule/jul-logging.c event-rule/python-logging.c \
+	fd-handle.c fd-handle.h kernel-probe.c location.c \
 	log-level-rule.c mi-lttng.c mi-lttng.h notification.c \
-	optional.h payload.c payload.h payload-view.c payload-view.h \
-	pipe.c pipe.h readwrite.c readwrite.h runas.c runas.h shm.c \
-	shm.h session-descriptor.c snapshot.c snapshot.h \
-	spawn-viewer.c spawn-viewer.h time.c trace-chunk.c \
-	trace-chunk.h trace-chunk-registry.h trigger.c unix.c unix.h \
-	uri.c uri.h userspace-probe.c utils.c utils.h uuid.c uuid.h \
-	thread.c thread.h tracker.c tracker.h waiter.c waiter.h \
-	lttng-elf.c lttng-elf.h
+	payload.c payload.h payload-view.c payload-view.h readwrite.c \
+	readwrite.h runas.c runas.h session-descriptor.c snapshot.c \
+	snapshot.h spawn-viewer.c spawn-viewer.h thread.c thread.h \
+	time.c tracker.c tracker.h trigger.c unix.c unix.h uri.c uri.h \
+	userspace-probe.c utils.c utils.h lttng-elf.c lttng-elf.h
 am__dirstamp = $(am__leading_dot)dirstamp
 @HAVE_ELF_H_TRUE@am__objects_1 = lttng-elf.lo
-am_libcommon_la_OBJECTS = actions/action.lo actions/list.lo \
+am_libcommon_lgpl_la_OBJECTS = actions/action.lo actions/list.lo \
 	actions/notify.lo actions/path.lo actions/rotate-session.lo \
 	actions/snapshot-session.lo actions/start-session.lo \
 	actions/stop-session.lo actions/rate-policy.lo buffer-view.lo \
 	conditions/buffer-usage.lo conditions/condition.lo \
 	conditions/event-rule-matches.lo \
 	conditions/session-consumed-size.lo \
-	conditions/session-rotation.lo context.lo credentials.lo \
-	daemonize.lo defaults.lo domain.lo dynamic-array.lo \
-	dynamic-buffer.lo endpoint.lo error.lo error-query.lo \
-	evaluation.lo event.lo event-expr/event-expr.lo \
+	conditions/session-rotation.lo credentials.lo defaults.lo \
+	domain.lo dynamic-array.lo dynamic-buffer.lo endpoint.lo \
+	error.lo error-query.lo evaluation.lo event-expr/event-expr.lo \
 	event-field-value.lo event-rule/event-rule.lo \
 	event-rule/kernel-kprobe.lo event-rule/kernel-syscall.lo \
 	event-rule/kernel-uprobe.lo event-rule/kernel-tracepoint.lo \
 	event-rule/user-tracepoint.lo event-rule/log4j-logging.lo \
 	event-rule/jul-logging.lo event-rule/python-logging.lo \
-	filter.lo fd-handle.lo fs-handle.lo futex.lo kernel-probe.lo \
-	index-allocator.lo location.lo log-level-rule.lo mi-lttng.lo \
-	notification.lo payload.lo payload-view.lo pipe.lo \
-	readwrite.lo runas.lo shm.lo session-descriptor.lo snapshot.lo \
-	spawn-viewer.lo time.lo trace-chunk.lo trigger.lo unix.lo \
-	uri.lo userspace-probe.lo utils.lo uuid.lo thread.lo \
-	tracker.lo waiter.lo $(am__objects_1)
-libcommon_la_OBJECTS = $(am_libcommon_la_OBJECTS)
-AM_V_lt = $(am__v_lt_@AM_V@)
-am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
-am__v_lt_0 = --silent
-am__v_lt_1 = 
+	fd-handle.lo kernel-probe.lo location.lo log-level-rule.lo \
+	mi-lttng.lo notification.lo payload.lo payload-view.lo \
+	readwrite.lo runas.lo session-descriptor.lo snapshot.lo \
+	spawn-viewer.lo thread.lo time.lo tracker.lo trigger.lo \
+	unix.lo uri.lo userspace-probe.lo utils.lo $(am__objects_1)
+libcommon_lgpl_la_OBJECTS = $(am_libcommon_lgpl_la_OBJECTS)
+libpath_la_LIBADD =
+am_libpath_la_OBJECTS = path.lo
+libpath_la_OBJECTS = $(am_libpath_la_OBJECTS)
 PROGRAMS = $(noinst_PROGRAMS)
 am_filter_grammar_test_OBJECTS = filter-grammar-test.$(OBJEXT)
 filter_grammar_test_OBJECTS = $(am_filter_grammar_test_OBJECTS)
-filter_grammar_test_DEPENDENCIES = libcommon.la
+filter_grammar_test_DEPENDENCIES = libcommon-gpl.la
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -255,8 +255,10 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(libcommon_la_SOURCES) $(filter_grammar_test_SOURCES)
-DIST_SOURCES = $(am__libcommon_la_SOURCES_DIST) \
+SOURCES = $(libcommon_gpl_la_SOURCES) $(libcommon_lgpl_la_SOURCES) \
+	$(libpath_la_SOURCES) $(filter_grammar_test_SOURCES)
+DIST_SOURCES = $(libcommon_gpl_la_SOURCES) \
+	$(am__libcommon_lgpl_la_SOURCES_DIST) $(libpath_la_SOURCES) \
 	$(filter_grammar_test_SOURCES)
 RECURSIVE_TARGETS = all-recursive check-recursive cscopelist-recursive \
 	ctags-recursive dvi-recursive html-recursive info-recursive \
@@ -644,45 +646,74 @@ DIST_SUBDIRS = \
 
 
 # Common library
-noinst_LTLIBRARIES = libcommon.la
+noinst_LTLIBRARIES = libpath.la libcommon-lgpl.la libcommon-gpl.la
 EXTRA_DIST = mi-lttng-4.1.xsd
-libcommon_la_SOURCES = actions/action.c actions/list.c \
+
+# The libcommon-lgpl static archive contains only LGPLv2.1 code. It is
+# meant to be used by LGPLv2.1 libraries such as liblttng-ctl. It also
+# contains libcommon-lgpl.la.
+libcommon_lgpl_la_SOURCES = actions/action.c actions/list.c \
 	actions/notify.c actions/path.c actions/rotate-session.c \
 	actions/snapshot-session.c actions/start-session.c \
 	actions/stop-session.c actions/rate-policy.c buffer-view.h \
-	buffer-view.c common.h conditions/buffer-usage.c \
-	conditions/condition.c conditions/event-rule-matches.c \
+	buffer-view.c conditions/buffer-usage.c conditions/condition.c \
+	conditions/event-rule-matches.c \
 	conditions/session-consumed-size.c \
-	conditions/session-rotation.c context.c context.h \
-	credentials.c credentials.h daemonize.c daemonize.h defaults.c \
-	domain.c dynamic-array.c dynamic-array.h dynamic-buffer.c \
-	dynamic-buffer.h endpoint.c error.c error.h error-query.c \
-	evaluation.c event.c event-expr/event-expr.c \
+	conditions/session-rotation.c credentials.c credentials.h \
+	defaults.c domain.c dynamic-array.c dynamic-array.h \
+	dynamic-buffer.c dynamic-buffer.h endpoint.c error.c error.h \
+	error-query.c evaluation.c event-expr/event-expr.c \
 	event-field-value.c event-rule/event-rule.c \
 	event-rule/kernel-kprobe.c event-rule/kernel-syscall.c \
 	event-rule/kernel-uprobe.c event-rule/kernel-tracepoint.c \
 	event-rule/user-tracepoint.c event-rule/log4j-logging.c \
-	event-rule/jul-logging.c event-rule/python-logging.c filter.c \
-	filter.h fd-handle.c fd-handle.h fs-handle.c fs-handle.h \
-	fs-handle-internal.h futex.c futex.h kernel-probe.c \
-	index-allocator.c index-allocator.h location.c \
+	event-rule/jul-logging.c event-rule/python-logging.c \
+	fd-handle.c fd-handle.h kernel-probe.c location.c \
 	log-level-rule.c mi-lttng.c mi-lttng.h notification.c \
-	optional.h payload.c payload.h payload-view.c payload-view.h \
-	pipe.c pipe.h readwrite.c readwrite.h runas.c runas.h shm.c \
-	shm.h session-descriptor.c snapshot.c snapshot.h \
-	spawn-viewer.c spawn-viewer.h time.c trace-chunk.c \
-	trace-chunk.h trace-chunk-registry.h trigger.c unix.c unix.h \
-	uri.c uri.h userspace-probe.c utils.c utils.h uuid.c uuid.h \
-	thread.c thread.h tracker.c tracker.h waiter.c waiter.h \
-	$(am__append_1)
-libcommon_la_LIBADD = \
+	payload.c payload.h payload-view.c payload-view.h readwrite.c \
+	readwrite.h runas.c runas.h session-descriptor.c snapshot.c \
+	snapshot.h spawn-viewer.c spawn-viewer.h thread.c thread.h \
+	time.c tracker.c tracker.h trigger.c unix.c unix.h uri.c uri.h \
+	userspace-probe.c utils.c utils.h $(am__append_1)
+libcommon_lgpl_la_LIBADD = \
 	$(top_builddir)/src/common/bytecode/libbytecode.la \
-	$(top_builddir)/src/common/config/libconfig.la \
 	$(top_builddir)/src/common/compat/libcompat.la \
-	$(top_builddir)/src/common/hashtable/libhashtable.la \
-	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la \
+	$(top_builddir)/src/common/config/libconfig.la \
 	$(top_builddir)/src/common/filter/libfilter.la \
+	$(top_builddir)/src/common/hashtable/libhashtable-lgpl.la \
 	$(top_builddir)/src/vendor/msgpack/libmsgpack.la
+
+
+# The libpath static archive contains GPLv2 compatible code. It is
+# meant to be used by GPL executables.
+libpath_la_SOURCES = \
+	path.c path.h
+
+
+# The libcommon-gpl static archive contains GPLv2 compatible code. It is
+# meant to be used by GPL executables.
+libcommon_gpl_la_SOURCES = \
+	common.h \
+	context.c context.h \
+	daemonize.c daemonize.h \
+	event.c \
+	filter.c filter.h \
+	fs-handle.c fs-handle.h fs-handle-internal.h \
+	futex.c futex.h \
+	index-allocator.c index-allocator.h \
+	optional.h \
+	pipe.c pipe.h \
+	shm.c shm.h \
+	trace-chunk.c trace-chunk.h \
+	trace-chunk-registry.h \
+	uuid.c uuid.h \
+	waiter.c waiter.h
+
+libcommon_gpl_la_LIBADD = \
+	libcommon-lgpl.la \
+	libpath.la \
+	$(top_builddir)/src/common/hashtable/libhashtable-gpl.la \
+	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la
 
 noinst_HEADERS = \
 	align.h \
@@ -698,9 +729,7 @@ noinst_HEADERS = \
 	utils.h
 
 filter_grammar_test_SOURCES = filter-grammar-test.c
-filter_grammar_test_LDADD = \
-	libcommon.la
-
+filter_grammar_test_LDADD = libcommon-gpl.la
 all: all-recursive
 
 .SUFFIXES:
@@ -745,6 +774,9 @@ clean-noinstLTLIBRARIES:
 	  echo rm -f $${locs}; \
 	  rm -f $${locs}; \
 	}
+
+libcommon-gpl.la: $(libcommon_gpl_la_OBJECTS) $(libcommon_gpl_la_DEPENDENCIES) $(EXTRA_libcommon_gpl_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(LINK)  $(libcommon_gpl_la_OBJECTS) $(libcommon_gpl_la_LIBADD) $(LIBS)
 actions/$(am__dirstamp):
 	@$(MKDIR_P) actions
 	@: > actions/$(am__dirstamp)
@@ -818,8 +850,11 @@ event-rule/jul-logging.lo: event-rule/$(am__dirstamp) \
 event-rule/python-logging.lo: event-rule/$(am__dirstamp) \
 	event-rule/$(DEPDIR)/$(am__dirstamp)
 
-libcommon.la: $(libcommon_la_OBJECTS) $(libcommon_la_DEPENDENCIES) $(EXTRA_libcommon_la_DEPENDENCIES) 
-	$(AM_V_CCLD)$(LINK)  $(libcommon_la_OBJECTS) $(libcommon_la_LIBADD) $(LIBS)
+libcommon-lgpl.la: $(libcommon_lgpl_la_OBJECTS) $(libcommon_lgpl_la_DEPENDENCIES) $(EXTRA_libcommon_lgpl_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(LINK)  $(libcommon_lgpl_la_OBJECTS) $(libcommon_lgpl_la_LIBADD) $(LIBS)
+
+libpath.la: $(libpath_la_OBJECTS) $(libpath_la_DEPENDENCIES) $(EXTRA_libpath_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(LINK)  $(libpath_la_OBJECTS) $(libpath_la_LIBADD) $(LIBS)
 
 clean-noinstPROGRAMS:
 	@list='$(noinst_PROGRAMS)'; test -n "$$list" || exit 0; \
@@ -874,6 +909,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lttng-elf.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mi-lttng.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notification.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/path.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/payload-view.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/payload.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pipe.Plo@am__quote@

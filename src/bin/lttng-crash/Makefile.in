@@ -139,7 +139,8 @@ am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
 am_lttng_crash_OBJECTS = lttng-crash.$(OBJEXT)
 lttng_crash_OBJECTS = $(am_lttng_crash_OBJECTS)
-lttng_crash_DEPENDENCIES = $(top_builddir)/src/common/libcommon.la \
+lttng_crash_DEPENDENCIES =  \
+	$(top_builddir)/src/common/libcommon-gpl.la \
 	$(top_builddir)/src/common/config/libconfig.la
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -496,7 +497,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 lttng_crash_SOURCES = lttng-crash.c
-lttng_crash_LDADD = $(top_builddir)/src/common/libcommon.la \
+lttng_crash_LDADD = $(top_builddir)/src/common/libcommon-gpl.la \
 			$(top_builddir)/src/common/config/libconfig.la
 
 all: all-am

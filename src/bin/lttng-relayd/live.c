@@ -1165,6 +1165,16 @@ int viewer_get_new_streams(struct relay_connection *conn)
 	 * the viewer's point of view.
 	 */
 	pthread_mutex_lock(&session->lock);
+	/*
+	 * If a session rotation is ongoing, do not attempt to open any
+	 * stream, because the chunk can be in an intermediate state
+	 * due to directory renaming.
+	 */
+	if (session->ongoing_rotation) {
+		DBG("Relay session %" PRIu64 " rotation ongoing", session_id);
+		response.status = htobe32(LTTNG_VIEWER_NEW_STREAMS_NO_NEW);
+		goto send_reply_unlock;
+	}
 	ret = make_viewer_streams(session,
 			conn->viewer_session,
 			LTTNG_VIEWER_SEEK_BEGINNING, &nb_total, &nb_unsent,
@@ -1301,6 +1311,17 @@ int viewer_attach_session(struct relay_connection *conn)
 	default:
 		ERR("Wrong seek parameter");
 		response.status = htobe32(LTTNG_VIEWER_ATTACH_SEEK_ERR);
+		send_streams = 0;
+		goto send_reply;
+	}
+
+	/*
+	 * If a session rotation is ongoing, do not attempt to open any
+	 * stream, because the chunk can be in an intermediate state
+	 * due to directory renaming.
+	 */
+	if (session->ongoing_rotation) {
+		DBG("Relay session %" PRIu64 " rotation ongoing", session_id);
 		send_streams = 0;
 		goto send_reply;
 	}
@@ -1609,6 +1630,13 @@ int viewer_get_next_index(struct relay_connection *conn)
 	metadata_viewer_stream =
 			ctf_trace_get_viewer_metadata_stream(ctf_trace);
 
+	/*
+	 * Hold the session lock to protect against concurrent changes
+	 * to the chunk files (e.g. rename done by clear), which are
+	 * protected by the session ongoing rotation state. Those are
+	 * synchronized with the session lock.
+	 */
+	pthread_mutex_lock(&rstream->trace->session->lock);
 	pthread_mutex_lock(&rstream->lock);
 
 	/*
@@ -1775,6 +1803,7 @@ int viewer_get_next_index(struct relay_connection *conn)
 send_reply:
 	if (rstream) {
 		pthread_mutex_unlock(&rstream->lock);
+		pthread_mutex_unlock(&rstream->trace->session->lock);
 	}
 
 	if (metadata_viewer_stream) {
@@ -1816,6 +1845,7 @@ end:
 
 error_put:
 	pthread_mutex_unlock(&rstream->lock);
+	pthread_mutex_unlock(&rstream->trace->session->lock);
 	if (metadata_viewer_stream) {
 		viewer_stream_put(metadata_viewer_stream);
 	}
@@ -2004,11 +2034,11 @@ int viewer_get_metadata(struct relay_connection *conn)
 		 * an error.
 		 */
 		if (vstream->metadata_sent > 0) {
-			vstream->stream->no_new_metadata_notified = true;
-			if (vstream->stream->closed) {
+			if (vstream->stream->closed && vstream->stream->no_new_metadata_notified) {
 				/* Release ownership for the viewer metadata stream. */
 				viewer_stream_put(vstream);
 			}
+			vstream->stream->no_new_metadata_notified = true;
 		}
 		goto send_reply;
 	}
