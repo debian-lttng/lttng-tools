@@ -1,3 +1,10 @@
+ltt-control (2.13.4-1~ubuntu20.04.1) focal; urgency=medium
+
+  * [15757a9] New upstream version 2.13.4
+  * [f517dc3] Remove private symbols that were erroneously exposed
+
+ -- Michael Jeanson <mjeanson@debian.org>  Mon, 31 Jan 2022 10:11:20 -0500
+
 ltt-control (2.13.2-1~ubuntu20.04.1) focal; urgency=medium
 
   * [84753a7] New upstream version 2.13.2
