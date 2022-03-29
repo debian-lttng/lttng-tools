@@ -1,3 +1,9 @@
+ltt-control (2.13.6-1~ubuntu20.04.1) focal; urgency=medium
+
+  * [b83566f] New upstream version 2.13.6
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 29 Mar 2022 11:17:01 -0400
+
 ltt-control (2.13.4-1~ubuntu20.04.1) focal; urgency=medium
 
   * [15757a9] New upstream version 2.13.4
