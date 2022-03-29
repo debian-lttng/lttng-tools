@@ -192,8 +192,8 @@ ETAGS = etags
 CTAGS = ctags
 DIST_SUBDIRS = before-after blocking buffers-pid clock-override daemon \
 	exit-fast fork getcpu-override high-throughput java-jul \
-	java-log4j libc-wrapper linking low-throughput multi-lib \
-	multi-session namespaces nprocesses overlap \
+	java-log4j java-log4j2 libc-wrapper linking low-throughput \
+	multi-lib multi-session namespaces nprocesses overlap \
 	periodical-metadata-flush rotation-destroy-flush \
 	type-declarations baddr-statedump ust-dl
 am__DIST_COMMON = $(srcdir)/Makefile.in
@@ -514,7 +514,8 @@ top_srcdir = @top_srcdir@
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	buffers-pid clock-override daemon \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	exit-fast fork getcpu-override \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	high-throughput java-jul \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	java-log4j libc-wrapper linking \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	java-log4j java-log4j2 \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@	libc-wrapper linking \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	low-throughput multi-lib \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	multi-session namespaces \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	nprocesses overlap \

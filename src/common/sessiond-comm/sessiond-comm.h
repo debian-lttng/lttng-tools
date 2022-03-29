@@ -30,6 +30,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <stdint.h>
 #include <sys/un.h>
 
 #include "inet.h"
@@ -325,14 +326,14 @@ struct lttcomm_sockaddr {
 		struct sockaddr_in sin;
 		struct sockaddr_in6 sin6;
 	} addr;
-} LTTNG_PACKED;
+};
 
 struct lttcomm_sock {
 	int32_t fd;
 	enum lttcomm_sock_proto proto;
 	struct lttcomm_sockaddr sockaddr;
 	const struct lttcomm_proto_ops *ops;
-} LTTNG_PACKED;
+};
 
 /*
  * Relayd sock. Adds the protocol version to use for the communications with
@@ -342,7 +343,7 @@ struct lttcomm_relayd_sock {
 	struct lttcomm_sock sock;
 	uint32_t major;
 	uint32_t minor;
-} LTTNG_PACKED;
+};
 
 struct lttcomm_net_family {
 	int family;
@@ -379,48 +380,20 @@ struct lttcomm_session_msg {
 		/* Event data */
 		struct {
 			char channel_name[LTTNG_SYMBOL_NAME_LEN];
-			struct lttng_event event;
-			/* Length of following filter expression. */
-			uint32_t expression_len;
-			/* Length of following bytecode for filter. */
-			uint32_t bytecode_len;
-			/* Exclusion count (fixed-size strings). */
-			uint32_t exclusion_count;
-			/* Userspace probe location size. */
-			uint32_t userspace_probe_location_len;
-			/*
-			 * After this structure, the following variable-length
-			 * items are transmitted:
-			 * - char exclusion_names[LTTNG_SYMBOL_NAME_LEN][exclusion_count]
-			 * - char filter_expression[expression_len]
-			 * - unsigned char filter_bytecode[bytecode_len]
-			 */
+			uint32_t length;
 		} LTTNG_PACKED enable;
 		struct {
 			char channel_name[LTTNG_SYMBOL_NAME_LEN];
-			struct lttng_event event;
-			/* Length of following filter expression. */
-			uint32_t expression_len;
-			/* Length of following bytecode for filter. */
-			uint32_t bytecode_len;
-			/*
-			 * After this structure, the following variable-length
-			 * items are transmitted:
-			 * - unsigned char filter_expression[expression_len]
-			 * - unsigned char filter_bytecode[bytecode_len]
-			 */
+			uint32_t length;
 		} LTTNG_PACKED disable;
 		/* Create channel */
 		struct {
-			struct lttng_channel chan;
-			struct lttng_channel_extended extended;
+			uint32_t length;
 		} LTTNG_PACKED channel;
 		/* Context */
 		struct {
 			char channel_name[LTTNG_SYMBOL_NAME_LEN];
-			struct lttng_event_context ctx;
-			uint32_t provider_name_len;
-			uint32_t context_name_len;
+			uint32_t length;
 		} LTTNG_PACKED context;
 		/* Use by register_consumer */
 		struct {
@@ -552,11 +525,11 @@ struct lttng_event_exclusion {
 	(&(_exclusion)->names[_i][0])
 
 /*
- * Event command header.
+ * Listing command header.
  */
-struct lttcomm_event_command_header {
-	/* Number of events */
-	uint32_t nb_events;
+struct lttcomm_list_command_header {
+	/* Number of elements */
+	uint32_t count;
 } LTTNG_PACKED;
 
 /*
@@ -657,8 +630,9 @@ struct lttcomm_consumer_msg {
 		struct {
 			uint64_t net_index;
 			enum lttng_stream_type type;
-			/* Open socket to the relayd */
-			struct lttcomm_relayd_sock sock;
+			uint32_t major;
+			uint32_t minor;
+			uint8_t relayd_socket_protocol;
 			/* Tracing session id associated to the relayd. */
 			uint64_t session_id;
 			/* Relayd session id, only used with control socket. */
@@ -904,6 +878,9 @@ LTTNG_HIDDEN int lttcomm_init_inet6_sockaddr(struct lttcomm_sockaddr *sockaddr,
 		const char *ip, unsigned int port);
 
 LTTNG_HIDDEN struct lttcomm_sock *lttcomm_alloc_sock(enum lttcomm_sock_proto proto);
+LTTNG_HIDDEN int lttcomm_populate_sock_from_open_socket(struct lttcomm_sock *sock,
+		int fd,
+		enum lttcomm_sock_proto protocol);
 LTTNG_HIDDEN int lttcomm_create_sock(struct lttcomm_sock *sock);
 LTTNG_HIDDEN struct lttcomm_sock *lttcomm_alloc_sock_from_uri(struct lttng_uri *uri);
 LTTNG_HIDDEN void lttcomm_destroy_sock(struct lttcomm_sock *sock);

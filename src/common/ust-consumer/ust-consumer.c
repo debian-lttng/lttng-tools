@@ -68,7 +68,7 @@ static void destroy_channel(struct lttng_consumer_channel *channel)
 
 		health_code_update();
 
-		cds_list_del(&stream->send_node);
+		cds_list_del_init(&stream->send_node);
 		lttng_ust_ctl_destroy_stream(stream->ustream);
 		lttng_trace_chunk_put(stream->trace_chunk);
 		free(stream);
@@ -204,7 +204,7 @@ static int send_stream_to_thread(struct lttng_consumer_stream *stream,
 	 * global.
 	 */
 	stream->globally_visible = 1;
-	cds_list_del(&stream->send_node);
+	cds_list_del_init(&stream->send_node);
 
 	ret = lttng_pipe_write(stream_pipe, &stream, sizeof(stream));
 	if (ret < 0) {
@@ -949,7 +949,6 @@ error:
 	 * will make sure to clean that list.
 	 */
 	consumer_stream_destroy(metadata->metadata_stream, NULL);
-	cds_list_del(&metadata->metadata_stream->send_node);
 	metadata->metadata_stream = NULL;
 send_streams_error:
 error_no_stream:
@@ -1032,7 +1031,6 @@ error_stream:
 	 * new metadata stream.
 	 */
 	consumer_stream_destroy(metadata_stream, NULL);
-	cds_list_del(&metadata_stream->send_node);
 	metadata_channel->metadata_stream = NULL;
 
 error:
@@ -1428,11 +1426,18 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 	switch (msg.cmd_type) {
 	case LTTNG_CONSUMER_ADD_RELAYD_SOCKET:
 	{
+		uint32_t major = msg.u.relayd_sock.major;
+		uint32_t minor = msg.u.relayd_sock.minor;
+		enum lttcomm_sock_proto protocol =
+				(enum lttcomm_sock_proto) msg.u.relayd_sock
+						.relayd_socket_protocol;
+
 		/* Session daemon status message are handled in the following call. */
 		consumer_add_relayd_socket(msg.u.relayd_sock.net_index,
-				msg.u.relayd_sock.type, ctx, sock, consumer_sockpoll,
-				&msg.u.relayd_sock.sock, msg.u.relayd_sock.session_id,
-				msg.u.relayd_sock.relayd_session_id);
+				msg.u.relayd_sock.type, ctx, sock,
+				consumer_sockpoll, msg.u.relayd_sock.session_id,
+				msg.u.relayd_sock.relayd_session_id, major,
+				minor, protocol);
 		goto end_nosignal;
 	}
 	case LTTNG_CONSUMER_DESTROY_RELAYD:
