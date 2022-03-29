@@ -13,6 +13,7 @@
 
 #include <limits.h>
 #include <poll.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <urcu/list.h>
 
@@ -422,6 +423,11 @@ struct lttng_consumer_stream {
 	struct lttng_ht_node_u64 node_channel_id;
 	/* HT node used in consumer_data.stream_list_ht */
 	struct lttng_ht_node_u64 node_session_id;
+	/*
+	 * List used by channels to reference streams that are not yet globally
+	 * visible.
+	 */
+	struct cds_list_head send_node;
 	/* Pointer to associated channel. */
 	struct lttng_consumer_channel *chan;
 	/*
@@ -554,7 +560,6 @@ struct lttng_consumer_stream {
 	char name[LTTNG_SYMBOL_NAME_LEN];
 	/* Internal state of libustctl. */
 	struct lttng_ust_ctl_consumer_stream *ustream;
-	struct cds_list_head send_node;
 	/* On-disk circular buffer */
 	uint64_t tracefile_size_current;
 	uint64_t tracefile_count_current;
@@ -1014,10 +1019,16 @@ ssize_t lttng_consumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		struct lttng_consumer_local_data *ctx,
 		bool locked_by_caller);
 int lttng_consumer_on_recv_stream(struct lttng_consumer_stream *stream);
-void consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
-		struct lttng_consumer_local_data *ctx, int sock,
-		struct pollfd *consumer_sockpoll, struct lttcomm_relayd_sock *relayd_sock,
-		uint64_t sessiond_id, uint64_t relayd_session_id);
+void consumer_add_relayd_socket(uint64_t net_seq_idx,
+		int sock_type,
+		struct lttng_consumer_local_data *ctx,
+		int sock,
+		struct pollfd *consumer_sockpoll,
+		uint64_t sessiond_id,
+		uint64_t relayd_session_id,
+		uint32_t relayd_version_major,
+		uint32_t relayd_version_minor,
+		enum lttcomm_sock_proto relayd_socket_protocol);
 void consumer_flag_relayd_for_destroy(
 		struct consumer_relayd_sock_pair *relayd);
 int consumer_data_pending(uint64_t id);

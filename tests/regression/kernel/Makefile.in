@@ -139,7 +139,8 @@ am_select_poll_epoll_OBJECTS =  \
 	select_poll_epoll-select_poll_epoll.$(OBJEXT)
 select_poll_epoll_OBJECTS = $(am_select_poll_epoll_OBJECTS)
 am__DEPENDENCIES_1 =
-select_poll_epoll_DEPENDENCIES = $(am__DEPENDENCIES_1)
+select_poll_epoll_DEPENDENCIES = $(am__DEPENDENCIES_1) \
+	$(top_builddir)/src/common/libcommon-lgpl.la
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
@@ -505,10 +506,15 @@ EXTRA_DIST = test_all_events \
 						 test_kernel_function \
 						 test_lttng_logger \
 						 test_ns_contexts \
-						 test_ns_contexts_change
+						 test_ns_contexts_change \
+						 test_rotation_destroy_flush \
+						 test_select_poll_epoll \
+						 test_syscall \
+						 test_userspace_probe \
+						 validate_select_poll_epoll.py
 
 select_poll_epoll_SOURCES = select_poll_epoll.c
-select_poll_epoll_LDADD = $(POPT_LIBS)
+select_poll_epoll_LDADD = $(POPT_LIBS) $(top_builddir)/src/common/libcommon-lgpl.la
 select_poll_epoll_CFLAGS = $(POPT_CFLAGS) -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 $(AM_CFLAGS)
 all: all-am
 
@@ -811,11 +817,6 @@ uninstall-am:
 
 .PRECIOUS: Makefile
 
-						 test_rotation_destroy_flush \
-						 test_select_poll_epoll \
-						 test_syscall \
-						 test_userspace_probe \
-						 validate_select_poll_epoll.py
 
 all-local:
 	@if [ x"$(srcdir)" != x"$(builddir)" ]; then \
