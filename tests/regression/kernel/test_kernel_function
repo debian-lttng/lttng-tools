@@ -9,7 +9,7 @@ TEST_DESC="Kernel tracer - function event"
 
 CURDIR=$(dirname $0)/
 TESTDIR=$CURDIR/../..
-NUM_TESTS=6
+NUM_TESTS=7
 
 source $TESTDIR/utils/utils.sh
 
@@ -31,7 +31,7 @@ function test_kernel_function_basic()
 	stop_lttng_tracing_ok
 
 	validate_trace "${EVENT_NAME}_entry" $TRACE_PATH
-	validate_trace "${EVENT_NAME}_return" $TRACE_PATH
+	validate_trace "${EVENT_NAME}_exit" $TRACE_PATH
 
 	destroy_lttng_session_ok $SESSION_NAME
 

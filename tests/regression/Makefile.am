@@ -64,8 +64,6 @@ TESTS += ust/before-after/test_before_after \
 	ust/multi-session/test_multi_session \
 	ust/nprocesses/test_nprocesses \
 	ust/overlap/test_overlap \
-	ust/java-jul/test_java_jul \
-	ust/java-log4j/test_java_log4j \
 	ust/python-logging/test_python_logging \
 	ust/getcpu-override/test_getcpu_override \
 	ust/clock-override/test_clock_override \
@@ -79,8 +77,33 @@ TESTS += ust/before-after/test_before_after \
 	tools/relayd-grouping/test_ust \
 	tools/trigger/rate-policy/test_ust_rate_policy
 
+if TEST_JAVA_JUL_AGENT
+TESTS += ust/java-jul/test_java_jul
+endif # TEST_JAVA_JUL_AGENT
+
+if TEST_JAVA_LOG4J_AGENT
+TESTS += ust/java-log4j/test_java_log4j
+endif # TEST_JAVA_LOG4J_AGENT
+
+if TEST_JAVA_LOG4J2_AGENT
+TESTS += ust/java-log4j2/test_agent_log4j2_domain_log4j
+endif # TEST_JAVA_LOG4J2_AGENT
+
 if IS_LINUX
 TESTS += \
+	kernel/test_all_events \
+	kernel/test_callstack \
+	kernel/test_channel \
+	kernel/test_clock_override \
+	kernel/test_event_basic \
+	kernel/test_kernel_function \
+	kernel/test_lttng_logger \
+	kernel/test_ns_contexts \
+	kernel/test_ns_contexts_change \
+	kernel/test_rotation_destroy_flush \
+	kernel/test_select_poll_epoll \
+	kernel/test_syscall \
+	kernel/test_userspace_probe \
 	ust/namespaces/test_ns_contexts \
 	ust/namespaces/test_ns_contexts_change
 endif # IS_LINUX

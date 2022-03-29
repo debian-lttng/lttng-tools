@@ -21,30 +21,23 @@
 #include <common/defaults.h>
 #include <common/dynamic-buffer.h>
 #include <common/kernel-ctl/kernel-ctl.h>
-#include <common/payload-view.h>
-#include <common/payload.h>
 #include <common/relayd/relayd.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/string-utils/string-utils.h>
 #include <common/trace-chunk.h>
 #include <common/utils.h>
-#include <lttng/action/action-internal.h>
+
 #include <lttng/action/action.h>
+#include <lttng/action/action-internal.h>
 #include <lttng/channel-internal.h>
 #include <lttng/channel.h>
-#include <lttng/condition/condition-internal.h>
 #include <lttng/condition/condition.h>
-#include <lttng/condition/event-rule-matches-internal.h>
-#include <lttng/condition/event-rule-matches.h>
 #include <lttng/error-query-internal.h>
-#include <lttng/event-rule/event-rule-internal.h>
-#include <lttng/event-rule/event-rule.h>
+#include <lttng/event-internal.h>
 #include <lttng/location-internal.h>
-#include <lttng/lttng-error.h>
 #include <lttng/rotate-internal.h>
 #include <lttng/session-descriptor-internal.h>
 #include <lttng/session-internal.h>
-#include <lttng/tracker.h>
 #include <lttng/trigger/trigger-internal.h>
 #include <lttng/userspace-probe-internal.h>
 
@@ -120,6 +113,10 @@ static int cmd_enable_event_internal(struct ltt_session *session,
 		char *filter_expression,
 		struct lttng_bytecode *filter,
 		struct lttng_event_exclusion *exclusion,
+		int wpipe);
+static int cmd_enable_channel_internal(struct ltt_session *session,
+		const struct lttng_domain *domain,
+		const struct lttng_channel *_attr,
 		int wpipe);
 
 /*
@@ -292,261 +289,96 @@ end:
 }
 
 /*
- * Fill lttng_channel array of all channels.
- */
-static ssize_t list_lttng_channels(enum lttng_domain_type domain,
-		struct ltt_session *session, struct lttng_channel *channels,
-		struct lttng_channel_extended *chan_exts)
-{
-	int i = 0, ret = 0;
-	struct ltt_kernel_channel *kchan;
-
-	DBG("Listing channels for session %s", session->name);
-
-	switch (domain) {
-	case LTTNG_DOMAIN_KERNEL:
-		/* Kernel channels */
-		if (session->kernel_session != NULL) {
-			cds_list_for_each_entry(kchan,
-					&session->kernel_session->channel_list.head, list) {
-				uint64_t discarded_events, lost_packets;
-				struct lttng_channel_extended *extended;
-
-				extended = (struct lttng_channel_extended *)
-						kchan->channel->attr.extended.ptr;
-
-				ret = get_kernel_runtime_stats(session, kchan,
-						&discarded_events, &lost_packets);
-				if (ret < 0) {
-					goto end;
-				}
-				/* Copy lttng_channel struct to array */
-				memcpy(&channels[i], kchan->channel, sizeof(struct lttng_channel));
-				channels[i].enabled = kchan->enabled;
-				chan_exts[i].discarded_events =
-						discarded_events;
-				chan_exts[i].lost_packets = lost_packets;
-				chan_exts[i].monitor_timer_interval =
-						extended->monitor_timer_interval;
-				chan_exts[i].blocking_timeout = 0;
-				i++;
-			}
-		}
-		break;
-	case LTTNG_DOMAIN_UST:
-	{
-		struct lttng_ht_iter iter;
-		struct ltt_ust_channel *uchan;
-
-		rcu_read_lock();
-		cds_lfht_for_each_entry(session->ust_session->domain_global.channels->ht,
-				&iter.iter, uchan, node.node) {
-			uint64_t discarded_events = 0, lost_packets = 0;
-
-			if (lttng_strncpy(channels[i].name, uchan->name,
-					LTTNG_SYMBOL_NAME_LEN)) {
-				break;
-			}
-			channels[i].attr.overwrite = uchan->attr.overwrite;
-			channels[i].attr.subbuf_size = uchan->attr.subbuf_size;
-			channels[i].attr.num_subbuf = uchan->attr.num_subbuf;
-			channels[i].attr.switch_timer_interval =
-				uchan->attr.switch_timer_interval;
-			channels[i].attr.read_timer_interval =
-				uchan->attr.read_timer_interval;
-			channels[i].enabled = uchan->enabled;
-			channels[i].attr.tracefile_size = uchan->tracefile_size;
-			channels[i].attr.tracefile_count = uchan->tracefile_count;
-
-			/*
-			 * Map enum lttng_ust_output to enum lttng_event_output.
-			 */
-			switch (uchan->attr.output) {
-			case LTTNG_UST_ABI_MMAP:
-				channels[i].attr.output = LTTNG_EVENT_MMAP;
-				break;
-			default:
-				/*
-				 * LTTNG_UST_MMAP is the only supported UST
-				 * output mode.
-				 */
-				assert(0);
-				break;
-			}
-
-			chan_exts[i].monitor_timer_interval =
-					uchan->monitor_timer_interval;
-			chan_exts[i].blocking_timeout =
-				uchan->attr.u.s.blocking_timeout;
-
-			ret = get_ust_runtime_stats(session, uchan,
-					&discarded_events, &lost_packets);
-			if (ret < 0) {
-				break;
-			}
-			chan_exts[i].discarded_events = discarded_events;
-			chan_exts[i].lost_packets = lost_packets;
-			i++;
-		}
-		rcu_read_unlock();
-		break;
-	}
-	default:
-		break;
-	}
-
-end:
-	if (ret < 0) {
-		return -LTTNG_ERR_FATAL;
-	} else {
-		return LTTNG_OK;
-	}
-}
-
-static int append_extended_info(const char *filter_expression,
-		struct lttng_event_exclusion *exclusion,
-		struct lttng_userspace_probe_location *probe_location,
-		struct lttng_payload *payload)
-{
-	int ret = 0;
-	size_t filter_len = 0;
-	size_t nb_exclusions = 0;
-	size_t userspace_probe_location_len = 0;
-	struct lttcomm_event_extended_header extended_header = {};
-	struct lttcomm_event_extended_header *p_extended_header;
-	const size_t original_payload_size = payload->buffer.size;
-
-	ret = lttng_dynamic_buffer_append(&payload->buffer, &extended_header,
-			sizeof(extended_header));
-	if (ret) {
-		goto end;
-	}
-
-	if (filter_expression) {
-		filter_len = strlen(filter_expression) + 1;
-		ret = lttng_dynamic_buffer_append(&payload->buffer,
-				filter_expression, filter_len);
-		if (ret) {
-			goto end;
-		}
-	}
-
-	if (exclusion) {
-		const size_t len = exclusion->count * LTTNG_SYMBOL_NAME_LEN;
-
-		nb_exclusions = exclusion->count;
-
-		ret = lttng_dynamic_buffer_append(
-				&payload->buffer, &exclusion->names, len);
-		if (ret) {
-			goto end;
-		}
-	}
-
-	if (probe_location) {
-		const size_t size_before_probe = payload->buffer.size;
-
-		ret = lttng_userspace_probe_location_serialize(probe_location,
-				payload);
-		if (ret < 0) {
-			ret = -1;
-			goto end;
-		}
-
-		userspace_probe_location_len =
-				payload->buffer.size - size_before_probe;
-	}
-
-	/* Set header fields */
-	p_extended_header = (struct lttcomm_event_extended_header *)
-			(payload->buffer.data + original_payload_size);
-
-	p_extended_header->filter_len = filter_len;
-	p_extended_header->nb_exclusions = nb_exclusions;
-	p_extended_header->userspace_probe_location_len =
-			userspace_probe_location_len;
-
-	ret = 0;
-end:
-	return ret;
-}
-
-/*
  * Create a list of agent domain events.
  *
  * Return number of events in list on success or else a negative value.
  */
-static int list_lttng_agent_events(struct agent *agt,
-		struct lttng_payload *payload)
+static enum lttng_error_code list_lttng_agent_events(
+		struct agent *agt, struct lttng_payload *reply_payload,
+		unsigned int *nb_events)
 {
-	int nb_events = 0, ret = 0;
-	const struct agent_event *agent_event;
+	enum lttng_error_code ret_code;
+	int ret = 0;
+	unsigned int local_nb_events = 0;
+	struct agent_event *event;
 	struct lttng_ht_iter iter;
+	unsigned long agent_event_count;
 
 	assert(agt);
+	assert(reply_payload);
 
 	DBG3("Listing agent events");
 
 	rcu_read_lock();
-	cds_lfht_for_each_entry (
-			agt->events->ht, &iter.iter, agent_event, node.node) {
-		struct lttng_event event = {
-			.enabled = AGENT_EVENT_IS_ENABLED(agent_event),
-			.loglevel = agent_event->loglevel_value,
-			.loglevel_type = agent_event->loglevel_type,
-		};
 
-		ret = lttng_strncpy(event.name, agent_event->name, sizeof(event.name));
-		if (ret) {
-			/* Internal error, invalid name. */
-			ERR("Invalid event name while listing agent events: '%s' exceeds the maximal allowed length of %zu bytes",
-					agent_event->name, sizeof(event.name));
-			ret = -LTTNG_ERR_UNK;
-			goto end;
-		}
-
-		ret = lttng_dynamic_buffer_append(
-				&payload->buffer, &event, sizeof(event));
-		if (ret) {
-			ERR("Failed to append event to payload");
-			ret = -LTTNG_ERR_NOMEM;
-			goto end;
-		}
-
-		nb_events++;
+	agent_event_count = lttng_ht_get_count(agt->events);
+	if (agent_event_count == 0) {
+		/* Early exit. */
+		goto end;
 	}
 
-	cds_lfht_for_each_entry (
-		agt->events->ht, &iter.iter, agent_event, node.node) {
-		/* Append extended info. */
-		ret = append_extended_info(agent_event->filter_expression, NULL,
-				NULL, payload);
+	if (agent_event_count > UINT_MAX) {
+		ret_code = LTTNG_ERR_OVERFLOW;
+		goto error;
+	}
+
+	local_nb_events = (unsigned int) agent_event_count;
+
+	cds_lfht_for_each_entry(agt->events->ht, &iter.iter, event, node.node) {
+		struct lttng_event *tmp_event = lttng_event_create();
+
+		if (!tmp_event) {
+			ret_code = LTTNG_ERR_NOMEM;
+			goto error;
+		}
+
+		if (lttng_strncpy(tmp_event->name, event->name, sizeof(tmp_event->name))) {
+			lttng_event_destroy(tmp_event);
+			ret_code = LTTNG_ERR_FATAL;
+			goto error;
+		}
+		
+		tmp_event->name[sizeof(tmp_event->name) - 1] = '\0';
+		tmp_event->enabled = !!event->enabled_count;
+		tmp_event->loglevel = event->loglevel_value;
+		tmp_event->loglevel_type = event->loglevel_type;
+
+		ret = lttng_event_serialize(tmp_event, 0, NULL,
+				event->filter_expression, 0, NULL, reply_payload);
+		lttng_event_destroy(tmp_event);
 		if (ret) {
-			ERR("Failed to append extended event info to payload");
-			ret = -LTTNG_ERR_NOMEM;
-			goto end;
+			ret_code = LTTNG_ERR_FATAL;
+			goto error;
 		}
 	}
 
-	ret = nb_events;
 end:
+	ret_code = LTTNG_OK;
+	*nb_events = local_nb_events;
+error:
 	rcu_read_unlock();
-	return ret;
+	return ret_code;
 }
 
 /*
  * Create a list of ust global domain events.
  */
-static int list_lttng_ust_global_events(char *channel_name,
+static enum lttng_error_code list_lttng_ust_global_events(char *channel_name,
 		struct ltt_ust_domain_global *ust_global,
-		struct lttng_payload *payload)
+		struct lttng_payload *reply_payload,
+		unsigned int *nb_events)
 {
-	int ret = 0;
-	unsigned int nb_events = 0;
+	enum lttng_error_code ret_code;
+	int ret;
 	struct lttng_ht_iter iter;
-	const struct lttng_ht_node_str *node;
-	const struct ltt_ust_channel *uchan;
-	const struct ltt_ust_event *uevent;
+	struct lttng_ht_node_str *node;
+	struct ltt_ust_channel *uchan;
+	struct ltt_ust_event *uevent;
+	unsigned long channel_event_count;
+	unsigned int local_nb_events = 0;
+
+	assert(reply_payload);
+	assert(nb_events);
 
 	DBG("Listing UST global events for channel %s", channel_name);
 
@@ -555,158 +387,184 @@ static int list_lttng_ust_global_events(char *channel_name,
 	lttng_ht_lookup(ust_global->channels, (void *) channel_name, &iter);
 	node = lttng_ht_iter_get_node_str(&iter);
 	if (node == NULL) {
-		ret = LTTNG_ERR_UST_CHAN_NOT_FOUND;
-		goto end;
+		ret_code = LTTNG_ERR_UST_CHAN_NOT_FOUND;
+		goto error;
 	}
 
 	uchan = caa_container_of(&node->node, struct ltt_ust_channel, node.node);
 
-	DBG3("Listing UST global events");
+	channel_event_count = lttng_ht_get_count(uchan->events);
+	if (channel_event_count == 0) {
+		/* Early exit. */
+		ret_code = LTTNG_OK;
+		goto end;
+	}
+
+	if (channel_event_count > UINT_MAX) {
+		ret_code = LTTNG_ERR_OVERFLOW;
+		goto error;
+	}
+
+	local_nb_events = (unsigned int) channel_event_count;
+
+	DBG3("Listing UST global %d events", *nb_events);
 
 	cds_lfht_for_each_entry(uchan->events->ht, &iter.iter, uevent, node.node) {
-		struct lttng_event event = {};
+		struct lttng_event *tmp_event = NULL;
 
 		if (uevent->internal) {
+			/* This event should remain hidden from clients */
+			local_nb_events--;
 			continue;
 		}
 
-		ret = lttng_strncpy(event.name, uevent->attr.name, sizeof(event.name));
-		if (ret) {
-			/* Internal error, invalid name. */
-			ERR("Invalid event name while listing user space tracer events: '%s' exceeds the maximal allowed length of %zu bytes",
-					uevent->attr.name, sizeof(event.name));
-			ret = -LTTNG_ERR_UNK;
-			goto end;
+		tmp_event = lttng_event_create();
+		if (!tmp_event) {
+			ret_code = LTTNG_ERR_NOMEM;
+			goto error;
 		}
 
-		event.enabled = uevent->enabled;
+		if (lttng_strncpy(tmp_event->name, uevent->attr.name,
+				LTTNG_SYMBOL_NAME_LEN)) {
+			ret_code = LTTNG_ERR_FATAL;
+			lttng_event_destroy(tmp_event);
+			goto error;
+		}
+
+		tmp_event->name[LTTNG_SYMBOL_NAME_LEN - 1] = '\0';
+		tmp_event->enabled = uevent->enabled;
 
 		switch (uevent->attr.instrumentation) {
 		case LTTNG_UST_ABI_TRACEPOINT:
-			event.type = LTTNG_EVENT_TRACEPOINT;
+			tmp_event->type = LTTNG_EVENT_TRACEPOINT;
 			break;
 		case LTTNG_UST_ABI_PROBE:
-			event.type = LTTNG_EVENT_PROBE;
+			tmp_event->type = LTTNG_EVENT_PROBE;
 			break;
 		case LTTNG_UST_ABI_FUNCTION:
-			event.type = LTTNG_EVENT_FUNCTION;
+			tmp_event->type = LTTNG_EVENT_FUNCTION;
 			break;
 		}
 
-		event.loglevel = uevent->attr.loglevel;
+		tmp_event->loglevel = uevent->attr.loglevel;
 		switch (uevent->attr.loglevel_type) {
 		case LTTNG_UST_ABI_LOGLEVEL_ALL:
-			event.loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;
+			tmp_event->loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;
 			break;
 		case LTTNG_UST_ABI_LOGLEVEL_RANGE:
-			event.loglevel_type = LTTNG_EVENT_LOGLEVEL_RANGE;
+			tmp_event->loglevel_type = LTTNG_EVENT_LOGLEVEL_RANGE;
 			break;
 		case LTTNG_UST_ABI_LOGLEVEL_SINGLE:
-			event.loglevel_type = LTTNG_EVENT_LOGLEVEL_SINGLE;
+			tmp_event->loglevel_type = LTTNG_EVENT_LOGLEVEL_SINGLE;
 			break;
 		}
-
 		if (uevent->filter) {
-			event.filter = 1;
+			tmp_event->filter = 1;
 		}
-
 		if (uevent->exclusion) {
-			event.exclusion = 1;
+			tmp_event->exclusion = 1;
 		}
 
-		ret = lttng_dynamic_buffer_append(&payload->buffer, &event, sizeof(event));
+		/*
+		 * We do not care about the filter bytecode and the fd from the
+		 * userspace_probe_location.
+		 */
+		ret = lttng_event_serialize(tmp_event, uevent->exclusion ? uevent->exclusion->count : 0,
+				uevent->exclusion ? (char **) uevent->exclusion ->names : NULL,
+				uevent->filter_expression, 0, NULL, reply_payload);
+		lttng_event_destroy(tmp_event);
 		if (ret) {
-			ERR("Failed to append event to payload");
-			ret = -LTTNG_ERR_NOMEM;
-			goto end;
-		}
-
-		nb_events++;
-	}
-
-	cds_lfht_for_each_entry(uchan->events->ht, &iter.iter, uevent, node.node) {
-		/* Append extended info. */
-		ret = append_extended_info(uevent->filter_expression,
-				uevent->exclusion, NULL, payload);
-		if (ret) {
-			ERR("Failed to append extended event info to payload");
-			ret = -LTTNG_ERR_FATAL;
-			goto end;
+			ret_code = LTTNG_ERR_FATAL;
+			goto error;
 		}
 	}
 
-	ret = nb_events;
 end:
+	/* nb_events is already set at this point. */
+	ret_code = LTTNG_OK;
+	*nb_events = local_nb_events;
+error:
 	rcu_read_unlock();
-	return ret;
+	return ret_code;
 }
 
 /*
  * Fill lttng_event array of all kernel events in the channel.
  */
-static int list_lttng_kernel_events(char *channel_name,
+static enum lttng_error_code list_lttng_kernel_events(char *channel_name,
 		struct ltt_kernel_session *kernel_session,
-		struct lttng_payload *payload)
+		struct lttng_payload *reply_payload,
+		unsigned int *nb_events)
 {
+	enum lttng_error_code ret_code;
 	int ret;
-	unsigned int nb_event;
-	const struct ltt_kernel_event *kevent;
-	const struct ltt_kernel_channel *kchan;
+	struct ltt_kernel_event *event;
+	struct ltt_kernel_channel *kchan;
+
+	assert(reply_payload);
 
 	kchan = trace_kernel_get_channel_by_name(channel_name, kernel_session);
 	if (kchan == NULL) {
-		ret = LTTNG_ERR_KERN_CHAN_NOT_FOUND;
-		goto error;
+		ret_code = LTTNG_ERR_KERN_CHAN_NOT_FOUND;
+		goto end;
 	}
 
-	nb_event = kchan->event_count;
+	*nb_events = kchan->event_count;
 
 	DBG("Listing events for channel %s", kchan->channel->name);
 
-	/* Kernel channels */
-	cds_list_for_each_entry(kevent, &kchan->events_list.head , list) {
-		struct lttng_event event = {};
+	if (*nb_events == 0) {
+		ret_code = LTTNG_OK;
+		goto end;
+	}
 
-		ret = lttng_strncpy(event.name, kevent->event->name, sizeof(event.name));
-		if (ret) {
-			/* Internal error, invalid name. */
-			ERR("Invalid event name while listing kernel events: '%s' exceeds the maximal allowed length of %zu bytes",
-					kevent->event->name,
-					sizeof(event.name));
-			ret = -LTTNG_ERR_UNK;
+	/* Kernel channels */
+	cds_list_for_each_entry(event, &kchan->events_list.head , list) {
+		struct lttng_event *tmp_event = lttng_event_create();
+
+		if (!tmp_event) {
+			ret_code = LTTNG_ERR_NOMEM;
 			goto end;
 		}
 
-		event.enabled = kevent->enabled;
-		event.filter = (unsigned char) !!kevent->filter_expression;
+		if (lttng_strncpy(tmp_event->name, event->event->name, LTTNG_SYMBOL_NAME_LEN)) {
+			lttng_event_destroy(tmp_event);
+			ret_code = LTTNG_ERR_FATAL;
+			goto end;
 
-		switch (kevent->event->instrumentation) {
+		}
+
+		tmp_event->name[LTTNG_SYMBOL_NAME_LEN - 1] = '\0';
+		tmp_event->enabled = event->enabled;
+		tmp_event->filter = (unsigned char) !!event->filter_expression;
+
+		switch (event->event->instrumentation) {
 		case LTTNG_KERNEL_ABI_TRACEPOINT:
-			event.type = LTTNG_EVENT_TRACEPOINT;
+			tmp_event->type = LTTNG_EVENT_TRACEPOINT;
 			break;
 		case LTTNG_KERNEL_ABI_KRETPROBE:
-			event.type = LTTNG_EVENT_FUNCTION;
-			memcpy(&event.attr.probe, &kevent->event->u.kprobe,
+			tmp_event->type = LTTNG_EVENT_FUNCTION;
+			memcpy(&tmp_event->attr.probe, &event->event->u.kprobe,
 					sizeof(struct lttng_kernel_abi_kprobe));
 			break;
 		case LTTNG_KERNEL_ABI_KPROBE:
-			event.type = LTTNG_EVENT_PROBE;
-			memcpy(&event.attr.probe, &kevent->event->u.kprobe,
+			tmp_event->type = LTTNG_EVENT_PROBE;
+			memcpy(&tmp_event->attr.probe, &event->event->u.kprobe,
 					sizeof(struct lttng_kernel_abi_kprobe));
 			break;
 		case LTTNG_KERNEL_ABI_UPROBE:
-			event.type = LTTNG_EVENT_USERSPACE_PROBE;
+			tmp_event->type = LTTNG_EVENT_USERSPACE_PROBE;
 			break;
 		case LTTNG_KERNEL_ABI_FUNCTION:
-			event.type = LTTNG_EVENT_FUNCTION;
-			memcpy(&event.attr.ftrace, &kevent->event->u.ftrace,
+			tmp_event->type = LTTNG_EVENT_FUNCTION;
+			memcpy(&(tmp_event->attr.ftrace), &event->event->u.ftrace,
 					sizeof(struct lttng_kernel_abi_function));
 			break;
 		case LTTNG_KERNEL_ABI_NOOP:
-			event.type = LTTNG_EVENT_NOOP;
+			tmp_event->type = LTTNG_EVENT_NOOP;
 			break;
 		case LTTNG_KERNEL_ABI_SYSCALL:
-			event.type = LTTNG_EVENT_SYSCALL;
+			tmp_event->type = LTTNG_EVENT_SYSCALL;
 			break;
 		case LTTNG_KERNEL_ABI_ALL:
 			/* fall-through. */
@@ -715,30 +573,40 @@ static int list_lttng_kernel_events(char *channel_name,
 			break;
 		}
 
-		ret = lttng_dynamic_buffer_append(
-				&payload->buffer, &event, sizeof(event));
+		if (event->userspace_probe_location) {
+			struct lttng_userspace_probe_location *location_copy =
+					lttng_userspace_probe_location_copy(
+							event->userspace_probe_location);
+
+			if (!location_copy) {
+				lttng_event_destroy(tmp_event);
+				ret_code = LTTNG_ERR_NOMEM;
+				goto end;
+			}
+
+			ret = lttng_event_set_userspace_probe_location(
+					tmp_event, location_copy);
+			if (ret) {
+				lttng_event_destroy(tmp_event);
+				lttng_userspace_probe_location_destroy(
+						location_copy);
+				ret_code = LTTNG_ERR_INVALID;
+				goto end;
+			}
+		}
+
+		ret = lttng_event_serialize(tmp_event, 0, NULL,
+				event->filter_expression, 0, NULL, reply_payload);
+		lttng_event_destroy(tmp_event);
 		if (ret) {
-			ERR("Failed to append event to payload");
-			ret = -LTTNG_ERR_NOMEM;
+			ret_code = LTTNG_ERR_FATAL;
 			goto end;
 		}
 	}
 
-	cds_list_for_each_entry(kevent, &kchan->events_list.head , list) {
-		/* Append extended info. */
-		ret = append_extended_info(kevent->filter_expression, NULL,
-				kevent->userspace_probe_location, payload);
-		if (ret) {
-			DBG("Error appending extended info message");
-			ret = -LTTNG_ERR_FATAL;
-			goto error;
-		}
-	}
-
+	ret_code = LTTNG_OK;
 end:
-	return nb_event;
-error:
-	return ret;
+	return ret_code;
 }
 
 /*
@@ -1360,30 +1228,84 @@ error:
  *
  * The wpipe arguments is used as a notifier for the kernel thread.
  */
-int cmd_enable_channel(struct ltt_session *session,
-		const struct lttng_domain *domain, const struct lttng_channel *_attr, int wpipe)
+int cmd_enable_channel(struct command_ctx *cmd_ctx, int sock, int wpipe)
+{
+	int ret;
+	size_t channel_len;
+	ssize_t sock_recv_len;
+	struct lttng_channel *channel = NULL;
+	struct lttng_buffer_view view;
+	struct lttng_dynamic_buffer channel_buffer;
+	const struct lttng_domain command_domain = cmd_ctx->lsm.domain;
+
+	lttng_dynamic_buffer_init(&channel_buffer);
+	channel_len = (size_t) cmd_ctx->lsm.u.channel.length;
+	ret = lttng_dynamic_buffer_set_size(&channel_buffer, channel_len);
+	if (ret) {
+		ret = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	sock_recv_len = lttcomm_recv_unix_sock(sock, channel_buffer.data,
+			channel_len);
+	if (sock_recv_len < 0 || sock_recv_len != channel_len) {
+		ERR("Failed to receive \"enable channel\" command payload");
+		ret = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	view = lttng_buffer_view_from_dynamic_buffer(&channel_buffer, 0, channel_len);
+	if (!lttng_buffer_view_is_valid(&view)) {
+		ret = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	if (lttng_channel_create_from_buffer(&view, &channel) != channel_len) {
+		ERR("Invalid channel payload received in \"enable channel\" command");
+		ret = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	ret = cmd_enable_channel_internal(
+			cmd_ctx->session, &command_domain, channel, wpipe);
+
+end:
+	lttng_dynamic_buffer_reset(&channel_buffer);
+	lttng_channel_destroy(channel);
+	return ret;
+}
+
+static int cmd_enable_channel_internal(struct ltt_session *session,
+		const struct lttng_domain *domain,
+		const struct lttng_channel *_attr,
+		int wpipe)
 {
 	int ret;
 	struct ltt_ust_session *usess = session->ust_session;
 	struct lttng_ht *chan_ht;
 	size_t len;
-	struct lttng_channel attr;
+	struct lttng_channel *attr = NULL;
 
 	assert(session);
 	assert(_attr);
 	assert(domain);
 
-	attr = *_attr;
-	len = lttng_strnlen(attr.name, sizeof(attr.name));
+	attr = lttng_channel_copy(_attr);
+	if (!attr) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	len = lttng_strnlen(attr->name, sizeof(attr->name));
 
 	/* Validate channel name */
-	if (attr.name[0] == '.' ||
-		memchr(attr.name, '/', len) != NULL) {
+	if (attr->name[0] == '.' ||
+		memchr(attr->name, '/', len) != NULL) {
 		ret = LTTNG_ERR_INVALID_CHANNEL_NAME;
 		goto end;
 	}
 
-	DBG("Enabling channel %s for session %s", attr.name, session->name);
+	DBG("Enabling channel %s for session %s", attr->name, session->name);
 
 	rcu_read_lock();
 
@@ -1393,8 +1315,8 @@ int cmd_enable_channel(struct ltt_session *session,
 	 * beacons for inactive streams.
 	 */
 	if (session->live_timer > 0) {
-		attr.attr.live_timer_interval = session->live_timer;
-		attr.attr.switch_timer_interval = 0;
+		attr->attr.live_timer_interval = session->live_timer;
+		attr->attr.switch_timer_interval = 0;
 	}
 
 	/* Check for feature support */
@@ -1406,8 +1328,8 @@ int cmd_enable_channel(struct ltt_session *session,
 			WARN("Kernel tracer does not support buffer monitoring. "
 					"Setting the monitor interval timer to 0 "
 					"(disabled) for channel '%s' of session '%s'",
-					attr.name, session->name);
-			lttng_channel_set_monitor_timer_interval(&attr, 0);
+					attr->name, session->name);
+			lttng_channel_set_monitor_timer_interval(attr, 0);
 		}
 		break;
 	}
@@ -1432,8 +1354,8 @@ int cmd_enable_channel(struct ltt_session *session,
 	{
 		struct ltt_kernel_channel *kchan;
 
-		kchan = trace_kernel_get_channel_by_name(attr.name,
-				session->kernel_session);
+		kchan = trace_kernel_get_channel_by_name(
+				attr->name, session->kernel_session);
 		if (kchan == NULL) {
 			/*
 			 * Don't try to create a channel if the session has been started at
@@ -1447,10 +1369,11 @@ int cmd_enable_channel(struct ltt_session *session,
 			if (session->snapshot.nb_output > 0 ||
 					session->snapshot_mode) {
 				/* Enforce mmap output for snapshot sessions. */
-				attr.attr.output = LTTNG_EVENT_MMAP;
+				attr->attr.output = LTTNG_EVENT_MMAP;
 			}
-			ret = channel_kernel_create(session->kernel_session, &attr, wpipe);
-			if (attr.name[0] != '\0') {
+			ret = channel_kernel_create(
+					session->kernel_session, attr, wpipe);
+			if (attr->name[0] != '\0') {
 				session->kernel_session->has_non_default_channel = 1;
 			}
 		} else {
@@ -1480,19 +1403,19 @@ int cmd_enable_channel(struct ltt_session *session,
 		 * adhered to.
 		 */
 		if (domain->type == LTTNG_DOMAIN_JUL) {
-			if (strncmp(attr.name, DEFAULT_JUL_CHANNEL_NAME,
+			if (strncmp(attr->name, DEFAULT_JUL_CHANNEL_NAME,
 					LTTNG_SYMBOL_NAME_LEN)) {
 				ret = LTTNG_ERR_INVALID_CHANNEL_NAME;
 				goto error;
 			}
 		} else if (domain->type == LTTNG_DOMAIN_LOG4J) {
-			if (strncmp(attr.name, DEFAULT_LOG4J_CHANNEL_NAME,
+			if (strncmp(attr->name, DEFAULT_LOG4J_CHANNEL_NAME,
 					LTTNG_SYMBOL_NAME_LEN)) {
 				ret = LTTNG_ERR_INVALID_CHANNEL_NAME;
 				goto error;
 			}
 		} else if (domain->type == LTTNG_DOMAIN_PYTHON) {
-			if (strncmp(attr.name, DEFAULT_PYTHON_CHANNEL_NAME,
+			if (strncmp(attr->name, DEFAULT_PYTHON_CHANNEL_NAME,
 					LTTNG_SYMBOL_NAME_LEN)) {
 				ret = LTTNG_ERR_INVALID_CHANNEL_NAME;
 				goto error;
@@ -1501,7 +1424,7 @@ int cmd_enable_channel(struct ltt_session *session,
 
 		chan_ht = usess->domain_global.channels;
 
-		uchan = trace_ust_find_channel_by_name(chan_ht, attr.name);
+		uchan = trace_ust_find_channel_by_name(chan_ht, attr->name);
 		if (uchan == NULL) {
 			/*
 			 * Don't try to create a channel if the session has been started at
@@ -1512,8 +1435,8 @@ int cmd_enable_channel(struct ltt_session *session,
 				goto error;
 			}
 
-			ret = channel_ust_create(usess, &attr, domain->buf_type);
-			if (attr.name[0] != '\0') {
+			ret = channel_ust_create(usess, attr, domain->buf_type);
+			if (attr->name[0] != '\0') {
 				usess->has_non_default_channel = 1;
 			}
 		} else {
@@ -1526,12 +1449,13 @@ int cmd_enable_channel(struct ltt_session *session,
 		goto error;
 	}
 
-	if (ret == LTTNG_OK && attr.attr.output != LTTNG_EVENT_MMAP) {
+	if (ret == LTTNG_OK && attr->attr.output != LTTNG_EVENT_MMAP) {
 		session->has_non_mmap_channel = true;
 	}
 error:
 	rcu_read_unlock();
 end:
+	lttng_channel_destroy(attr);
 	return ret;
 }
 
@@ -1743,14 +1667,32 @@ end:
 /*
  * Command LTTNG_DISABLE_EVENT processed by the client thread.
  */
-int cmd_disable_event(struct ltt_session *session,
-		enum lttng_domain_type domain, const char *channel_name,
-		const struct lttng_event *event)
+int cmd_disable_event(struct command_ctx *cmd_ctx,
+		struct lttng_event *event,
+		char *filter_expression,
+		struct lttng_bytecode *bytecode,
+		struct lttng_event_exclusion *exclusion)
 {
 	int ret;
 	const char *event_name;
+	const struct ltt_session *session = cmd_ctx->session;
+	const char *channel_name = cmd_ctx->lsm.u.disable.channel_name;
+	const enum lttng_domain_type domain = cmd_ctx->lsm.domain.type;
 
 	DBG("Disable event command for event \'%s\'", event->name);
+
+	/*
+	 * Filter and exclusions are simply not handled by the
+	 * disable event command at this time.
+	 *
+	 * FIXME
+	 */
+	(void) filter_expression;
+	(void) exclusion;
+
+	/* Ignore the presence of filter or exclusion for the event */
+	event->filter = 0;
+	event->exclusion = 0;
 
 	event_name = event->name;
 
@@ -1914,31 +1856,31 @@ int cmd_disable_event(struct ltt_session *session,
 error_unlock:
 	rcu_read_unlock();
 error:
+	free(exclusion);
+	free(bytecode);
+	free(filter_expression);
 	return ret;
 }
 
 /*
  * Command LTTNG_ADD_CONTEXT processed by the client thread.
  */
-int cmd_add_context(struct ltt_session *session, enum lttng_domain_type domain,
-		char *channel_name, const struct lttng_event_context *ctx, int kwpipe)
+int cmd_add_context(struct command_ctx *cmd_ctx,
+	const struct lttng_event_context *event_context, int kwpipe)
 {
 	int ret, chan_kern_created = 0, chan_ust_created = 0;
-	char *app_ctx_provider_name = NULL, *app_ctx_name = NULL;
+	const enum lttng_domain_type domain = cmd_ctx->lsm.domain.type;
+	const struct ltt_session *session = cmd_ctx->session;
+	const char *channel_name = cmd_ctx->lsm.u.context.channel_name;
 
 	/*
 	 * Don't try to add a context if the session has been started at
 	 * some point in time before. The tracer does not allow it and would
 	 * result in a corrupted trace.
 	 */
-	if (session->has_been_started) {
+	if (cmd_ctx->session->has_been_started) {
 		ret = LTTNG_ERR_TRACE_ALREADY_STARTED;
 		goto end;
-	}
-
-	if (ctx->ctx == LTTNG_EVENT_CONTEXT_APP_CONTEXT) {
-		app_ctx_provider_name = ctx->u.app_ctx.provider_name;
-		app_ctx_name = ctx->u.app_ctx.ctx_name;
 	}
 
 	switch (domain) {
@@ -1954,7 +1896,8 @@ int cmd_add_context(struct ltt_session *session, enum lttng_domain_type domain,
 			chan_kern_created = 1;
 		}
 		/* Add kernel context to kernel tracer */
-		ret = context_kernel_add(session->kernel_session, ctx, channel_name);
+		ret = context_kernel_add(session->kernel_session,
+				event_context, channel_name);
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -2008,11 +1951,8 @@ int cmd_add_context(struct ltt_session *session, enum lttng_domain_type domain,
 			chan_ust_created = 1;
 		}
 
-		ret = context_ust_add(usess, domain, ctx, channel_name);
-		free(app_ctx_provider_name);
-		free(app_ctx_name);
-		app_ctx_name = NULL;
-		app_ctx_provider_name = NULL;
+		ret = context_ust_add(usess, domain, event_context,
+				channel_name);
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -2049,8 +1989,6 @@ error:
 		trace_ust_destroy_channel(uchan);
 	}
 end:
-	free(app_ctx_provider_name);
-	free(app_ctx_name);
 	return ret;
 }
 
@@ -2158,7 +2096,8 @@ static int _cmd_enable_event(struct ltt_session *session,
 				goto error;
 			}
 
-			ret = cmd_enable_channel(session, domain, attr, wpipe);
+			ret = cmd_enable_channel_internal(
+					session, domain, attr, wpipe);
 			if (ret != LTTNG_OK) {
 				goto error;
 			}
@@ -2297,7 +2236,8 @@ static int _cmd_enable_event(struct ltt_session *session,
 				goto error;
 			}
 
-			ret = cmd_enable_channel(session, domain, attr, wpipe);
+			ret = cmd_enable_channel_internal(
+					session, domain, attr, wpipe);
 			if (ret != LTTNG_OK) {
 				goto error;
 			}
@@ -2489,16 +2429,35 @@ error:
  * Command LTTNG_ENABLE_EVENT processed by the client thread.
  * We own filter, exclusion, and filter_expression.
  */
-int cmd_enable_event(struct ltt_session *session,
-		const struct lttng_domain *domain,
-		char *channel_name, struct lttng_event *event,
+int cmd_enable_event(struct command_ctx *cmd_ctx,
+		struct lttng_event *event,
 		char *filter_expression,
-		struct lttng_bytecode *filter,
 		struct lttng_event_exclusion *exclusion,
+		struct lttng_bytecode *bytecode,
 		int wpipe)
 {
-	return _cmd_enable_event(session, domain, channel_name, event,
-			filter_expression, filter, exclusion, wpipe, false);
+	int ret;
+	/*
+	 * Copied to ensure proper alignment since 'lsm' is a packed structure.
+	 */
+	const struct lttng_domain command_domain = cmd_ctx->lsm.domain;
+
+	/*
+	 * The ownership of the following parameters is transferred to
+	 * _cmd_enable_event:
+	 *
+	 *  - filter_expression,
+	 *  - bytecode,
+	 *  - exclusion
+	 */
+	ret = _cmd_enable_event(cmd_ctx->session,
+			&command_domain,
+			cmd_ctx->lsm.u.enable.channel_name, event,
+			filter_expression, bytecode, exclusion, wpipe, false);
+	filter_expression = NULL;
+	bytecode = NULL;
+	exclusion = NULL;
+	return ret;
 }
 
 /*
@@ -2521,81 +2480,204 @@ static int cmd_enable_event_internal(struct ltt_session *session,
 /*
  * Command LTTNG_LIST_TRACEPOINTS processed by the client thread.
  */
-ssize_t cmd_list_tracepoints(enum lttng_domain_type domain,
-		struct lttng_event **events)
+enum lttng_error_code cmd_list_tracepoints(enum lttng_domain_type domain,
+		struct lttng_payload *reply_payload)
 {
+	enum lttng_error_code ret_code;
 	int ret;
-	ssize_t nb_events = 0;
+	ssize_t i, nb_events = 0;
+	struct lttng_event *events = NULL;
+	struct lttcomm_list_command_header reply_command_header = {};
+	size_t reply_command_header_offset;
+
+	assert(reply_payload);
+
+	/* Reserve space for command reply header. */
+	reply_command_header_offset = reply_payload->buffer.size;
+	ret = lttng_dynamic_buffer_set_size(&reply_payload->buffer,
+			reply_command_header_offset +
+					sizeof(struct lttcomm_list_command_header));
+	if (ret) {
+		ret_code = LTTNG_ERR_NOMEM;
+		goto error;
+	}
 
 	switch (domain) {
 	case LTTNG_DOMAIN_KERNEL:
-		nb_events = kernel_list_events(events);
+		nb_events = kernel_list_events(&events);
 		if (nb_events < 0) {
-			ret = LTTNG_ERR_KERN_LIST_FAIL;
+			ret_code = LTTNG_ERR_KERN_LIST_FAIL;
 			goto error;
 		}
 		break;
 	case LTTNG_DOMAIN_UST:
-		nb_events = ust_app_list_events(events);
+		nb_events = ust_app_list_events(&events);
 		if (nb_events < 0) {
-			ret = LTTNG_ERR_UST_LIST_FAIL;
+			ret_code = LTTNG_ERR_UST_LIST_FAIL;
 			goto error;
 		}
 		break;
 	case LTTNG_DOMAIN_LOG4J:
 	case LTTNG_DOMAIN_JUL:
 	case LTTNG_DOMAIN_PYTHON:
-		nb_events = agent_list_events(events, domain);
+		nb_events = agent_list_events(&events, domain);
 		if (nb_events < 0) {
-			ret = LTTNG_ERR_UST_LIST_FAIL;
+			ret_code = LTTNG_ERR_UST_LIST_FAIL;
 			goto error;
 		}
 		break;
 	default:
-		ret = LTTNG_ERR_UND;
+		ret_code = LTTNG_ERR_UND;
 		goto error;
 	}
 
-	return nb_events;
+	for (i = 0; i < nb_events; i++) {
+		ret = lttng_event_serialize(&events[i], 0, NULL, NULL, 0, NULL,
+				reply_payload);
+		if (ret) {
+			ret_code = LTTNG_ERR_NOMEM;
+			goto error;
+		}
+	}
 
+	if (nb_events > UINT32_MAX) {
+		ERR("Tracepoint count would overflow the tracepoint listing command's reply");
+		ret_code = LTTNG_ERR_OVERFLOW;
+		goto error;
+	}
+
+	/* Update command reply header. */
+	reply_command_header.count = (uint32_t) nb_events;
+	memcpy(reply_payload->buffer.data + reply_command_header_offset, &reply_command_header,
+			sizeof(reply_command_header));
+
+	ret_code = LTTNG_OK;
 error:
-	/* Return negative value to differentiate return code */
-	return -ret;
+	free(events);
+	return ret_code;
 }
 
 /*
  * Command LTTNG_LIST_TRACEPOINT_FIELDS processed by the client thread.
  */
-ssize_t cmd_list_tracepoint_fields(enum lttng_domain_type domain,
-		struct lttng_event_field **fields)
+enum lttng_error_code cmd_list_tracepoint_fields(enum lttng_domain_type domain,
+		struct lttng_payload *reply)
 {
+	enum lttng_error_code ret_code;
 	int ret;
-	ssize_t nb_fields = 0;
+	unsigned int i, nb_fields;
+	struct lttng_event_field *fields = NULL;
+	struct lttcomm_list_command_header reply_command_header = {};
+	size_t reply_command_header_offset;
 
-	switch (domain) {
-	case LTTNG_DOMAIN_UST:
-		nb_fields = ust_app_list_event_fields(fields);
-		if (nb_fields < 0) {
-			ret = LTTNG_ERR_UST_LIST_FAIL;
-			goto error;
-		}
-		break;
-	case LTTNG_DOMAIN_KERNEL:
-	default:	/* fall-through */
-		ret = LTTNG_ERR_UND;
+	assert(reply);
+
+	/* Reserve space for command reply header. */
+	reply_command_header_offset = reply->buffer.size;
+	ret = lttng_dynamic_buffer_set_size(&reply->buffer,
+			reply_command_header_offset +
+				sizeof(struct lttcomm_list_command_header));
+	if (ret) {
+		ret_code = LTTNG_ERR_NOMEM;
 		goto error;
 	}
 
-	return nb_fields;
+	switch (domain) {
+	case LTTNG_DOMAIN_UST:
+		ret = ust_app_list_event_fields(&fields);
+		if (ret < 0) {
+			ret_code = LTTNG_ERR_UST_LIST_FAIL;
+			goto error;
+		}
+
+		break;
+	case LTTNG_DOMAIN_KERNEL:
+	default:	/* fall-through */
+		ret_code = LTTNG_ERR_UND;
+		goto error;
+	}
+
+	nb_fields = ret;
+
+	for (i = 0; i < nb_fields; i++) {
+		ret = lttng_event_field_serialize(&fields[i], reply);
+		if (ret) {
+			ret_code = LTTNG_ERR_NOMEM;
+			goto error;
+		}
+	}
+
+	if (nb_fields > UINT32_MAX) {
+		ERR("Tracepoint field count would overflow the tracepoint field listing command's reply");
+		ret_code = LTTNG_ERR_OVERFLOW;
+		goto error;
+	}
+
+	/* Update command reply header. */
+	reply_command_header.count = (uint32_t) nb_fields;
+
+	memcpy(reply->buffer.data + reply_command_header_offset, &reply_command_header,
+			sizeof(reply_command_header));
+
+	ret_code = LTTNG_OK;
 
 error:
-	/* Return negative value to differentiate return code */
-	return -ret;
+	free(fields);
+	return ret_code;
 }
 
-ssize_t cmd_list_syscalls(struct lttng_event **events)
+enum lttng_error_code cmd_list_syscalls(
+		struct lttng_payload *reply_payload)
 {
-	return syscall_table_list(events);
+	enum lttng_error_code ret_code;
+	ssize_t nb_events, i;
+	int ret;
+	struct lttng_event *events = NULL;
+	struct lttcomm_list_command_header reply_command_header = {};
+	size_t reply_command_header_offset;
+
+	assert(reply_payload);
+
+	/* Reserve space for command reply header. */
+	reply_command_header_offset = reply_payload->buffer.size;
+	ret = lttng_dynamic_buffer_set_size(&reply_payload->buffer,
+			reply_command_header_offset +
+					sizeof(struct lttcomm_list_command_header));
+	if (ret) {
+		ret_code = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	nb_events = syscall_table_list(&events);
+	if (nb_events < 0) {
+		ret_code = (enum lttng_error_code) -nb_events;
+		goto end;
+	}
+
+	for (i = 0; i < nb_events; i++) {
+		ret = lttng_event_serialize(&events[i], 0, NULL, NULL, 0, NULL,
+				reply_payload);
+		if (ret) {
+			ret_code = LTTNG_ERR_NOMEM;
+			goto end;
+		}
+	}
+
+	if (nb_events > UINT32_MAX) {
+		ERR("Syscall count would overflow the syscall listing command's reply");
+		ret_code = LTTNG_ERR_OVERFLOW;
+		goto end;
+	}
+
+	/* Update command reply header. */
+	reply_command_header.count = (uint32_t) nb_events;
+	memcpy(reply_payload->buffer.data + reply_command_header_offset, &reply_command_header,
+			sizeof(reply_command_header));
+
+	ret_code = LTTNG_OK;
+end:
+	free(events);
+	return ret_code;
 }
 
 /*
@@ -2737,7 +2819,7 @@ int cmd_start_trace(struct ltt_session *session)
 	 */
 	session->rotated_after_last_stop = false;
 
-	if (session->rotate_timer_period) {
+	if (session->rotate_timer_period && !session->rotation_schedule_timer_enabled) {
 		int int_ret = timer_session_rotation_schedule_timer_start(
 				session, session->rotate_timer_period);
 
@@ -3603,102 +3685,183 @@ error:
 /*
  * Command LTTNG_LIST_CHANNELS processed by the client thread.
  */
-ssize_t cmd_list_channels(enum lttng_domain_type domain,
-		struct ltt_session *session, struct lttng_channel **channels)
+enum lttng_error_code cmd_list_channels(enum lttng_domain_type domain,
+		struct ltt_session *session,
+		struct lttng_payload *payload)
 {
-	ssize_t nb_chan = 0, payload_size = 0, ret;
+	int ret = 0;
+	unsigned int i = 0;
+	struct lttcomm_list_command_header cmd_header = {};
+	size_t cmd_header_offset;
+	enum lttng_error_code ret_code;
 
-	switch (domain) {
-	case LTTNG_DOMAIN_KERNEL:
-		if (session->kernel_session != NULL) {
-			nb_chan = session->kernel_session->channel_count;
-		}
-		DBG3("Number of kernel channels %zd", nb_chan);
-		if (nb_chan <= 0) {
-			ret = -LTTNG_ERR_KERN_CHAN_NOT_FOUND;
-			goto end;
-		}
-		break;
-	case LTTNG_DOMAIN_UST:
-		if (session->ust_session != NULL) {
-			rcu_read_lock();
-			nb_chan = lttng_ht_get_count(
-				session->ust_session->domain_global.channels);
-			rcu_read_unlock();
-		}
-		DBG3("Number of UST global channels %zd", nb_chan);
-		if (nb_chan < 0) {
-			ret = -LTTNG_ERR_UST_CHAN_NOT_FOUND;
-			goto end;
-		}
-		break;
-	default:
-		ret = -LTTNG_ERR_UND;
+	assert(session);
+	assert(payload);
+
+	DBG("Listing channels for session %s", session->name);
+
+	cmd_header_offset = payload->buffer.size;
+
+	/* Reserve space for command reply header. */
+	ret = lttng_dynamic_buffer_set_size(&payload->buffer,
+			cmd_header_offset + sizeof(cmd_header));
+	if (ret) {
+		ret_code = LTTNG_ERR_NOMEM;
 		goto end;
 	}
 
-	if (nb_chan > 0) {
-		const size_t channel_size = sizeof(struct lttng_channel) +
-			sizeof(struct lttng_channel_extended);
-		struct lttng_channel_extended *channel_exts;
+	switch (domain) {
+	case LTTNG_DOMAIN_KERNEL:
+	{
+		/* Kernel channels */
+		struct ltt_kernel_channel *kchan;
+		if (session->kernel_session != NULL) {
+			cds_list_for_each_entry(kchan,
+					&session->kernel_session->channel_list.head, list) {
+				uint64_t discarded_events, lost_packets;
+				struct lttng_channel_extended *extended;
 
-		payload_size = nb_chan * channel_size;
-		*channels = zmalloc(payload_size);
-		if (*channels == NULL) {
-			ret = -LTTNG_ERR_FATAL;
-			goto end;
-		}
+				extended = (struct lttng_channel_extended *)
+						kchan->channel->attr.extended.ptr;
 
-		channel_exts = ((void *) *channels) +
-				(nb_chan * sizeof(struct lttng_channel));
-		ret = list_lttng_channels(domain, session, *channels, channel_exts);
-		if (ret != LTTNG_OK) {
-			free(*channels);
-			*channels = NULL;
-			goto end;
+				ret = get_kernel_runtime_stats(session, kchan,
+						&discarded_events, &lost_packets);
+				if (ret < 0) {
+					ret_code = LTTNG_ERR_UNK;
+					goto end;
+				}
+
+				/*
+				 * Update the discarded_events and lost_packets
+				 * count for the channel
+				 */
+				extended->discarded_events = discarded_events;
+				extended->lost_packets = lost_packets;
+
+				ret = lttng_channel_serialize(
+						kchan->channel, &payload->buffer);
+				if (ret) {
+					ERR("Failed to serialize lttng_channel: channel name = '%s'",
+							kchan->channel->name);
+					ret_code = LTTNG_ERR_UNK;
+					goto end;
+				}
+
+				i++;
+			}
 		}
-	} else {
-		*channels = NULL;
+		break;
+	}
+	case LTTNG_DOMAIN_UST:
+	{
+		struct lttng_ht_iter iter;
+		struct ltt_ust_channel *uchan;
+
+		rcu_read_lock();
+		cds_lfht_for_each_entry(session->ust_session->domain_global.channels->ht,
+				&iter.iter, uchan, node.node) {
+			uint64_t discarded_events = 0, lost_packets = 0;
+			struct lttng_channel *channel = NULL;
+			struct lttng_channel_extended *extended;
+
+			channel = trace_ust_channel_to_lttng_channel(uchan);
+			if (!channel) {
+				ret_code = LTTNG_ERR_NOMEM;
+				goto end;
+			}
+
+			extended = (struct lttng_channel_extended *)
+						   channel->attr.extended.ptr;
+
+			ret = get_ust_runtime_stats(session, uchan,
+					&discarded_events, &lost_packets);
+			if (ret < 0) {
+				lttng_channel_destroy(channel);
+				ret_code = LTTNG_ERR_UNK;
+				goto end;
+			}
+
+			extended->discarded_events = discarded_events;
+			extended->lost_packets = lost_packets;
+
+			ret = lttng_channel_serialize(
+					channel, &payload->buffer);
+			if (ret) {
+				ERR("Failed to serialize lttng_channel: channel name = '%s'",
+						channel->name);
+				lttng_channel_destroy(channel);
+				ret_code = LTTNG_ERR_UNK;
+				goto end;
+			}
+
+			lttng_channel_destroy(channel);
+			i++;
+		}
+		rcu_read_unlock();
+		break;
+	}
+	default:
+		break;
 	}
 
-	ret = payload_size;
+	if (i > UINT32_MAX) {
+		ERR("Channel count would overflow the channel listing command's reply");
+		ret_code = LTTNG_ERR_OVERFLOW;
+		goto end;
+	}
+
+	/* Update command reply header. */
+	cmd_header.count = (uint32_t) i;
+	memcpy(payload->buffer.data + cmd_header_offset, &cmd_header,
+			sizeof(cmd_header));
+	ret_code = LTTNG_OK;
+
 end:
-	return ret;
+	return ret_code;
 }
 
 /*
  * Command LTTNG_LIST_EVENTS processed by the client thread.
  */
-ssize_t cmd_list_events(enum lttng_domain_type domain,
-		struct ltt_session *session, char *channel_name,
-		struct lttng_payload *payload)
+enum lttng_error_code cmd_list_events(enum lttng_domain_type domain,
+		struct ltt_session *session,
+		char *channel_name,
+		struct lttng_payload *reply_payload)
 {
-	int ret = 0;
-	ssize_t nb_events = 0;
-	struct lttcomm_event_command_header cmd_header = {};
-	const size_t cmd_header_offset = payload->buffer.size;
+	int buffer_resize_ret;
+	enum lttng_error_code ret_code = LTTNG_OK;
+	struct lttcomm_list_command_header reply_command_header = {};
+	size_t reply_command_header_offset;
+	unsigned int nb_events = 0;
 
-	ret = lttng_dynamic_buffer_append(
-			&payload->buffer, &cmd_header, sizeof(cmd_header));
-	if (ret) {
-		ret = LTTNG_ERR_NOMEM;
-		goto error;
+	assert(reply_payload);
+
+	/* Reserve space for command reply header. */
+	reply_command_header_offset = reply_payload->buffer.size;
+	buffer_resize_ret = lttng_dynamic_buffer_set_size(&reply_payload->buffer,
+			reply_command_header_offset +
+					sizeof(struct lttcomm_list_command_header));
+	if (buffer_resize_ret) {
+		ret_code = LTTNG_ERR_NOMEM;
+		goto end;
 	}
 
 	switch (domain) {
 	case LTTNG_DOMAIN_KERNEL:
 		if (session->kernel_session != NULL) {
-			nb_events = list_lttng_kernel_events(channel_name,
-					session->kernel_session, payload);
+			ret_code = list_lttng_kernel_events(channel_name,
+					session->kernel_session, reply_payload, &nb_events);
 		}
+
 		break;
 	case LTTNG_DOMAIN_UST:
 	{
 		if (session->ust_session != NULL) {
-			nb_events = list_lttng_ust_global_events(channel_name,
+			ret_code = list_lttng_ust_global_events(channel_name,
 					&session->ust_session->domain_global,
-					payload);
+					reply_payload, &nb_events);
 		}
+
 		break;
 	}
 	case LTTNG_DOMAIN_LOG4J:
@@ -3712,27 +3875,32 @@ ssize_t cmd_list_events(enum lttng_domain_type domain,
 			cds_lfht_for_each_entry(session->ust_session->agents->ht,
 					&iter.iter, agt, node.node) {
 				if (agt->domain == domain) {
-					nb_events = list_lttng_agent_events(
-							agt, payload);
+					ret_code = list_lttng_agent_events(
+							agt, reply_payload, &nb_events);
 					break;
 				}
 			}
+
 			rcu_read_unlock();
 		}
 		break;
 	default:
-		ret = LTTNG_ERR_UND;
-		goto error;
+		ret_code = LTTNG_ERR_UND;
+		break;
 	}
 
-	((struct lttcomm_event_command_header *) (payload->buffer.data +
-			 cmd_header_offset))->nb_events = (uint32_t) nb_events;
+	if (nb_events > UINT32_MAX) {
+		ret_code = LTTNG_ERR_OVERFLOW;
+		goto end;
+	}
 
-	return nb_events;
+	/* Update command reply header. */
+	reply_command_header.count = (uint32_t) nb_events;
+	memcpy(reply_payload->buffer.data + reply_command_header_offset, &reply_command_header,
+			sizeof(reply_command_header));
 
-error:
-	/* Return negative value to differentiate return code */
-	return -ret;
+end:
+	return ret_code;
 }
 
 /*

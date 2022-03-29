@@ -9,7 +9,7 @@ EXTRA_DIST = test_all_events \
 						 test_kernel_function \
 						 test_lttng_logger \
 						 test_ns_contexts \
-						 test_ns_contexts_change
+						 test_ns_contexts_change \
 						 test_rotation_destroy_flush \
 						 test_select_poll_epoll \
 						 test_syscall \
@@ -18,7 +18,7 @@ EXTRA_DIST = test_all_events \
 
 noinst_PROGRAMS = select_poll_epoll
 select_poll_epoll_SOURCES = select_poll_epoll.c
-select_poll_epoll_LDADD = $(POPT_LIBS)
+select_poll_epoll_LDADD = $(POPT_LIBS) $(top_builddir)/src/common/libcommon-lgpl.la
 select_poll_epoll_CFLAGS = $(POPT_CFLAGS) -fno-stack-protector -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 $(AM_CFLAGS)
 
 all-local:
