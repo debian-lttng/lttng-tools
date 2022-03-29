@@ -154,7 +154,7 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
-am__dist_noinst_JAVA_DIST = JTestLTTng.java
+am__dist_noinst_JAVA_DIST = JTestLTTngLog4j.java
 CLASSPATH_ENV = CLASSPATH=$(JAVAROOT):$(srcdir)/$(JAVAROOT)$${CLASSPATH:+":$$CLASSPATH"}
 am__java_sources = $(dist_noinst_JAVA)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
@@ -448,9 +448,9 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 JAVAROOT = .
-noinst_SCRIPTS = test_java_log4j JTestLTTng.java
-EXTRA_DIST = test_java_log4j JTestLTTng.java
-@TEST_JAVA_LOG4J_AGENT_TRUE@dist_noinst_JAVA = JTestLTTng.java
+noinst_SCRIPTS = test_java_log4j JTestLTTngLog4j.java
+EXTRA_DIST = test_java_log4j JTestLTTngLog4j.java
+@TEST_JAVA_LOG4J_AGENT_TRUE@dist_noinst_JAVA = JTestLTTngLog4j.java
 all: all-am
 
 .SUFFIXES:

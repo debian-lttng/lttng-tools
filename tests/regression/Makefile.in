@@ -96,8 +96,6 @@ target_triplet = @target@
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/multi-session/test_multi_session \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/nprocesses/test_nprocesses \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/overlap/test_overlap \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/java-jul/test_java_jul \
-@HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/java-log4j/test_java_log4j \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/python-logging/test_python_logging \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/getcpu-override/test_getcpu_override \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	ust/clock-override/test_clock_override \
@@ -111,11 +109,27 @@ target_triplet = @target@
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	tools/relayd-grouping/test_ust \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@	tools/trigger/rate-policy/test_ust_rate_policy
 
-@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@am__append_3 = \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@TEST_JAVA_JUL_AGENT_TRUE@am__append_3 = ust/java-jul/test_java_jul
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@TEST_JAVA_LOG4J_AGENT_TRUE@am__append_4 = ust/java-log4j/test_java_log4j
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@TEST_JAVA_LOG4J2_AGENT_TRUE@am__append_5 = ust/java-log4j2/test_agent_log4j2_domain_log4j
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@am__append_6 = \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_all_events \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_callstack \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_channel \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_clock_override \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_event_basic \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_kernel_function \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_lttng_logger \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_ns_contexts \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_ns_contexts_change \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_rotation_destroy_flush \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_select_poll_epoll \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_syscall \
+@HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	kernel/test_userspace_probe \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	ust/namespaces/test_ns_contexts \
 @HAVE_LIBLTTNG_UST_CTL_TRUE@@IS_LINUX_TRUE@	ust/namespaces/test_ns_contexts_change
 
-@PYTHON_BINDING_TRUE@am__append_4 = ust/linking/test_linking \
+@PYTHON_BINDING_TRUE@am__append_7 = ust/linking/test_linking \
 @PYTHON_BINDING_TRUE@	ust/daemon/test_daemon \
 @PYTHON_BINDING_TRUE@	ust/exit-fast/test_exit-fast \
 @PYTHON_BINDING_TRUE@	ust/fork/test_fork \
@@ -781,7 +795,8 @@ TESTS = tools/base-path/test_ust tools/channel/test_channel \
 	tools/trigger/test_remove_trigger_cli \
 	tools/trigger/name/test_trigger_name_backwards_compat \
 	tools/trigger/hidden/test_hidden_trigger $(am__append_2) \
-	$(am__append_3) $(am__append_4)
+	$(am__append_3) $(am__append_4) $(am__append_5) \
+	$(am__append_6) $(am__append_7)
 all: all-recursive
 
 .SUFFIXES:
@@ -1447,20 +1462,6 @@ ust/overlap/test_overlap.log: ust/overlap/test_overlap
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
 	"$$tst" $(AM_TESTS_FD_REDIRECT)
-ust/java-jul/test_java_jul.log: ust/java-jul/test_java_jul
-	@p='ust/java-jul/test_java_jul'; \
-	b='ust/java-jul/test_java_jul'; \
-	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
-	--log-file $$b.log --trs-file $$b.trs \
-	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
-	"$$tst" $(AM_TESTS_FD_REDIRECT)
-ust/java-log4j/test_java_log4j.log: ust/java-log4j/test_java_log4j
-	@p='ust/java-log4j/test_java_log4j'; \
-	b='ust/java-log4j/test_java_log4j'; \
-	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
-	--log-file $$b.log --trs-file $$b.trs \
-	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
-	"$$tst" $(AM_TESTS_FD_REDIRECT)
 ust/python-logging/test_python_logging.log: ust/python-logging/test_python_logging
 	@p='ust/python-logging/test_python_logging'; \
 	b='ust/python-logging/test_python_logging'; \
@@ -1541,6 +1542,118 @@ tools/relayd-grouping/test_ust.log: tools/relayd-grouping/test_ust
 tools/trigger/rate-policy/test_ust_rate_policy.log: tools/trigger/rate-policy/test_ust_rate_policy
 	@p='tools/trigger/rate-policy/test_ust_rate_policy'; \
 	b='tools/trigger/rate-policy/test_ust_rate_policy'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+ust/java-jul/test_java_jul.log: ust/java-jul/test_java_jul
+	@p='ust/java-jul/test_java_jul'; \
+	b='ust/java-jul/test_java_jul'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+ust/java-log4j/test_java_log4j.log: ust/java-log4j/test_java_log4j
+	@p='ust/java-log4j/test_java_log4j'; \
+	b='ust/java-log4j/test_java_log4j'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+ust/java-log4j2/test_agent_log4j2_domain_log4j.log: ust/java-log4j2/test_agent_log4j2_domain_log4j
+	@p='ust/java-log4j2/test_agent_log4j2_domain_log4j'; \
+	b='ust/java-log4j2/test_agent_log4j2_domain_log4j'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_all_events.log: kernel/test_all_events
+	@p='kernel/test_all_events'; \
+	b='kernel/test_all_events'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_callstack.log: kernel/test_callstack
+	@p='kernel/test_callstack'; \
+	b='kernel/test_callstack'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_channel.log: kernel/test_channel
+	@p='kernel/test_channel'; \
+	b='kernel/test_channel'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_clock_override.log: kernel/test_clock_override
+	@p='kernel/test_clock_override'; \
+	b='kernel/test_clock_override'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_event_basic.log: kernel/test_event_basic
+	@p='kernel/test_event_basic'; \
+	b='kernel/test_event_basic'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_kernel_function.log: kernel/test_kernel_function
+	@p='kernel/test_kernel_function'; \
+	b='kernel/test_kernel_function'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_lttng_logger.log: kernel/test_lttng_logger
+	@p='kernel/test_lttng_logger'; \
+	b='kernel/test_lttng_logger'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_ns_contexts.log: kernel/test_ns_contexts
+	@p='kernel/test_ns_contexts'; \
+	b='kernel/test_ns_contexts'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_ns_contexts_change.log: kernel/test_ns_contexts_change
+	@p='kernel/test_ns_contexts_change'; \
+	b='kernel/test_ns_contexts_change'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_rotation_destroy_flush.log: kernel/test_rotation_destroy_flush
+	@p='kernel/test_rotation_destroy_flush'; \
+	b='kernel/test_rotation_destroy_flush'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_select_poll_epoll.log: kernel/test_select_poll_epoll
+	@p='kernel/test_select_poll_epoll'; \
+	b='kernel/test_select_poll_epoll'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_syscall.log: kernel/test_syscall
+	@p='kernel/test_syscall'; \
+	b='kernel/test_syscall'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+kernel/test_userspace_probe.log: kernel/test_userspace_probe
+	@p='kernel/test_userspace_probe'; \
+	b='kernel/test_userspace_probe'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \

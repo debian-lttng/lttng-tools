@@ -153,9 +153,9 @@ LTLIBRARIES = $(noinst_LTLIBRARIES)
 libcommon_gpl_la_DEPENDENCIES = libcommon-lgpl.la libpath.la \
 	$(top_builddir)/src/common/hashtable/libhashtable-gpl.la \
 	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la
-am_libcommon_gpl_la_OBJECTS = context.lo daemonize.lo event.lo \
-	filter.lo fs-handle.lo futex.lo index-allocator.lo pipe.lo \
-	shm.lo trace-chunk.lo uuid.lo waiter.lo
+am_libcommon_gpl_la_OBJECTS = context.lo daemonize.lo filter.lo \
+	fs-handle.lo futex.lo index-allocator.lo pipe.lo shm.lo \
+	trace-chunk.lo uuid.lo waiter.lo
 libcommon_gpl_la_OBJECTS = $(am_libcommon_gpl_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -172,13 +172,13 @@ am__libcommon_lgpl_la_SOURCES_DIST = actions/action.c actions/list.c \
 	actions/notify.c actions/path.c actions/rotate-session.c \
 	actions/snapshot-session.c actions/start-session.c \
 	actions/stop-session.c actions/rate-policy.c buffer-view.h \
-	buffer-view.c conditions/buffer-usage.c conditions/condition.c \
-	conditions/event-rule-matches.c \
+	buffer-view.c channel.c conditions/buffer-usage.c \
+	conditions/condition.c conditions/event-rule-matches.c \
 	conditions/session-consumed-size.c \
 	conditions/session-rotation.c credentials.c credentials.h \
 	defaults.c domain.c dynamic-array.c dynamic-array.h \
 	dynamic-buffer.c dynamic-buffer.h endpoint.c error.c error.h \
-	error-query.c evaluation.c event-expr/event-expr.c \
+	error-query.c evaluation.c event.c event-expr/event-expr.c \
 	event-field-value.c event-rule/event-rule.c \
 	event-rule/kernel-kprobe.c event-rule/kernel-syscall.c \
 	event-rule/kernel-uprobe.c event-rule/kernel-tracepoint.c \
@@ -197,22 +197,23 @@ am_libcommon_lgpl_la_OBJECTS = actions/action.lo actions/list.lo \
 	actions/notify.lo actions/path.lo actions/rotate-session.lo \
 	actions/snapshot-session.lo actions/start-session.lo \
 	actions/stop-session.lo actions/rate-policy.lo buffer-view.lo \
-	conditions/buffer-usage.lo conditions/condition.lo \
+	channel.lo conditions/buffer-usage.lo conditions/condition.lo \
 	conditions/event-rule-matches.lo \
 	conditions/session-consumed-size.lo \
 	conditions/session-rotation.lo credentials.lo defaults.lo \
 	domain.lo dynamic-array.lo dynamic-buffer.lo endpoint.lo \
-	error.lo error-query.lo evaluation.lo event-expr/event-expr.lo \
-	event-field-value.lo event-rule/event-rule.lo \
-	event-rule/kernel-kprobe.lo event-rule/kernel-syscall.lo \
-	event-rule/kernel-uprobe.lo event-rule/kernel-tracepoint.lo \
-	event-rule/user-tracepoint.lo event-rule/log4j-logging.lo \
-	event-rule/jul-logging.lo event-rule/python-logging.lo \
-	fd-handle.lo kernel-probe.lo location.lo log-level-rule.lo \
-	mi-lttng.lo notification.lo payload.lo payload-view.lo \
-	readwrite.lo runas.lo session-descriptor.lo snapshot.lo \
-	spawn-viewer.lo thread.lo time.lo tracker.lo trigger.lo \
-	unix.lo uri.lo userspace-probe.lo utils.lo $(am__objects_1)
+	error.lo error-query.lo evaluation.lo event.lo \
+	event-expr/event-expr.lo event-field-value.lo \
+	event-rule/event-rule.lo event-rule/kernel-kprobe.lo \
+	event-rule/kernel-syscall.lo event-rule/kernel-uprobe.lo \
+	event-rule/kernel-tracepoint.lo event-rule/user-tracepoint.lo \
+	event-rule/log4j-logging.lo event-rule/jul-logging.lo \
+	event-rule/python-logging.lo fd-handle.lo kernel-probe.lo \
+	location.lo log-level-rule.lo mi-lttng.lo notification.lo \
+	payload.lo payload-view.lo readwrite.lo runas.lo \
+	session-descriptor.lo snapshot.lo spawn-viewer.lo thread.lo \
+	time.lo tracker.lo trigger.lo unix.lo uri.lo \
+	userspace-probe.lo utils.lo $(am__objects_1)
 libcommon_lgpl_la_OBJECTS = $(am_libcommon_lgpl_la_OBJECTS)
 libpath_la_LIBADD =
 am_libpath_la_OBJECTS = path.lo
@@ -656,13 +657,13 @@ libcommon_lgpl_la_SOURCES = actions/action.c actions/list.c \
 	actions/notify.c actions/path.c actions/rotate-session.c \
 	actions/snapshot-session.c actions/start-session.c \
 	actions/stop-session.c actions/rate-policy.c buffer-view.h \
-	buffer-view.c conditions/buffer-usage.c conditions/condition.c \
-	conditions/event-rule-matches.c \
+	buffer-view.c channel.c conditions/buffer-usage.c \
+	conditions/condition.c conditions/event-rule-matches.c \
 	conditions/session-consumed-size.c \
 	conditions/session-rotation.c credentials.c credentials.h \
 	defaults.c domain.c dynamic-array.c dynamic-array.h \
 	dynamic-buffer.c dynamic-buffer.h endpoint.c error.c error.h \
-	error-query.c evaluation.c event-expr/event-expr.c \
+	error-query.c evaluation.c event.c event-expr/event-expr.c \
 	event-field-value.c event-rule/event-rule.c \
 	event-rule/kernel-kprobe.c event-rule/kernel-syscall.c \
 	event-rule/kernel-uprobe.c event-rule/kernel-tracepoint.c \
@@ -696,7 +697,6 @@ libcommon_gpl_la_SOURCES = \
 	common.h \
 	context.c context.h \
 	daemonize.c daemonize.h \
-	event.c \
 	filter.c filter.h \
 	fs-handle.c fs-handle.h fs-handle-internal.h \
 	futex.c futex.h \
@@ -884,6 +884,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/buffer-view.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/channel.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/context.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/credentials.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/daemonize.Plo@am__quote@

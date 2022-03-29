@@ -2,11 +2,11 @@
 
 JAVAROOT = .
 
-noinst_SCRIPTS = test_java_log4j JTestLTTng.java
-EXTRA_DIST = test_java_log4j JTestLTTng.java
+noinst_SCRIPTS = test_java_log4j JTestLTTngLog4j.java
+EXTRA_DIST = test_java_log4j JTestLTTngLog4j.java
 
 if TEST_JAVA_LOG4J_AGENT
-dist_noinst_JAVA = JTestLTTng.java
+dist_noinst_JAVA = JTestLTTngLog4j.java
 endif # TEST_JAVA_LOG4J_AGENT
 
 all-local: static_file

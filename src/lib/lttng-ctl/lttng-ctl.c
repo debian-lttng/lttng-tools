@@ -15,6 +15,7 @@
 #include <grp.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -292,12 +293,14 @@ end:
 	return ret;
 }
 
-static int check_enough_available_memory(size_t num_bytes_requested_per_cpu)
+static enum lttng_error_code check_enough_available_memory(
+		uint64_t num_bytes_requested_per_cpu)
 {
 	int ret;
+	enum lttng_error_code ret_code;
 	long num_cpu;
-	size_t best_mem_info;
-	size_t num_bytes_requested_total;
+	uint64_t best_mem_info;
+	uint64_t num_bytes_requested_total;
 
 	/*
 	 * Get the number of CPU currently online to compute the amount of
@@ -305,10 +308,18 @@ static int check_enough_available_memory(size_t num_bytes_requested_per_cpu)
 	 */
 	num_cpu = sysconf(_SC_NPROCESSORS_ONLN);
 	if (num_cpu == -1) {
-		goto error;
+		ret_code = LTTNG_ERR_FATAL;
+		goto end;
 	}
 
-	num_bytes_requested_total = num_bytes_requested_per_cpu * num_cpu;
+	if (num_bytes_requested_per_cpu > UINT64_MAX / (uint64_t) num_cpu) {
+		/* Overflow */
+		ret_code = LTTNG_ERR_OVERFLOW;
+		goto end;
+	}
+
+	num_bytes_requested_total =
+			num_bytes_requested_per_cpu * (uint64_t) num_cpu;
 
 	/*
 	 * Try to get the `MemAvail` field of `/proc/meminfo`. This is the most
@@ -330,10 +341,18 @@ static int check_enough_available_memory(size_t num_bytes_requested_per_cpu)
 		goto success;
 	}
 
-error:
-	return -1;
+	/* No valid source of information. */
+	ret_code = LTTNG_ERR_NOMEM;
+	goto end;
+
 success:
-	return best_mem_info >= num_bytes_requested_total;
+	if (best_mem_info >= num_bytes_requested_total) {
+		ret_code = LTTNG_OK;
+	} else {
+		ret_code = LTTNG_ERR_NOMEM;
+	}
+end:
+	return ret_code;
 }
 
 /*
@@ -900,9 +919,10 @@ int lttng_add_context(struct lttng_handle *handle,
 		const char *channel_name)
 {
 	int ret;
-	size_t len = 0;
-	char *buf = NULL;
-	struct lttcomm_session_msg lsm;
+	struct lttcomm_session_msg lsm = { .cmd_type = LTTNG_ADD_CONTEXT };
+	struct lttng_payload payload;
+
+	lttng_payload_init(&payload);
 
 	/* Safety check. Both are mandatory. */
 	if (handle == NULL || ctx == NULL) {
@@ -910,8 +930,11 @@ int lttng_add_context(struct lttng_handle *handle,
 		goto end;
 	}
 
-	memset(&lsm, 0, sizeof(lsm));
-	lsm.cmd_type = LTTNG_ADD_CONTEXT;
+	ret = lttng_dynamic_buffer_set_size(&payload.buffer, sizeof(lsm));
+	if (ret) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto end;
+	}
 
 	/* If no channel name, send empty string. */
 	ret = lttng_strncpy(lsm.u.context.channel_name, channel_name ?: "",
@@ -929,55 +952,33 @@ int lttng_add_context(struct lttng_handle *handle,
 		goto end;
 	}
 
-	if (ctx->ctx == LTTNG_EVENT_CONTEXT_APP_CONTEXT) {
-		size_t provider_len, ctx_len;
-		const char *provider_name = ctx->u.app_ctx.provider_name;
-		const char *ctx_name = ctx->u.app_ctx.ctx_name;
-
-		if (!provider_name || !ctx_name) {
-			ret = -LTTNG_ERR_INVALID;
-			goto end;
-		}
-
-		provider_len = strlen(provider_name);
-		if (provider_len == 0) {
-			ret = -LTTNG_ERR_INVALID;
-			goto end;
-		}
-		lsm.u.context.provider_name_len = provider_len;
-
-		ctx_len = strlen(ctx_name);
-		if (ctx_len == 0) {
-			ret = -LTTNG_ERR_INVALID;
-			goto end;
-		}
-		lsm.u.context.context_name_len = ctx_len;
-
-		len = provider_len + ctx_len;
-		buf = zmalloc(len);
-		if (!buf) {
-			ret = -LTTNG_ERR_NOMEM;
-			goto end;
-		}
-
-		memcpy(buf, provider_name, provider_len);
-		memcpy(buf + provider_len, ctx_name, ctx_len);
-	}
-	memcpy(&lsm.u.context.ctx, ctx, sizeof(struct lttng_event_context));
-
-	if (ctx->ctx == LTTNG_EVENT_CONTEXT_APP_CONTEXT) {
-		/*
-		 * Don't leak application addresses to the sessiond.
-		 * This is only necessary when ctx is for an app ctx otherwise
-		 * the values inside the union (type & config) are overwritten.
-		 */
-		lsm.u.context.ctx.u.app_ctx.provider_name = NULL;
-		lsm.u.context.ctx.u.app_ctx.ctx_name = NULL;
+	ret = lttng_event_context_serialize(ctx, &payload);
+	if (ret) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
 	}
 
-	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, buf, len, NULL);
+	lsm.u.context.length = payload.buffer.size - sizeof(lsm);
+
+	/* Update message header. */
+	memcpy(payload.buffer.data, &lsm, sizeof(lsm));
+
+	{
+		struct lttng_payload reply;
+		struct lttng_payload_view payload_view =
+				lttng_payload_view_from_payload(&payload, 0,
+				-1);
+
+		lttng_payload_init(&reply);
+		ret = lttng_ctl_ask_sessiond_payload(&payload_view, &reply);
+		lttng_payload_reset(&reply);
+		if (ret) {
+			goto end;
+		}
+	}
+
 end:
-	free(buf);
+	lttng_payload_reset(&payload);
 	return ret;
 }
 
@@ -1086,11 +1087,12 @@ int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
 		const char *original_filter_expression,
 		int exclusion_count, char **exclusion_list)
 {
-	struct lttcomm_session_msg lsm;
+	struct lttcomm_session_msg lsm = { .cmd_type = LTTNG_ENABLE_EVENT };
 	struct lttng_payload payload;
-	int ret = 0, i;
+	int ret = 0;
 	unsigned int free_filter_expression = 0;
 	struct filter_parser_ctx *ctx = NULL;
+	size_t bytecode_len = 0;
 
 	/*
 	 * We have either a filter or some exclusions, so we need to set up
@@ -1120,35 +1122,11 @@ int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
 		goto error;
 	}
 
-	memset(&lsm, 0, sizeof(lsm));
-
-	/* If no channel name, send empty string. */
-	ret = lttng_strncpy(lsm.u.enable.channel_name, channel_name ?: "",
-			sizeof(lsm.u.enable.channel_name));
-	if (ret) {
-		ret = -LTTNG_ERR_INVALID;
-		goto error;
-	}
-
-	lsm.cmd_type = LTTNG_ENABLE_EVENT;
 	if (ev->name[0] == '\0') {
 		/* Enable all events. */
 		ret = lttng_strncpy(ev->name, "*", sizeof(ev->name));
 		assert(ret == 0);
 	}
-
-	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
-	memcpy(&lsm.u.enable.event, ev, sizeof(lsm.u.enable.event));
-
-	ret = lttng_strncpy(lsm.session.name, handle->session_name,
-			sizeof(lsm.session.name));
-	if (ret) {
-		ret = -LTTNG_ERR_INVALID;
-		goto error;
-	}
-
-	lsm.u.enable.exclusion_count = exclusion_count;
-	lsm.u.enable.bytecode_len = 0;
 
 	/* Parse filter expression. */
 	if (filter_expression != NULL || handle->domain.type == LTTNG_DOMAIN_JUL
@@ -1159,7 +1137,7 @@ int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
 				handle->domain.type == LTTNG_DOMAIN_PYTHON) {
 			char *agent_filter;
 
-			/* Setup JUL filter if needed. */
+			/* Setup agent filter if needed. */
 			agent_filter = set_agent_filter(filter_expression, ev);
 			if (!agent_filter) {
 				if (!filter_expression) {
@@ -1167,7 +1145,7 @@ int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
 					 * No JUL and no filter, just skip
 					 * everything below.
 					 */
-					goto ask_sessiond;
+					goto serialize;
 				}
 			} else {
 				/*
@@ -1180,94 +1158,56 @@ int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
 			}
 		}
 
+		if (strnlen(filter_expression, LTTNG_FILTER_MAX_LEN) ==
+				LTTNG_FILTER_MAX_LEN) {
+			ret = -LTTNG_ERR_FILTER_INVAL;
+			goto error;
+		}
+
 		ret = filter_parser_ctx_create_from_filter_expression(filter_expression, &ctx);
 		if (ret) {
-			goto filter_error;
+			goto error;
 		}
 
-		lsm.u.enable.bytecode_len = sizeof(ctx->bytecode->b)
-			+ bytecode_get_len(&ctx->bytecode->b);
-		lsm.u.enable.expression_len = strlen(filter_expression) + 1;
+		bytecode_len = bytecode_get_len(&ctx->bytecode->b) +
+				sizeof(ctx->bytecode->b);
+		if (bytecode_len > LTTNG_FILTER_MAX_LEN) {
+			ret = -LTTNG_ERR_FILTER_INVAL;
+			goto error;
+		}
 	}
 
-	ret = lttng_dynamic_buffer_set_capacity(&payload.buffer,
-			lsm.u.enable.bytecode_len +
-					lsm.u.enable.expression_len +
-					LTTNG_SYMBOL_NAME_LEN *
-							exclusion_count);
+serialize:
+	ret = lttng_event_serialize(ev, exclusion_count, exclusion_list,
+			filter_expression, bytecode_len,
+			(ctx && bytecode_len) ? &ctx->bytecode->b : NULL,
+			&payload);
 	if (ret) {
-		ret = -LTTNG_ERR_EXCLUSION_NOMEM;
-		goto mem_error;
+		ret = -LTTNG_ERR_INVALID;
+		goto error;
 	}
 
-	/* Put exclusion names first in the data. */
-	for (i = 0; i < exclusion_count; i++) {
-		size_t exclusion_len;
-
-		exclusion_len = lttng_strnlen(exclusion_list[i],
-				LTTNG_SYMBOL_NAME_LEN);
-		if (exclusion_len == LTTNG_SYMBOL_NAME_LEN) {
-			/* Exclusion is not NULL-terminated. */
-			ret = -LTTNG_ERR_INVALID;
-			goto mem_error;
-		}
-
-		ret = lttng_dynamic_buffer_append(&payload.buffer,
-				exclusion_list[i], exclusion_len);
-		if (ret) {
-			goto mem_error;
-		}
-
-		/*
-		 * Padding the rest of the entry with zeros. Every exclusion
-		 * entries take LTTNG_SYMBOL_NAME_LEN bytes in the buffer.
-		 */
-		ret = lttng_dynamic_buffer_set_size(&payload.buffer,
-				LTTNG_SYMBOL_NAME_LEN * (i + 1));
-		if (ret) {
-			goto mem_error;
-		}
+	/* If no channel name, send empty string. */
+	ret = lttng_strncpy(lsm.u.enable.channel_name, channel_name ?: "",
+			sizeof(lsm.u.enable.channel_name));
+	if (ret) {
+		ret = -LTTNG_ERR_INVALID;
+		goto error;
 	}
 
-	/* Add filter expression next. */
-	if (filter_expression) {
-		ret = lttng_dynamic_buffer_append(&payload.buffer,
-				filter_expression, lsm.u.enable.expression_len);
-		if (ret) {
-			goto mem_error;
-		}
-	}
-	/* Add filter bytecode next. */
-	if (ctx && lsm.u.enable.bytecode_len != 0) {
-		ret = lttng_dynamic_buffer_append(&payload.buffer,
-				&ctx->bytecode->b, lsm.u.enable.bytecode_len);
-		if (ret) {
-			goto mem_error;
-		}
-	}
-	if (ev->extended.ptr) {
-		struct lttng_event_extended *ev_ext =
-			(struct lttng_event_extended *) ev->extended.ptr;
+	/* Domain */
+	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
 
-		if (ev_ext->probe_location) {
-			/*
-			 * lttng_userspace_probe_location_serialize returns the
-			 * number of bytes that was appended to the buffer.
-			 */
-			ret = lttng_userspace_probe_location_serialize(
-					ev_ext->probe_location, &payload);
-			if (ret < 0) {
-				goto mem_error;
-			}
-
-			/*
-			 * Set the size of the userspace probe location element
-			 * of the buffer so that the receiving side knows where
-			 * to split it.
-			 */
-			lsm.u.enable.userspace_probe_location_len = ret;
-		}
+	/* Session name */
+	ret = lttng_strncpy(lsm.session.name, handle->session_name,
+			sizeof(lsm.session.name));
+	if (ret) {
+		ret = -LTTNG_ERR_INVALID;
+		goto error;
 	}
+
+	/* Length of the serialized event. */
+	lsm.u.enable.length = (uint32_t) payload.buffer.size;
 
 	{
 		struct lttng_payload_view view = lttng_payload_view_from_payload(
@@ -1276,7 +1216,7 @@ int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
 		int fd_to_send;
 
 		if (fd_count < 0) {
-			goto mem_error;
+			goto error;
 		}
 
 		assert(fd_count == 0 || fd_count == 1);
@@ -1285,12 +1225,14 @@ int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
 					lttng_payload_view_pop_fd_handle(&view);
 
 			if (!h) {
-				goto mem_error;
+				goto error;
 			}
 
 			fd_to_send = fd_handle_get_fd(h);
 			fd_handle_put(h);
 		}
+
+		lsm.fd_count = fd_count;
 
 		ret = lttng_ctl_ask_sessiond_fds_varlen(&lsm,
 				fd_count ? &fd_to_send : NULL, fd_count,
@@ -1298,13 +1240,12 @@ int lttng_enable_event_with_exclusions(struct lttng_handle *handle,
 				view.buffer.size, NULL, NULL, 0);
 	}
 
-mem_error:
+error:
 	if (filter_expression && ctx) {
 		filter_bytecode_free(ctx);
 		filter_ir_free(ctx);
 		filter_parser_ctx_free(ctx);
 	}
-filter_error:
 	if (free_filter_expression) {
 		/*
 		 * The filter expression has been replaced and must be freed as
@@ -1313,16 +1254,11 @@ filter_error:
 		 */
 		free(filter_expression);
 	}
-error:
 	/*
 	 * Return directly to the caller and don't ask the sessiond since
 	 * something went wrong in the parsing of data above.
 	 */
 	lttng_payload_reset(&payload);
-	return ret;
-
-ask_sessiond:
-	ret = lttng_ctl_ask_sessiond(&lsm, NULL);
 	return ret;
 }
 
@@ -1330,11 +1266,19 @@ int lttng_disable_event_ext(struct lttng_handle *handle,
 		struct lttng_event *ev, const char *channel_name,
 		const char *original_filter_expression)
 {
-	struct lttcomm_session_msg lsm;
-	char *varlen_data;
+	struct lttcomm_session_msg lsm = { .cmd_type = LTTNG_DISABLE_EVENT };
+	struct lttng_payload payload;
 	int ret = 0;
 	unsigned int free_filter_expression = 0;
 	struct filter_parser_ctx *ctx = NULL;
+	size_t bytecode_len = 0;
+
+	/*
+	 * We have either a filter or some exclusions, so we need to set up
+	 * a variable-length payload from where to send the data.
+	 */
+	lttng_payload_init(&payload);
+
 	/*
 	 * Cast as non-const since we may replace the filter expression
 	 * by a dynamically allocated string. Otherwise, the original
@@ -1357,7 +1301,64 @@ int lttng_disable_event_ext(struct lttng_handle *handle,
 		goto error;
 	}
 
-	memset(&lsm, 0, sizeof(lsm));
+	/* Parse filter expression. */
+	if (filter_expression != NULL || handle->domain.type == LTTNG_DOMAIN_JUL
+			|| handle->domain.type == LTTNG_DOMAIN_LOG4J
+			|| handle->domain.type == LTTNG_DOMAIN_PYTHON) {
+		if (handle->domain.type == LTTNG_DOMAIN_JUL ||
+				handle->domain.type == LTTNG_DOMAIN_LOG4J ||
+				handle->domain.type == LTTNG_DOMAIN_PYTHON) {
+			char *agent_filter;
+
+			/* Setup agent filter if needed. */
+			agent_filter = set_agent_filter(filter_expression, ev);
+			if (!agent_filter) {
+				if (!filter_expression) {
+					/*
+					 * No JUL and no filter, just skip
+					 * everything below.
+					 */
+					goto serialize;
+				}
+			} else {
+				/*
+				 * With an agent filter, the original filter has
+				 * been added to it thus replace the filter
+				 * expression.
+				 */
+				filter_expression = agent_filter;
+				free_filter_expression = 1;
+			}
+		}
+
+		if (strnlen(filter_expression, LTTNG_FILTER_MAX_LEN) ==
+				LTTNG_FILTER_MAX_LEN) {
+			ret = -LTTNG_ERR_FILTER_INVAL;
+			goto error;
+		}
+
+		ret = filter_parser_ctx_create_from_filter_expression(filter_expression, &ctx);
+		if (ret) {
+			goto error;
+		}
+
+		bytecode_len = bytecode_get_len(&ctx->bytecode->b) +
+				sizeof(ctx->bytecode->b);
+		if (bytecode_len > LTTNG_FILTER_MAX_LEN) {
+			ret = -LTTNG_ERR_FILTER_INVAL;
+			goto error;
+		}
+	}
+
+serialize:
+	ret = lttng_event_serialize(ev, 0, NULL,
+			filter_expression, bytecode_len,
+			(ctx && bytecode_len) ? &ctx->bytecode->b : NULL,
+			&payload);
+	if (ret) {
+		ret = -LTTNG_ERR_INVALID;
+		goto error;
+	}
 
 	/* If no channel name, send empty string. */
 	ret = lttng_strncpy(lsm.u.disable.channel_name, channel_name ?: "",
@@ -1367,11 +1368,10 @@ int lttng_disable_event_ext(struct lttng_handle *handle,
 		goto error;
 	}
 
-	lsm.cmd_type = LTTNG_DISABLE_EVENT;
-
+	/* Domain */
 	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
-	memcpy(&lsm.u.disable.event, ev, sizeof(lsm.u.disable.event));
 
+	/* Session name */
 	ret = lttng_strncpy(lsm.session.name, handle->session_name,
 			sizeof(lsm.session.name));
 	if (ret) {
@@ -1379,97 +1379,44 @@ int lttng_disable_event_ext(struct lttng_handle *handle,
 		goto error;
 	}
 
-	lsm.u.disable.bytecode_len = 0;
+	/* Length of the serialized event. */
+	lsm.u.disable.length = (uint32_t) payload.buffer.size;
 
-	/*
-	 * For the JUL domain, a filter is enforced except for the
-	 * disable all event. This is done to avoid having the event in
-	 * all sessions thus filtering by logger name.
-	 */
-	if (filter_expression == NULL &&
-			(handle->domain.type != LTTNG_DOMAIN_JUL &&
-				handle->domain.type != LTTNG_DOMAIN_LOG4J &&
-				handle->domain.type != LTTNG_DOMAIN_PYTHON)) {
-		goto ask_sessiond;
-	}
+	{
+		struct lttng_payload_view view = lttng_payload_view_from_payload(
+			&payload, 0, -1);
+		int fd_count = lttng_payload_view_get_fd_handle_count(&view);
+		int fd_to_send;
 
-	/*
-	 * We have a filter, so we need to set up a variable-length
-	 * memory block from where to send the data.
-	 */
+		if (fd_count < 0) {
+			goto error;
+		}
 
-	/* Parse filter expression */
-	if (filter_expression != NULL || handle->domain.type == LTTNG_DOMAIN_JUL
-			|| handle->domain.type == LTTNG_DOMAIN_LOG4J
-			|| handle->domain.type == LTTNG_DOMAIN_PYTHON) {
-		if (handle->domain.type == LTTNG_DOMAIN_JUL ||
-				handle->domain.type == LTTNG_DOMAIN_LOG4J ||
-				handle->domain.type == LTTNG_DOMAIN_PYTHON) {
-			char *agent_filter;
+		assert(fd_count == 0 || fd_count == 1);
+		if (fd_count == 1) {
+			struct fd_handle *h =
+					lttng_payload_view_pop_fd_handle(&view);
 
-			/* Setup JUL filter if needed. */
-			agent_filter = set_agent_filter(filter_expression, ev);
-			if (!agent_filter) {
-				if (!filter_expression) {
-					/*
-					 * No JUL and no filter, just skip
-					 * everything below.
-					 */
-					goto ask_sessiond;
-				}
-			} else {
-				/*
-				 * With a JUL filter, the original filter has
-				 * been added to it thus replace the filter
-				 * expression.
-				 */
-				filter_expression = agent_filter;
-				free_filter_expression = 1;
+			if (!h) {
+				goto error;
 			}
+
+			fd_to_send = fd_handle_get_fd(h);
+			fd_handle_put(h);
 		}
 
-		ret = filter_parser_ctx_create_from_filter_expression(filter_expression, &ctx);
-		if (ret) {
-			goto filter_error;
-		}
-
-		lsm.u.enable.bytecode_len = sizeof(ctx->bytecode->b)
-			+ bytecode_get_len(&ctx->bytecode->b);
-		lsm.u.enable.expression_len = strlen(filter_expression) + 1;
+		ret = lttng_ctl_ask_sessiond_fds_varlen(&lsm,
+				fd_count ? &fd_to_send : NULL, fd_count,
+				view.buffer.size ? view.buffer.data : NULL,
+				view.buffer.size, NULL, NULL, 0);
 	}
 
-	varlen_data = zmalloc(lsm.u.disable.bytecode_len
-			+ lsm.u.disable.expression_len);
-	if (!varlen_data) {
-		ret = -LTTNG_ERR_EXCLUSION_NOMEM;
-		goto mem_error;
-	}
-
-	/* Add filter expression. */
-	if (lsm.u.disable.expression_len != 0) {
-		memcpy(varlen_data,
-			filter_expression,
-			lsm.u.disable.expression_len);
-	}
-	/* Add filter bytecode next. */
-	if (ctx && lsm.u.disable.bytecode_len != 0) {
-		memcpy(varlen_data
-			+ lsm.u.disable.expression_len,
-			&ctx->bytecode->b,
-			lsm.u.disable.bytecode_len);
-	}
-
-	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, varlen_data,
-			lsm.u.disable.bytecode_len + lsm.u.disable.expression_len, NULL);
-	free(varlen_data);
-
-mem_error:
+error:
 	if (filter_expression && ctx) {
 		filter_bytecode_free(ctx);
 		filter_ir_free(ctx);
 		filter_parser_ctx_free(ctx);
 	}
-filter_error:
 	if (free_filter_expression) {
 		/*
 		 * The filter expression has been replaced and must be freed as
@@ -1478,15 +1425,11 @@ filter_error:
 		 */
 		free(filter_expression);
 	}
-error:
 	/*
 	 * Return directly to the caller and don't ask the sessiond since
 	 * something went wrong in the parsing of data above.
 	 */
-	return ret;
-
-ask_sessiond:
-	ret = lttng_ctl_ask_sessiond(&lsm, NULL);
+	lttng_payload_reset(&payload);
 	return ret;
 }
 
@@ -1519,10 +1462,9 @@ end:
 struct lttng_channel *lttng_channel_create(struct lttng_domain *domain)
 {
 	struct lttng_channel *channel = NULL;
-	struct lttng_channel_extended *extended = NULL;
 
 	if (!domain) {
-		goto error;
+		goto end;
 	}
 
 	/* Validate domain. */
@@ -1533,36 +1475,26 @@ struct lttng_channel *lttng_channel_create(struct lttng_domain *domain)
 		case LTTNG_BUFFER_PER_PID:
 			break;
 		default:
-			goto error;
+			goto end;
 		}
 		break;
 	case LTTNG_DOMAIN_KERNEL:
 		if (domain->buf_type != LTTNG_BUFFER_GLOBAL) {
-			goto error;
+			goto end;
 		}
 		break;
 	default:
-		goto error;
+		goto end;
 	}
 
-	channel = zmalloc(sizeof(*channel));
+	channel = lttng_channel_create_internal();
 	if (!channel) {
-		goto error;
+		goto end;
 	}
-
-	extended = zmalloc(sizeof(*extended));
-	if (!extended) {
-		goto error;
-	}
-
-	channel->attr.extended.ptr = extended;
 
 	lttng_channel_set_default_attr(domain, &channel->attr);
+end:
 	return channel;
-error:
-	free(channel);
-	free(extended);
-	return NULL;
 }
 
 void lttng_channel_destroy(struct lttng_channel *channel)
@@ -1584,53 +1516,65 @@ void lttng_channel_destroy(struct lttng_channel *channel)
 int lttng_enable_channel(struct lttng_handle *handle,
 		struct lttng_channel *in_chan)
 {
+	enum lttng_error_code ret_code;
 	int ret;
+	struct lttng_dynamic_buffer buffer;
 	struct lttcomm_session_msg lsm;
-	size_t total_buffer_size_needed_per_cpu = 0;
+	uint64_t total_buffer_size_needed_per_cpu = 0;
+	struct lttng_channel *channel = NULL;
+
+	lttng_dynamic_buffer_init(&buffer);
 
 	/* NULL arguments are forbidden. No default values. */
 	if (handle == NULL || in_chan == NULL) {
-		return -LTTNG_ERR_INVALID;
-	}
-
-	memset(&lsm, 0, sizeof(lsm));
-	memcpy(&lsm.u.channel.chan, in_chan, sizeof(lsm.u.channel.chan));
-	lsm.u.channel.chan.attr.extended.ptr = NULL;
-
-	if (!in_chan->attr.extended.ptr) {
-		struct lttng_channel *channel;
-		struct lttng_channel_extended *extended;
-
-		channel = lttng_channel_create(&handle->domain);
-		if (!channel) {
-			return -LTTNG_ERR_NOMEM;
-		}
-
-		/*
-		 * Create a new channel in order to use default extended
-		 * attribute values.
-		 */
-		extended = (struct lttng_channel_extended *)
-				channel->attr.extended.ptr;
-		memcpy(&lsm.u.channel.extended, extended, sizeof(*extended));
-		lttng_channel_destroy(channel);
-	} else {
-		struct lttng_channel_extended *extended;
-
-		extended = (struct lttng_channel_extended *)
-				in_chan->attr.extended.ptr;
-		memcpy(&lsm.u.channel.extended, extended, sizeof(*extended));
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
 	}
 
 	/*
 	 * Verify that the amount of memory required to create the requested
 	 * buffer is available on the system at the moment.
 	 */
-	total_buffer_size_needed_per_cpu = lsm.u.channel.chan.attr.num_subbuf *
-		lsm.u.channel.chan.attr.subbuf_size;
-	if (!check_enough_available_memory(total_buffer_size_needed_per_cpu)) {
-		return -LTTNG_ERR_NOMEM;
+	if (in_chan->attr.num_subbuf >
+			UINT64_MAX / in_chan->attr.subbuf_size) {
+		/* Overflow */
+		ret = -LTTNG_ERR_OVERFLOW;
+		goto end;
 	}
+
+	total_buffer_size_needed_per_cpu =
+			in_chan->attr.num_subbuf * in_chan->attr.subbuf_size;
+	ret_code = check_enough_available_memory(
+			total_buffer_size_needed_per_cpu);
+	if (ret_code != LTTNG_OK) {
+		ret = -ret_code;
+		goto end;
+	}
+
+	/* Copy the channel for easier manipulation. */
+	channel = lttng_channel_copy(in_chan);
+	if (!channel) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	/* Populate the channel extended attribute if necessary. */
+	if (!channel->attr.extended.ptr) {
+		struct lttng_channel_extended *extended =
+				(struct lttng_channel_extended *) zmalloc(
+						sizeof(*extended));
+
+		if (!extended) {
+			ret = -LTTNG_ERR_NOMEM;
+			goto end;
+		}
+		lttng_channel_set_default_extended_attr(
+				&handle->domain, extended);
+		channel->attr.extended.ptr = extended;
+	}
+
+	/* Prepare the payload */
+	memset(&lsm, 0, sizeof(lsm));
 
 	lsm.cmd_type = LTTNG_ENABLE_CHANNEL;
 	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
@@ -1642,8 +1586,19 @@ int lttng_enable_channel(struct lttng_handle *handle,
 		goto end;
 	}
 
-	ret = lttng_ctl_ask_sessiond(&lsm, NULL);
+	ret = lttng_channel_serialize(channel, &buffer);
+	if (ret) {
+		ret = -LTTNG_ERR_FATAL;
+		goto end;
+	}
+
+	lsm.u.channel.length = buffer.size;
+
+	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(
+			&lsm, buffer.data, buffer.size, NULL);
 end:
+	lttng_channel_destroy(channel);
+	lttng_dynamic_buffer_reset(&buffer);
 	return ret;
 }
 
@@ -1695,23 +1650,64 @@ end:
 int lttng_list_tracepoints(struct lttng_handle *handle,
 		struct lttng_event **events)
 {
-	int ret;
-	struct lttcomm_session_msg lsm;
+        enum lttng_error_code ret_code;
+        int ret, total_payload_received;
+        char *reception_buffer = NULL;
+        struct lttcomm_session_msg lsm = { .cmd_type = LTTNG_LIST_TRACEPOINTS };
+        struct lttcomm_list_command_header *cmd_header = NULL;
+        size_t cmd_header_len;
+        unsigned int nb_events = 0;
 
-	if (handle == NULL) {
-		return -LTTNG_ERR_INVALID;
+        if (handle == NULL) {
+                ret = -LTTNG_ERR_INVALID;
+                goto end;
+        }
+
+        COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
+
+        ret = lttng_ctl_ask_sessiond_fds_varlen(&lsm, NULL, 0, NULL, 0,
+                        (void **) &reception_buffer, (void **) &cmd_header,
+                        &cmd_header_len);
+        if (ret < 0) {
+                goto end;
+        }
+
+        total_payload_received = ret;
+
+        if (!cmd_header) {
+                ret = -LTTNG_ERR_UNK;
+                goto end;
+        }
+
+        if (cmd_header->count > INT_MAX) {
+                ret = -LTTNG_ERR_OVERFLOW;
+                goto end;
+        }
+
+        nb_events = (unsigned int) cmd_header->count;
+
+	{
+		struct lttng_buffer_view events_view =
+				lttng_buffer_view_init(reception_buffer, 0,
+						total_payload_received);
+		struct lttng_payload_view events_payload_view =
+				lttng_payload_view_from_buffer_view(
+						&events_view, 0, -1);
+
+		ret_code = lttng_events_create_and_flatten_from_payload(
+				&events_payload_view, nb_events, events);
+		if (ret_code != LTTNG_OK) {
+			ret = -ret_code;
+			goto end;
+		}
 	}
 
-	memset(&lsm, 0, sizeof(lsm));
-	lsm.cmd_type = LTTNG_LIST_TRACEPOINTS;
-	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
+	ret = (int) nb_events;
 
-	ret = lttng_ctl_ask_sessiond(&lsm, (void **) events);
-	if (ret < 0) {
-		return ret;
-	}
-
-	return ret / sizeof(struct lttng_event);
+end:
+        free(cmd_header);
+        free(reception_buffer);
+        return ret;
 }
 
 /*
@@ -1723,23 +1719,74 @@ int lttng_list_tracepoints(struct lttng_handle *handle,
 int lttng_list_tracepoint_fields(struct lttng_handle *handle,
 		struct lttng_event_field **fields)
 {
+	enum lttng_error_code ret_code;
 	int ret;
 	struct lttcomm_session_msg lsm;
+	const struct lttcomm_list_command_header *cmd_header = NULL;
+	unsigned int nb_event_fields = 0;
+	struct lttng_payload reply;
 
 	if (handle == NULL) {
-		return -LTTNG_ERR_INVALID;
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
 	}
+
+	lttng_payload_init(&reply);
 
 	memset(&lsm, 0, sizeof(lsm));
 	lsm.cmd_type = LTTNG_LIST_TRACEPOINT_FIELDS;
 	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
 
-	ret = lttng_ctl_ask_sessiond(&lsm, (void **) fields);
-	if (ret < 0) {
-		return ret;
+	{
+		struct lttng_payload_view message_view =
+				lttng_payload_view_init_from_buffer(
+					(const char *) &lsm, 0,
+					sizeof(lsm));
+
+		ret = lttng_ctl_ask_sessiond_payload(&message_view, &reply);
+		if (ret < 0) {
+			goto end;
+		}
 	}
 
-	return ret / sizeof(struct lttng_event_field);
+	{
+		const struct lttng_buffer_view cmd_header_view =
+				lttng_buffer_view_from_dynamic_buffer(
+					&reply.buffer, 0, sizeof(*cmd_header));
+
+		if (!lttng_buffer_view_is_valid(&cmd_header_view)) {
+			ret = -LTTNG_ERR_INVALID_PROTOCOL;
+			goto end;
+		}
+
+		cmd_header = (struct lttcomm_list_command_header *)
+				cmd_header_view.data;
+	}
+
+	if (cmd_header->count > INT_MAX) {
+		ret = -LTTNG_ERR_OVERFLOW;
+		goto end;
+	}
+
+	nb_event_fields = cmd_header->count;
+
+	{
+		struct lttng_payload_view reply_view =
+				lttng_payload_view_from_payload(&reply,
+				sizeof(*cmd_header), -1);
+
+		ret_code = lttng_event_fields_create_and_flatten_from_payload(
+				&reply_view, nb_event_fields, fields);
+		if (ret_code != LTTNG_OK) {
+			ret = -ret_code;
+			goto end;
+		}
+	}
+
+	ret = nb_event_fields;
+
+end:
+	return ret;
 }
 
 /*
@@ -1751,24 +1798,65 @@ int lttng_list_tracepoint_fields(struct lttng_handle *handle,
  */
 int lttng_list_syscalls(struct lttng_event **events)
 {
-	int ret;
-	struct lttcomm_session_msg lsm;
+        enum lttng_error_code ret_code;
+        int ret, total_payload_received;
+        char *reception_buffer = NULL;
+        struct lttcomm_session_msg lsm = {};
+        struct lttcomm_list_command_header *cmd_header = NULL;
+        size_t cmd_header_len;
+        uint32_t nb_events = 0;
 
-	if (!events) {
-		return -LTTNG_ERR_INVALID;
-	}
+        if (!events) {
+                ret = -LTTNG_ERR_INVALID;
+                goto end;
+        }
 
-	memset(&lsm, 0, sizeof(lsm));
-	lsm.cmd_type = LTTNG_LIST_SYSCALLS;
-	/* Force kernel domain for system calls. */
-	lsm.domain.type = LTTNG_DOMAIN_KERNEL;
+        lsm.cmd_type = LTTNG_LIST_SYSCALLS;
+        /* Force kernel domain for system calls. */
+        lsm.domain.type = LTTNG_DOMAIN_KERNEL;
 
-	ret = lttng_ctl_ask_sessiond(&lsm, (void **) events);
-	if (ret < 0) {
-		return ret;
-	}
+        ret = lttng_ctl_ask_sessiond_fds_varlen(&lsm, NULL, 0, NULL, 0,
+                        (void **) &reception_buffer, (void **) &cmd_header,
+                        &cmd_header_len);
+        if (ret < 0) {
+                goto end;
+        }
+        total_payload_received = ret;
 
-	return ret / sizeof(struct lttng_event);
+        if (!cmd_header) {
+                ret = -LTTNG_ERR_UNK;
+                goto end;
+        }
+
+        if (cmd_header->count > INT_MAX) {
+                ret = -LTTNG_ERR_OVERFLOW;
+                goto end;
+        }
+
+        nb_events = (unsigned int) cmd_header->count;
+
+        {
+                const struct lttng_buffer_view events_view =
+                                lttng_buffer_view_init(reception_buffer, 0,
+                                                total_payload_received);
+		struct lttng_payload_view events_payload_view =
+				lttng_payload_view_from_buffer_view(
+						&events_view, 0, -1);
+
+                ret_code = lttng_events_create_and_flatten_from_payload(
+                                &events_payload_view, nb_events, events);
+                if (ret_code != LTTNG_OK) {
+                        ret = -ret_code;
+                        goto end;
+                }
+        }
+
+        ret = (int) nb_events;
+
+end:
+        free(reception_buffer);
+        free(cmd_header);
+        return ret;
 }
 
 /*
@@ -2241,12 +2329,14 @@ error:
 int lttng_list_channels(struct lttng_handle *handle,
 		struct lttng_channel **channels)
 {
-	int ret;
-	size_t channel_count, i;
-	const size_t channel_size = sizeof(struct lttng_channel) +
-			sizeof(struct lttng_channel_extended);
+	int ret, total_payload_received;
 	struct lttcomm_session_msg lsm;
-	void *extended_at;
+	char *reception_buffer = NULL;
+	size_t cmd_header_len = 0;
+	struct lttcomm_list_command_header *cmd_header = NULL;
+	struct lttng_dynamic_buffer tmp_buffer;
+
+	lttng_dynamic_buffer_init(&tmp_buffer);
 
 	if (handle == NULL) {
 		ret = -LTTNG_ERR_INVALID;
@@ -2264,31 +2354,48 @@ int lttng_list_channels(struct lttng_handle *handle,
 
 	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
 
-	ret = lttng_ctl_ask_sessiond(&lsm, (void**) channels);
+	ret = lttng_ctl_ask_sessiond_fds_varlen(&lsm, NULL, 0, NULL, 0,
+			(void **) &reception_buffer, (void **) &cmd_header,
+			&cmd_header_len);
 	if (ret < 0) {
 		goto end;
 	}
 
-	if (ret % channel_size) {
-		ret = -LTTNG_ERR_UNK;
-		free(*channels);
-		*channels = NULL;
+	total_payload_received = ret;
+
+	if (cmd_header_len != sizeof(*cmd_header)) {
+		ret = -LTTNG_ERR_FATAL;
 		goto end;
 	}
-	channel_count = (size_t) ret / channel_size;
 
-	/* Set extended info pointers */
-	extended_at = ((void *) *channels) +
-			channel_count * sizeof(struct lttng_channel);
-	for (i = 0; i < channel_count; i++) {
-		struct lttng_channel *chan = &(*channels)[i];
-
-		chan->attr.extended.ptr = extended_at;
-		extended_at += sizeof(struct lttng_channel_extended);
+	if (!cmd_header) {
+		ret = LTTNG_ERR_UNK;
+		goto end;
 	}
 
-	ret = (int) channel_count;
+	if (cmd_header->count > INT_MAX) {
+		ret = -LTTNG_ERR_OVERFLOW;
+		goto end;
+	}
+
+	{
+		enum lttng_error_code ret_code;
+		const struct lttng_buffer_view events_view =
+				lttng_buffer_view_init(reception_buffer, 0,
+						total_payload_received);
+
+		ret_code = lttng_channels_create_and_flatten_from_buffer(
+				&events_view, cmd_header->count, channels);
+		if (ret_code != LTTNG_OK) {
+			ret = -ret_code;
+			goto end;
+		}
+	}
+
+	ret = (int) cmd_header->count;
 end:
+	free(cmd_header);
+	free(reception_buffer);
 	return ret;
 }
 
@@ -2303,30 +2410,21 @@ int lttng_list_events(struct lttng_handle *handle,
 {
 	int ret;
 	struct lttcomm_session_msg lsm = {};
-	const struct lttcomm_event_command_header *cmd_header = NULL;
-	uint32_t nb_events, i;
-	const void *comm_ext_at;
-	struct lttng_dynamic_buffer listing;
-	size_t storage_req;
-	struct lttng_payload payload;
-	struct lttng_payload payload_copy;
+	struct lttng_payload reply;
 	struct lttng_payload_view lsm_view =
 			lttng_payload_view_init_from_buffer(
 				(const char *) &lsm, 0, sizeof(lsm));
-	struct lttng_buffer_view cmd_header_view;
-	struct lttng_buffer_view cmd_payload_view;
-	struct lttng_buffer_view flat_events_view;
-	struct lttng_buffer_view ext_view;
+	unsigned int nb_events = 0;
 
-	/* Safety check. An handle and channel name are mandatory */
+	lttng_payload_init(&reply);
+
+	/* Safety check. An handle and channel name are mandatory. */
 	if (handle == NULL || channel_name == NULL) {
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
 
-	lttng_payload_init(&payload);
-	lttng_payload_init(&payload_copy);
-
+	/* Initialize command parameters. */
 	lsm.cmd_type = LTTNG_LIST_EVENTS;
 	ret = lttng_strncpy(lsm.session.name, handle->session_name,
 			sizeof(lsm.session.name));
@@ -2344,275 +2442,52 @@ int lttng_list_events(struct lttng_handle *handle,
 
 	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
 
-	ret = lttng_ctl_ask_sessiond_payload(&lsm_view, &payload);
+	/* Execute command against the session daemon. */
+	ret = lttng_ctl_ask_sessiond_payload(&lsm_view, &reply);
 	if (ret < 0) {
 		goto end;
 	}
 
-	/*
-	 * A copy of the payload is performed since it will be
-	 * consumed twice. Consuming the same payload twice is invalid since
-	 * it will cause any received file descriptor to become "shared"
-	 * between different instances of the resulting objects.
-	 */
-	ret = lttng_payload_copy(&payload, &payload_copy);
-	if (ret) {
-		ret = -LTTNG_ERR_NOMEM;
-		goto end;
-	}
-
-	cmd_header_view = lttng_buffer_view_from_dynamic_buffer(
-		&payload.buffer, 0, sizeof(*cmd_header));
-	if (!lttng_buffer_view_is_valid(&cmd_header_view)) {
-		ret = -LTTNG_ERR_INVALID_PROTOCOL;
-		goto end;
-	}
-
-	cmd_header = (typeof(cmd_header)) cmd_header_view.data;
-
-	/* Set number of events and free command header */
-	nb_events = cmd_header->nb_events;
-	if (nb_events > INT_MAX) {
-		ret = -LTTNG_ERR_OVERFLOW;
-		goto end;
-	}
-
-	cmd_payload_view = lttng_buffer_view_from_dynamic_buffer(
-			&payload.buffer, sizeof(*cmd_header), -1);
-
-	/*
-	 * The buffer that is returned must contain a "flat" version of
-	 * the events that are returned. In other words, all pointers
-	 * within an lttng_event must point to a location within the returned
-	 * buffer so that the user may free everything by simply calling free()
-	 * on the returned buffer. This is needed in order to maintain API
-	 * compatibility.
-	 *
-	 * A first pass is performed to compute the size of the buffer that
-	 * must be allocated. A second pass is then performed to setup
-	 * the returned events so that their members always point within the
-	 * buffer.
-	 *
-	 * The layout of the returned buffer is as follows:
-	 *   - struct lttng_event[nb_events],
-	 *   - nb_events times the following:
-	 *     - struct lttng_event_extended,
-	 *     - flattened version of userspace_probe_location
-	 *     - filter_expression
-	 *     - exclusions
-	 *     - padding to align to 64-bits
-	 */
-	ext_view = lttng_buffer_view_from_view(&cmd_payload_view,
-			nb_events * sizeof(struct lttng_event), -1);
-	comm_ext_at = ext_view.data;
-	storage_req = nb_events * sizeof(struct lttng_event);
 	{
-		struct lttng_payload_view payload_view =
-				lttng_payload_view_from_payload(&payload, 0, -1);
+		const struct lttcomm_list_command_header *cmd_reply_header =
+				NULL;
+		const struct lttng_payload_view cmd_reply_header_view =
+				lttng_payload_view_from_payload(&reply, 0,
+						sizeof(*cmd_reply_header));
 
-		for (i = 0; i < nb_events; i++) {
-			const struct lttcomm_event_extended_header *ext_comm =
-					(struct lttcomm_event_extended_header *)
-							comm_ext_at;
-			int probe_storage_req = 0;
+		if (!lttng_payload_view_is_valid(&cmd_reply_header_view)) {
+			ret = -LTTNG_ERR_INVALID_PROTOCOL;
+			goto end;
+		}
 
-			comm_ext_at += sizeof(*ext_comm);
-			comm_ext_at += ext_comm->filter_len;
-			comm_ext_at += ext_comm->nb_exclusions *
-					LTTNG_SYMBOL_NAME_LEN;
+		cmd_reply_header = (const struct lttcomm_list_command_header *)
+						   cmd_reply_header_view.buffer
+								   .data;
+		if (cmd_reply_header->count > INT_MAX) {
+			ret = -LTTNG_ERR_OVERFLOW;
+			goto end;
+		}
 
-			if (ext_comm->userspace_probe_location_len) {
-				struct lttng_userspace_probe_location
-						*probe_location = NULL;
-				struct lttng_payload_view probe_location_view = lttng_payload_view_from_view(
-						&payload_view,
-						(const char *) comm_ext_at -
-								payload_view.buffer.data,
-						ext_comm->userspace_probe_location_len);
+		nb_events = (unsigned int) cmd_reply_header->count;
+	}
 
-				if (!lttng_payload_view_is_valid(&probe_location_view)) {
-					ret = -LTTNG_ERR_PROBE_LOCATION_INVAL;
-					goto end;
-				}
+	{
+		enum lttng_error_code ret_code;
+		struct lttng_payload_view cmd_reply_payload = lttng_payload_view_from_payload(
+				&reply,
+				sizeof(struct lttcomm_list_command_header), -1);
 
-				/*
-				 * Create a temporary userspace probe location
-				 * to determine the size needed by a "flattened"
-				 * version of that same probe location.
-				 */
-				ret = lttng_userspace_probe_location_create_from_payload(
-						&probe_location_view,
-						&probe_location);
-				if (ret < 0) {
-					ret = -LTTNG_ERR_PROBE_LOCATION_INVAL;
-					goto end;
-				}
-
-				ret = lttng_userspace_probe_location_flatten(
-						probe_location, NULL);
-				lttng_userspace_probe_location_destroy(
-						probe_location);
-				if (ret < 0) {
-					ret = -LTTNG_ERR_PROBE_LOCATION_INVAL;
-					goto end;
-				}
-
-				probe_storage_req = ret;
-				comm_ext_at += ext_comm->userspace_probe_location_len;
-			}
-
-			storage_req += sizeof(struct lttng_event_extended);
-			storage_req += ext_comm->filter_len;
-			storage_req += ext_comm->nb_exclusions *
-					LTTNG_SYMBOL_NAME_LEN;
-			/* Padding to ensure the flat probe is aligned. */
-			storage_req = ALIGN_TO(storage_req, sizeof(uint64_t));
-			storage_req += probe_storage_req;
+		ret_code = lttng_events_create_and_flatten_from_payload(
+				&cmd_reply_payload, nb_events, events);
+		if (ret_code != LTTNG_OK) {
+			ret = -((int) ret_code);
+			goto end;
 		}
 	}
 
-	lttng_dynamic_buffer_init(&listing);
-	/*
-	 * We must ensure that "listing" is never resized so as to preserve
-	 * the validity of the flattened objects.
-	 */
-	ret = lttng_dynamic_buffer_set_capacity(&listing, storage_req);
-	if (ret) {
-		ret = -LTTNG_ERR_NOMEM;
-		goto end;
-	}
-
-	cmd_payload_view = lttng_buffer_view_from_dynamic_buffer(
-		&payload_copy.buffer, sizeof(*cmd_header), -1);
-	flat_events_view = lttng_buffer_view_from_view(&cmd_payload_view, 0,
-			nb_events * sizeof(struct lttng_event));
-	ret = lttng_dynamic_buffer_append_view(&listing, &flat_events_view);
-	if (ret) {
-		ret = -LTTNG_ERR_NOMEM;
-		goto free_dynamic_buffer;
-	}
-
-	ext_view = lttng_buffer_view_from_view(&cmd_payload_view,
-			nb_events * sizeof(struct lttng_event), -1);
-	comm_ext_at = ext_view.data;
-
-	{
-		struct lttng_payload_view payload_copy_view =
-				lttng_payload_view_from_payload(
-						&payload_copy, 0, -1);
-
-		for (i = 0; i < nb_events; i++) {
-			struct lttng_event *event = (typeof(event))(
-					listing.data +
-					(sizeof(struct lttng_event) * i));
-			const struct lttcomm_event_extended_header *ext_comm =
-					(typeof(ext_comm)) comm_ext_at;
-			struct lttng_event_extended *event_extended =
-					(typeof(event_extended))(listing.data +
-							listing.size);
-
-			/* Insert struct lttng_event_extended. */
-			ret = lttng_dynamic_buffer_set_size(&listing,
-					listing.size + sizeof(*event_extended));
-			if (ret) {
-				ret = -LTTNG_ERR_NOMEM;
-				goto free_dynamic_buffer;
-			}
-			event->extended.ptr = event_extended;
-
-			comm_ext_at += sizeof(*ext_comm);
-
-			/* Insert filter expression. */
-			if (ext_comm->filter_len) {
-				event_extended->filter_expression =
-						listing.data + listing.size;
-				ret = lttng_dynamic_buffer_append(&listing,
-						comm_ext_at,
-						ext_comm->filter_len);
-				if (ret) {
-					ret = -LTTNG_ERR_NOMEM;
-					goto free_dynamic_buffer;
-				}
-				comm_ext_at += ext_comm->filter_len;
-			}
-
-			/* Insert exclusions. */
-			if (ext_comm->nb_exclusions) {
-				event_extended->exclusions.count =
-						ext_comm->nb_exclusions;
-				event_extended->exclusions.strings =
-						listing.data + listing.size;
-
-				ret = lttng_dynamic_buffer_append(&listing,
-						comm_ext_at,
-						ext_comm->nb_exclusions *
-								LTTNG_SYMBOL_NAME_LEN);
-				if (ret) {
-					ret = -LTTNG_ERR_NOMEM;
-					goto free_dynamic_buffer;
-				}
-				comm_ext_at += ext_comm->nb_exclusions *
-						LTTNG_SYMBOL_NAME_LEN;
-			}
-
-			/* Insert padding to align to 64-bits. */
-			ret = lttng_dynamic_buffer_set_size(&listing,
-					ALIGN_TO(listing.size,
-							sizeof(uint64_t)));
-			if (ret) {
-				ret = -LTTNG_ERR_NOMEM;
-				goto free_dynamic_buffer;
-			}
-
-			/* Insert flattened userspace probe location. */
-			if (ext_comm->userspace_probe_location_len) {
-				struct lttng_userspace_probe_location
-						*probe_location = NULL;
-				struct lttng_payload_view probe_location_view = lttng_payload_view_from_view(
-						&payload_copy_view,
-						(const char *) comm_ext_at -
-								payload_copy_view.buffer.data,
-						ext_comm->userspace_probe_location_len);
-
-				if (!lttng_payload_view_is_valid(&probe_location_view)) {
-					ret = -LTTNG_ERR_PROBE_LOCATION_INVAL;
-					goto free_dynamic_buffer;
-				}
-
-				ret = lttng_userspace_probe_location_create_from_payload(
-						&probe_location_view,
-						&probe_location);
-				if (ret < 0) {
-					ret = -LTTNG_ERR_PROBE_LOCATION_INVAL;
-					goto free_dynamic_buffer;
-				}
-
-				event_extended->probe_location = (struct lttng_userspace_probe_location
-								*) (listing.data +
-						listing.size);
-				ret = lttng_userspace_probe_location_flatten(
-						probe_location, &listing);
-				lttng_userspace_probe_location_destroy(
-						probe_location);
-				if (ret < 0) {
-					ret = -LTTNG_ERR_PROBE_LOCATION_INVAL;
-					goto free_dynamic_buffer;
-				}
-
-				comm_ext_at += ext_comm->userspace_probe_location_len;
-			}
-		}
-	}
-
-	/* Don't reset listing buffer as we return its content. */
-	*events = (struct lttng_event *) listing.data;
-	lttng_dynamic_buffer_init(&listing);
 	ret = (int) nb_events;
-free_dynamic_buffer:
-	lttng_dynamic_buffer_reset(&listing);
 end:
-	lttng_payload_reset(&payload);
-	lttng_payload_reset(&payload_copy);
+	lttng_payload_reset(&reply);
 	return ret;
 }
 
@@ -2662,6 +2537,7 @@ void lttng_channel_set_default_attr(struct lttng_domain *domain,
 		return;
 	}
 
+	/* Save the pointer for later use */
 	extended = (struct lttng_channel_extended *) attr->extended.ptr;
 	memset(attr, 0, sizeof(struct lttng_channel_attr));
 
@@ -2678,12 +2554,6 @@ void lttng_channel_set_default_attr(struct lttng_domain *domain,
 		attr->subbuf_size = default_get_kernel_channel_subbuf_size();
 		attr->num_subbuf = DEFAULT_KERNEL_CHANNEL_SUBBUF_NUM;
 		attr->output = DEFAULT_KERNEL_CHANNEL_OUTPUT;
-		if (extended) {
-			extended->monitor_timer_interval =
-					DEFAULT_KERNEL_CHANNEL_MONITOR_TIMER;
-			extended->blocking_timeout =
-					DEFAULT_KERNEL_CHANNEL_BLOCKING_TIMEOUT;
-		}
 		break;
 	case LTTNG_DOMAIN_UST:
 		switch (domain->buf_type) {
@@ -2695,12 +2565,6 @@ void lttng_channel_set_default_attr(struct lttng_domain *domain,
 					DEFAULT_UST_UID_CHANNEL_SWITCH_TIMER;
 			attr->read_timer_interval =
 					DEFAULT_UST_UID_CHANNEL_READ_TIMER;
-			if (extended) {
-				extended->monitor_timer_interval =
-						DEFAULT_UST_UID_CHANNEL_MONITOR_TIMER;
-				extended->blocking_timeout =
-						DEFAULT_UST_UID_CHANNEL_BLOCKING_TIMEOUT;
-			}
 			break;
 		case LTTNG_BUFFER_PER_PID:
 		default:
@@ -2711,12 +2575,6 @@ void lttng_channel_set_default_attr(struct lttng_domain *domain,
 					DEFAULT_UST_PID_CHANNEL_SWITCH_TIMER;
 			attr->read_timer_interval =
 					DEFAULT_UST_PID_CHANNEL_READ_TIMER;
-			if (extended) {
-				extended->monitor_timer_interval =
-						DEFAULT_UST_PID_CHANNEL_MONITOR_TIMER;
-				extended->blocking_timeout =
-						DEFAULT_UST_PID_CHANNEL_BLOCKING_TIMEOUT;
-			}
 			break;
 		}
 	default:
@@ -2724,6 +2582,11 @@ void lttng_channel_set_default_attr(struct lttng_domain *domain,
 		break;
 	}
 
+	if (extended) {
+		lttng_channel_set_default_extended_attr(domain, extended);
+	}
+
+	/* Reassign the extended pointer. */
 	attr->extended.ptr = extended;
 }
 

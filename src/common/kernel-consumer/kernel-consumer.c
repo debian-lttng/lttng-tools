@@ -436,7 +436,6 @@ static int lttng_kconsumer_snapshot_metadata(
 	ret = 0;
 error_snapshot:
 	metadata_stream->read_subbuffer_ops.unlock(metadata_stream);
-	cds_list_del(&metadata_stream->send_node);
 	consumer_stream_destroy(metadata_stream, NULL);
 	metadata_channel->metadata_stream = NULL;
 	rcu_read_unlock();
@@ -484,11 +483,17 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 	switch (msg.cmd_type) {
 	case LTTNG_CONSUMER_ADD_RELAYD_SOCKET:
 	{
+		uint32_t major = msg.u.relayd_sock.major;
+		uint32_t minor = msg.u.relayd_sock.minor;
+		enum lttcomm_sock_proto protocol = (enum lttcomm_sock_proto)
+				msg.u.relayd_sock.relayd_socket_protocol;
+
 		/* Session daemon status message are handled in the following call. */
 		consumer_add_relayd_socket(msg.u.relayd_sock.net_index,
-				msg.u.relayd_sock.type, ctx, sock, consumer_sockpoll,
-				&msg.u.relayd_sock.sock, msg.u.relayd_sock.session_id,
-				msg.u.relayd_sock.relayd_session_id);
+				msg.u.relayd_sock.type, ctx, sock,
+				consumer_sockpoll, msg.u.relayd_sock.session_id,
+				msg.u.relayd_sock.relayd_session_id, major,
+				minor, protocol);
 		goto end_nosignal;
 	}
 	case LTTNG_CONSUMER_ADD_CHANNEL:

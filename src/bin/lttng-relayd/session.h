@@ -156,6 +156,8 @@ void session_put(struct relay_session *session);
 int session_close(struct relay_session *session);
 int session_abort(struct relay_session *session);
 
+bool session_has_ongoing_rotation(struct relay_session *session);
+
 void print_sessions(void);
 
 #endif /* _SESSION_H */
