@@ -4,10 +4,10 @@
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
 .\"      Date: 18 May 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.13.6
+.\"    Source: LTTng 2.13.7
 .\"  Language: English
 .\"
-.TH "LTTNG\-EVENT\-RULE" "7" "18 May 2021" "LTTng 2\&.13\&.6" "LTTng Manual"
+.TH "LTTNG\-EVENT\-RULE" "7" "18 May 2021" "LTTng 2\&.13\&.7" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -62,7 +62,7 @@ Specify an event rule to match Java/Python logging events:
 .sp
 This manual page shows how to specify an LTTng event rule on the command line\&.
 .sp
-As of LTTng\ \&2\&.13\&.6, the command\-line options documented here only apply to the \fBevent-rule-matches\fR trigger condition specifier (see \fBlttng-add-trigger\fR(1))\&.
+As of LTTng\ \&2\&.13\&.7, the command\-line options documented here only apply to the \fBevent-rule-matches\fR trigger condition specifier (see \fBlttng-add-trigger\fR(1))\&.
 .sp
 See \fBlttng-concepts\fR(7) to learn more about instrumentation points, events, and event rules\&.
 .if n \{\
@@ -183,7 +183,7 @@ The payload of a Linux kprobe event is empty\&.
 .RS 4
 A Linux user space probe, that is, a single probe dynamically placed at the entry of a compiled user space application/library function through the kernel\&.
 .sp
-LTTng\ \&2\&.13\&.6 supports the ELF and SystemTap User\-level Statically Defined Tracing (USDT; a DTrace\-style marker) probing methods\&. LTTng only supports USDT probes which are NOT reference\-counted\&.
+LTTng\ \&2\&.13\&.7 supports the ELF and SystemTap User\-level Statically Defined Tracing (USDT; a DTrace\-style marker) probing methods\&. LTTng only supports USDT probes which are NOT reference\-counted\&.
 .sp
 You must specify the user space probe location with the
 \fB--location\fR
@@ -322,7 +322,7 @@ Make sure to \fBsingle\-quote\fR \fINAME\fR and \fIXNAME\fR when they contain th
 .sp .5v
 .RE
 .sp
-As of LTTng\ \&2\&.13\&.6, not specifying the \fB--name\fR option is equivalent to specifying \fB--name\fR=\fB'*\'\fR, but this default may change in the future\&.
+As of LTTng\ \&2\&.13\&.7, not specifying the \fB--name\fR option is equivalent to specifying \fB--name\fR=\fB'*\'\fR, but this default may change in the future\&.
 .SS "Instrumentation point log level condition"
 .sp
 An event\ \&\fIE\fR satisfies the instrumentation point log level condition of an event rule if either:
@@ -345,7 +345,7 @@ Defaulting to
 \fB--log-level\fR=\fB..\fR
 when you don\(cqt specify the
 \fB--log-level\fR
-option is specific to LTTng\ \&2\&.13\&.6 and may change in the future\&.
+option is specific to LTTng\ \&2\&.13\&.7 and may change in the future\&.
 .RE
 .sp
 .RS 4
@@ -372,7 +372,7 @@ Exactly
 .RE
 .RE
 .sp
-As of LTTng\ \&2\&.13\&.6, the \fB..\fR\fILOGLEVEL\fR and \fILOGLEVEL\fR\fB..\fR\fILOGLEVEL\fR formats are NOT supported\&.
+As of LTTng\ \&2\&.13\&.7, the \fB..\fR\fILOGLEVEL\fR and \fILOGLEVEL\fR\fB..\fR\fILOGLEVEL\fR formats are NOT supported\&.
 .sp
 This condition is only meaningful for the LTTng user space tracepoint and logging statement instrumentation point types: it\(cqs always satisfied for other types\&.
 .sp
@@ -1370,7 +1370,7 @@ T{
 \fB--function\fR=\fILOC\fR and \fIRECORDNAME\fR (non\-option)
 T}:T{
 .sp
-Not available as of LTTng\ \&2\&.13\&.6
+Not available as of LTTng\ \&2\&.13\&.7
 T}
 T{
 .sp
@@ -1465,7 +1465,7 @@ option\&.
 .sp
 Defaulting to
 \fILOC\fR
-is specific to LTTng\ \&2\&.13\&.6 and may change in the future\&.
+is specific to LTTng\ \&2\&.13\&.7 and may change in the future\&.
 .RE
 .PP
 \fB-L\fR \fILOC\fR, \fB--location\fR=\fILOC\fR
@@ -1581,7 +1581,7 @@ command, including with its
 option, which lists dynamic symbols\&.
 .RE
 .sp
-As of LTTng\ \&2\&.13\&.6, not specifying
+As of LTTng\ \&2\&.13\&.7, not specifying
 \fBelf:\fR
 is equivalent to specifying it, but this default may change in the future\&.
 .sp
@@ -1706,7 +1706,7 @@ is one of:
 .RS 4
 LTTng kernel tracepoint\&.
 .sp
-As of LTTng\ \&2\&.13\&.6,
+As of LTTng\ \&2\&.13\&.7,
 \fBkernel\fR
 is an alias, but this may change in the future\&.
 .RE
@@ -1715,7 +1715,7 @@ is an alias, but this may change in the future\&.
 .RS 4
 LTTng user space tracepoint\&.
 .sp
-As of LTTng\ \&2\&.13\&.6,
+As of LTTng\ \&2\&.13\&.7,
 \fBuser\fR
 is an alias, but this may change in the future\&.
 .RE
@@ -1724,7 +1724,7 @@ is an alias, but this may change in the future\&.
 .RS 4
 Linux system call entry\&.
 .sp
-As of LTTng\ \&2\&.13\&.6,
+As of LTTng\ \&2\&.13\&.7,
 \fBsyscall:entry\fR
 is an alias, but this may change in the future\&.
 .RE
@@ -1733,7 +1733,7 @@ is an alias, but this may change in the future\&.
 .RS 4
 Linux system call exit\&.
 .sp
-As of LTTng\ \&2\&.13\&.6,
+As of LTTng\ \&2\&.13\&.7,
 \fBsyscall:exit\fR
 is an alias, but this may change in the future\&.
 .RE
@@ -1742,7 +1742,7 @@ is an alias, but this may change in the future\&.
 .RS 4
 Linux system call entry and exit (two distinct instrumentation points)\&.
 .sp
-As of LTTng\ \&2\&.13\&.6, the following are aliases, but this may change in the future:
+As of LTTng\ \&2\&.13\&.7, the following are aliases, but this may change in the future:
 .sp
 .RS 4
 .ie n \{\
@@ -1782,7 +1782,7 @@ As of LTTng\ \&2\&.13\&.6, the following are aliases, but this may change in the
 .RS 4
 Linux kprobe\&.
 .sp
-As of LTTng\ \&2\&.13\&.6,
+As of LTTng\ \&2\&.13\&.7,
 \fBkprobe\fR
 is an alias, but this may change in the future\&.
 .sp
@@ -1813,7 +1813,7 @@ option\&.
 \fBjava.util.logging\fR
 logging statement\&.
 .sp
-As of LTTng\ \&2\&.13\&.6,
+As of LTTng\ \&2\&.13\&.7,
 \fBjul\fR
 is an alias, but this may change in the future\&.
 .RE
@@ -1822,7 +1822,7 @@ is an alias, but this may change in the future\&.
 .RS 4
 Apache log4j logging statement\&.
 .sp
-As of LTTng\ \&2\&.13\&.6,
+As of LTTng\ \&2\&.13\&.7,
 \fBlog4j\fR
 is an alias, but this may change in the future\&.
 .RE
@@ -1831,7 +1831,7 @@ is an alias, but this may change in the future\&.
 .RS 4
 Python logging statement\&.
 .sp
-As of LTTng\ \&2\&.13\&.6,
+As of LTTng\ \&2\&.13\&.7,
 \fBpython\fR
 is an alias, but this may change in the future\&.
 .RE
@@ -1867,7 +1867,7 @@ prefix\&.
 .sp
 This option is NOT available with other instrumentation point types\&.
 .sp
-As of LTTng\ \&2\&.13\&.6, not specifying this option is equivalent to specifying
+As of LTTng\ \&2\&.13\&.7, not specifying this option is equivalent to specifying
 \fB--name\fR=\fB'*\'\fR
 (when it applies), but this default may change in the future\&.
 .RE
@@ -1977,7 +1977,7 @@ This option is NOT available with the following options:
 .\}
 \fB--type\fR=\fBkernel:uprobe\fR
 .sp
-As of LTTng\ \&2\&.13\&.6, not specifying this option is equivalent to specifying
+As of LTTng\ \&2\&.13\&.7, not specifying this option is equivalent to specifying
 \fB--log-level\fR=\fB..\fR
 (when it applies), but this default may change in the future\&.
 .RE
