@@ -1,3 +1,10 @@
+ltt-control (2.13.7-1~ubuntu22.04.1) jammy; urgency=medium
+
+  * [473bc9b] New upstream version 2.13.7
+  * [1896c6c] Prepare branch for jammy
+
+ -- Michael Jeanson <mjeanson@debian.org>  Fri, 03 Jun 2022 17:01:56 -0400
+
 ltt-control (2.13.6-1~ubuntu20.04.1) focal; urgency=medium
 
   * [b83566f] New upstream version 2.13.6
