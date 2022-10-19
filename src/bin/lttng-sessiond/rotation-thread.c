@@ -26,6 +26,7 @@
 #include <lttng/rotate-internal.h>
 #include <lttng/location-internal.h>
 #include <lttng/condition/condition-internal.h>
+#include <lttng/notification/notification-internal.h>
 
 #include "rotation-thread.h"
 #include "lttng-sessiond.h"
@@ -619,8 +620,7 @@ end:
 }
 
 static
-int handle_condition(const struct lttng_condition *condition,
-		const struct lttng_evaluation *evaluation,
+int handle_condition(const struct lttng_notification *notification,
 		struct notification_thread_handle *notification_thread_handle)
 {
 	int ret = 0;
@@ -630,6 +630,10 @@ int handle_condition(const struct lttng_condition *condition,
 	enum lttng_evaluation_status evaluation_status;
 	uint64_t consumed;
 	struct ltt_session *session;
+	const struct lttng_condition *condition =
+			lttng_notification_get_const_condition(notification);
+	const struct lttng_evaluation *evaluation =
+			lttng_notification_get_const_evaluation(notification);
 
 	condition_type = lttng_condition_get_type(condition);
 
@@ -671,25 +675,41 @@ int handle_condition(const struct lttng_condition *condition,
 	}
 	session_lock(session);
 
+	if (!lttng_trigger_is_equal(session->rotate_trigger,
+			lttng_notification_get_const_trigger(notification))) {
+		/* Notification does not originate from our rotation trigger. */
+		ret = 0;
+		goto end_unlock;
+	}
+
 	ret = unsubscribe_session_consumed_size_rotation(session,
 			notification_thread_handle);
 	if (ret) {
 		goto end_unlock;
 	}
 
-	ret = cmd_rotate_session(session, NULL, false,
-		LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
-	if (ret == -LTTNG_ERR_ROTATION_PENDING) {
+	ret = cmd_rotate_session(
+			session, NULL, false, LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
+	switch (ret) {
+	case LTTNG_OK:
+		break;
+	case -LTTNG_ERR_ROTATION_PENDING:
 		DBG("Rotate already pending, subscribe to the next threshold value");
-	} else if (ret != LTTNG_OK) {
-		ERR("Failed to rotate on size notification with error: %s",
-				lttng_strerror(ret));
+		break;
+	case -LTTNG_ERR_ROTATION_MULTIPLE_AFTER_STOP:
+		DBG("Rotation already happened since last stop, subscribe to the next threshold value");
+		break;
+	case -LTTNG_ERR_ROTATION_AFTER_STOP_CLEAR:
+		DBG("Rotation already happened since last stop and clear, subscribe to the next threshold value");
+		break;
+	default:
+		ERR("Failed to rotate on size notification with error: %s", lttng_strerror(ret));
 		ret = -1;
 		goto end_unlock;
 	}
-	ret = subscribe_session_consumed_size_rotation(session,
-			consumed + session->rotate_size,
-			notification_thread_handle);
+
+	ret = subscribe_session_consumed_size_rotation(
+			session, consumed + session->rotate_size, notification_thread_handle);
 	if (ret) {
 		ERR("Failed to subscribe to session consumed size condition");
 		goto end_unlock;
@@ -713,8 +733,6 @@ int handle_notification_channel(int fd,
 	bool notification_pending;
 	struct lttng_notification *notification = NULL;
 	enum lttng_notification_channel_status status;
-	const struct lttng_evaluation *notification_evaluation;
-	const struct lttng_condition *notification_condition;
 
 	status = lttng_notification_channel_has_pending_notification(
 			rotate_notification_channel, &notification_pending);
@@ -752,10 +770,7 @@ int handle_notification_channel(int fd,
 		goto end;
 	}
 
-	notification_condition = lttng_notification_get_condition(notification);
-	notification_evaluation = lttng_notification_get_evaluation(notification);
-
-	ret = handle_condition(notification_condition, notification_evaluation,
+	ret = handle_condition(notification,
 			handle->notification_thread_handle);
 
 end:
