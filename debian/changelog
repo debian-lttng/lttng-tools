@@ -1,3 +1,16 @@
+ltt-control (2.13.8-1) unstable; urgency=medium
+
+  * [212f30a] New upstream version 2.13.8
+  * [31ef342] Remove obsolete fields in upstream metadata
+  * [3318bf8] Remove obsolete maintscript
+  * [81d42c9] d/rules: autoreconf is implicit since dh 10
+  * [53dd271] d/control: Remove unnecessary X-Python3-Version
+  * [a933277] Update symbols for 2.13.8
+  * [5cdb3eb] Update d/copyright
+  * [e0be4cd] Bump standards version
+
+ -- Michael Jeanson <mjeanson@debian.org>  Wed, 19 Oct 2022 13:46:00 -0400
+
 ltt-control (2.13.7-1) unstable; urgency=medium
 
   * [473bc9b] New upstream version 2.13.7
