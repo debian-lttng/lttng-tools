@@ -4,10 +4,10 @@
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
 .\"      Date: 14 June 2021
 .\"    Manual: LTTng Manual
-.\"    Source: LTTng 2.13.7
+.\"    Source: LTTng 2.13.8
 .\"  Language: English
 .\"
-.TH "LTTNG\-CONCEPTS" "7" "14 June 2021" "LTTng 2\&.13\&.7" "LTTng Manual"
+.TH "LTTNG\-CONCEPTS" "7" "14 June 2021" "LTTng 2\&.13\&.8" "LTTng Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -35,7 +35,7 @@ This manual page documents the concepts of LTTng\&.
 .sp
 Many other LTTng manual pages refer to this one so that you can understand what are the various LTTng objects and how they relate to each other\&.
 .sp
-The concepts of LTTng\ \&2\&.13\&.7 are:
+The concepts of LTTng\ \&2\&.13\&.8 are:
 .sp
 .RS 4
 .ie n \{\
@@ -225,7 +225,7 @@ In other words: if, for a given instrumentation point\ \&\fIIP\fR, the LTTng tra
 .sp .5v
 .RE
 .sp
-As of LTTng\ \&2\&.13\&.7, there are two places where you can find an event rule:
+As of LTTng\ \&2\&.13\&.8, there are two places where you can find an event rule:
 .PP
 Recording event rule
 .RS 4
@@ -309,7 +309,7 @@ and the current context fields satisfy a filter expression\&.
 A recording event rule has additional, implicit conditions to satisfy\&. See the \(lqRECORDING EVENT RULE AND EVENT RECORD\(rq section below to learn more\&.
 .SS "Instrumentation point types"
 .sp
-As of LTTng\ \&2\&.13\&.7, the available instrumentation point types are, depending on the tracing domain (see the \(lqTRACING DOMAIN\(rq section below):
+As of LTTng\ \&2\&.13\&.8, the available instrumentation point types are, depending on the tracing domain (see the \(lqTRACING DOMAIN\(rq section below):
 .PP
 Linux kernel
 .RS 4
@@ -359,7 +359,7 @@ Its application/library path, its provider name, and its probe name\&.
 \(lqUSDT\(rq stands for SystemTap User\-level Statically Defined Tracing, a DTrace\-style marker\&.
 .RE
 .sp
-As of LTTng\ \&2\&.13\&.7, LTTng only supports USDT probes which are NOT reference\-counted\&.
+As of LTTng\ \&2\&.13\&.8, LTTng only supports USDT probes which are NOT reference\-counted\&.
 .RE
 .PP
 Linux kretprobe
@@ -405,7 +405,7 @@ A \fItrigger\fR associates a condition to one or more actions\&.
 .sp
 When the condition of a trigger is satisfied, LTTng attempts to execute its actions\&.
 .sp
-As of LTTng\ \&2\&.13\&.7, the available trigger conditions and actions are:
+As of LTTng\ \&2\&.13\&.8, the available trigger conditions and actions are:
 .PP
 Conditions
 .RS 4
@@ -475,7 +475,7 @@ A recording session rotation becomes completed\&.
 .\}
 An event rule matches an event\&.
 .sp
-As of LTTng\ \&2\&.13\&.7, this is the only available condition when you add a trigger with the
+As of LTTng\ \&2\&.13\&.8, this is the only available condition when you add a trigger with the
 \fBlttng-add-trigger\fR(1)
 command\&. The other ones are available through the liblttng\-ctl C\ \&API\&.
 .RE
@@ -1697,7 +1697,7 @@ List the recording event rules of a specific recording session and/or channel wi
 .sp
 Disable a recording event rule with the \fBlttng-disable-event\fR(1) command\&.
 .sp
-As of LTTng\ \&2\&.13\&.7, you cannot remove a recording event rule: it exists as long as its recording session exists\&.
+As of LTTng\ \&2\&.13\&.8, you cannot remove a recording event rule: it exists as long as its recording session exists\&.
 .SH "RESOURCES"
 .sp
 .RS 4
