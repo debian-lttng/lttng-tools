@@ -624,17 +624,20 @@ int cmd_snapshot(int argc, const char **argv)
 		case OPT_MAX_SIZE:
 		{
 			uint64_t val;
-			const char *max_size_arg = poptGetOptArg(pc);
+			char *max_size_arg = poptGetOptArg(pc);
+			const int parse_ret = utils_parse_size_suffix(
+					(char *) max_size_arg, &val);
 
-			if (utils_parse_size_suffix((char *) max_size_arg, &val) < 0) {
+			if (parse_ret < 0) {
 				ERR("Unable to handle max-size value %s",
 						max_size_arg);
 				cmd_ret = CMD_ERROR;
+				free(max_size_arg);
 				goto end;
 			}
 
 			opt_max_size = val;
-
+			free(max_size_arg);
 			break;
 		}
 		default:
