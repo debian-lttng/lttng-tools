@@ -18,7 +18,7 @@ Build-Depends: debhelper-compat (= 12),
   python3-all-dev,
   swig (>= 2.0),
   xmlto
-Standards-Version: 4.6.0.1
+Standards-Version: 4.6.1.0
 Rules-Requires-Root: no
 Vcs-Git: https://salsa.debian.org/debian/ltt-control.git
 Vcs-Browser: https://salsa.debian.org/debian/ltt-control
