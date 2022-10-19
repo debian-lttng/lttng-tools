@@ -373,6 +373,9 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_notification_channel_unsubscribe@Base 2.10.0
  lttng_notification_destroy@Base 2.10.0
  lttng_notification_get_condition@Base 2.10.0
+ lttng_notification_get_const_condition@Base 2.13.8
+ lttng_notification_get_const_evaluation@Base 2.13.8
+ lttng_notification_get_const_trigger@Base 2.13.8
  lttng_notification_get_evaluation@Base 2.10.0
  lttng_notification_get_trigger@Base 2.13.0
  lttng_opt_mi@Base 2.6.0
