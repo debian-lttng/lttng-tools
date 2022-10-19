@@ -1,3 +1,10 @@
+ltt-control (2.13.8-1~ubuntu18.04.1) bionic; urgency=medium
+
+  * [212f30a] New upstream version 2.13.8
+  * [93ac89b] Update symbols for 2.13.8
+
+ -- Michael Jeanson <mjeanson@debian.org>  Wed, 19 Oct 2022 15:14:42 -0400
+
 ltt-control (2.13.7-1~ubuntu18.04.1) bionic; urgency=medium
 
   * [473bc9b] New upstream version 2.13.7
