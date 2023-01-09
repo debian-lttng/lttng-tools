@@ -186,11 +186,12 @@ am__libcommon_lgpl_la_SOURCES_DIST = actions/action.c actions/list.c \
 	event-rule/jul-logging.c event-rule/python-logging.c \
 	fd-handle.c fd-handle.h kernel-probe.c location.c \
 	log-level-rule.c mi-lttng.c mi-lttng.h notification.c \
-	payload.c payload.h payload-view.c payload-view.h readwrite.c \
-	readwrite.h runas.c runas.h session-descriptor.c snapshot.c \
-	snapshot.h spawn-viewer.c spawn-viewer.h thread.c thread.h \
-	time.c tracker.c tracker.h trigger.c unix.c unix.h uri.c uri.h \
-	userspace-probe.c utils.c utils.h lttng-elf.c lttng-elf.h
+	payload.c payload.h payload-view.c payload-view.h random.c \
+	random.h readwrite.c readwrite.h runas.c runas.h \
+	session-descriptor.c snapshot.c snapshot.h spawn-viewer.c \
+	spawn-viewer.h thread.c thread.h time.c tracker.c tracker.h \
+	trigger.c unix.c unix.h uri.c uri.h userspace-probe.c utils.c \
+	utils.h lttng-elf.c lttng-elf.h
 am__dirstamp = $(am__leading_dot)dirstamp
 @HAVE_ELF_H_TRUE@am__objects_1 = lttng-elf.lo
 am_libcommon_lgpl_la_OBJECTS = actions/action.lo actions/list.lo \
@@ -210,7 +211,7 @@ am_libcommon_lgpl_la_OBJECTS = actions/action.lo actions/list.lo \
 	event-rule/log4j-logging.lo event-rule/jul-logging.lo \
 	event-rule/python-logging.lo fd-handle.lo kernel-probe.lo \
 	location.lo log-level-rule.lo mi-lttng.lo notification.lo \
-	payload.lo payload-view.lo readwrite.lo runas.lo \
+	payload.lo payload-view.lo random.lo readwrite.lo runas.lo \
 	session-descriptor.lo snapshot.lo spawn-viewer.lo thread.lo \
 	time.lo tracker.lo trigger.lo unix.lo uri.lo \
 	userspace-probe.lo utils.lo $(am__objects_1)
@@ -671,11 +672,12 @@ libcommon_lgpl_la_SOURCES = actions/action.c actions/list.c \
 	event-rule/jul-logging.c event-rule/python-logging.c \
 	fd-handle.c fd-handle.h kernel-probe.c location.c \
 	log-level-rule.c mi-lttng.c mi-lttng.h notification.c \
-	payload.c payload.h payload-view.c payload-view.h readwrite.c \
-	readwrite.h runas.c runas.h session-descriptor.c snapshot.c \
-	snapshot.h spawn-viewer.c spawn-viewer.h thread.c thread.h \
-	time.c tracker.c tracker.h trigger.c unix.c unix.h uri.c uri.h \
-	userspace-probe.c utils.c utils.h $(am__append_1)
+	payload.c payload.h payload-view.c payload-view.h random.c \
+	random.h readwrite.c readwrite.h runas.c runas.h \
+	session-descriptor.c snapshot.c snapshot.h spawn-viewer.c \
+	spawn-viewer.h thread.c thread.h time.c tracker.c tracker.h \
+	trigger.c unix.c unix.h uri.c uri.h userspace-probe.c utils.c \
+	utils.h $(am__append_1)
 libcommon_lgpl_la_LIBADD = \
 	$(top_builddir)/src/common/bytecode/libbytecode.la \
 	$(top_builddir)/src/common/compat/libcompat.la \
@@ -914,6 +916,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/payload-view.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/payload.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pipe.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/random.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/readwrite.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/runas.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/session-descriptor.Plo@am__quote@

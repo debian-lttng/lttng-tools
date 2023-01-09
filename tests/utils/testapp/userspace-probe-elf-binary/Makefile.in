@@ -506,7 +506,7 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 noinst_LTLIBRARIES = libfoo.la
 libfoo_la_SOURCES = foo.c foo.h
-libfoo_la_LDFLAGS = -shared -module -avoid-version -rpath $(abs_builddir)/.libs/
+libfoo_la_LDFLAGS = -shared -module -avoid-version -rpath $(libdir)
 userspace_probe_elf_binary_SOURCES = userspace-probe-elf-binary.c
 userspace_probe_elf_binary_LDADD = libfoo.la
 all: all-am
