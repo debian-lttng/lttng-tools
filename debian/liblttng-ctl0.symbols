@@ -412,6 +412,8 @@ liblttng-ctl.so.0 liblttng-ctl0 #MINVER#
  lttng_process_attr_virtual_user_id_tracker_handle_add_user_name@Base 2.12.0
  lttng_process_attr_virtual_user_id_tracker_handle_remove_uid@Base 2.12.0
  lttng_process_attr_virtual_user_id_tracker_handle_remove_user_name@Base 2.12.0
+ lttng_produce_best_effort_random_seed@Base 2.13.9
+ lttng_produce_true_random_seed@Base 2.13.9
  lttng_rate_policy_destroy@Base 2.13.0
  lttng_rate_policy_every_n_create@Base 2.13.0
  lttng_rate_policy_every_n_get_interval@Base 2.13.1
