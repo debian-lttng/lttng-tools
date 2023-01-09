@@ -1,3 +1,10 @@
+ltt-control (2.13.9-1) unstable; urgency=medium
+
+  * [861d46f] New upstream version 2.13.9
+  * [d2a3001] Update symbols for 2.13.9
+
+ -- Michael Jeanson <mjeanson@debian.org>  Mon, 09 Jan 2023 16:05:32 -0500
+
 ltt-control (2.13.8-1) unstable; urgency=medium
 
   * [212f30a] New upstream version 2.13.8
