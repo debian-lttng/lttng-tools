@@ -558,22 +558,22 @@ top_srcdir = @top_srcdir@
 @NO_SHARED_FALSE@noinst_LTLIBRARIES = libzzz.la libbar.la libfoo.la libtp.la
 @NO_SHARED_FALSE@libzzz_la_SOURCES = libzzz.c libzzz.h
 @NO_SHARED_FALSE@libzzz_la_LDFLAGS = -module -shared -avoid-version \
-@NO_SHARED_FALSE@		-rpath $(abs_builddir)
+@NO_SHARED_FALSE@		-rpath $(libdir)
 
 @NO_SHARED_FALSE@libbar_la_SOURCES = libbar.c libbar.h
 @NO_SHARED_FALSE@libbar_la_LDFLAGS = -module -shared -avoid-version \
-@NO_SHARED_FALSE@		-rpath $(abs_builddir)
+@NO_SHARED_FALSE@		-rpath $(libdir)
 
 @NO_SHARED_FALSE@libbar_la_LIBADD = libzzz.la
 @NO_SHARED_FALSE@libfoo_la_SOURCES = libfoo.c libfoo.h
 @NO_SHARED_FALSE@libfoo_la_LDFLAGS = -module -shared -avoid-version \
-@NO_SHARED_FALSE@		-rpath $(abs_builddir)
+@NO_SHARED_FALSE@		-rpath $(libdir)
 
 @NO_SHARED_FALSE@libfoo_la_LIBADD = libbar.la
 @NO_SHARED_FALSE@libtp_la_SOURCES = libbar-tp.h libbar-tp.c libfoo-tp.h libfoo-tp.c \
 @NO_SHARED_FALSE@	libzzz-tp.h libzzz-tp.c
 
-@NO_SHARED_FALSE@libtp_la_LDFLAGS = -module -shared -rpath $(abs_builddir)
+@NO_SHARED_FALSE@libtp_la_LDFLAGS = -module -shared -rpath $(libdir)
 @NO_SHARED_FALSE@noinst_SCRIPTS = test_ust-dl test_ust-dl.py
 all: all-am
 
