@@ -28,7 +28,7 @@ Package: lttng-tools
 Section: utils
 Architecture: linux-any
 Pre-Depends: ${misc:Pre-Depends}
-Depends: ${shlibs:Depends}, ${misc:Depends}, lsb-base (>= 3.0-6)
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Recommends: babeltrace
 Suggests: lttng-modules-dkms
 Description: LTTng control and utility programs
