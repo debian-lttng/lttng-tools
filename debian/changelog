@@ -1,3 +1,13 @@
+ltt-control (2.13.10-1) unstable; urgency=medium
+
+  * [52e2522] New upstream version 2.13.10
+  * [3b16e72] Ignore lintian error custom-library-search-path for JNI libraries
+  * [79ef318] Remove obsolete dep on lsb-base
+  * [65f6fb1] Bump standards version to 4.6.2
+  * [71b1374] Enable PIE on armel
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 25 Jul 2023 14:17:58 -0400
+
 ltt-control (2.13.9-1) unstable; urgency=medium
 
   * [861d46f] New upstream version 2.13.9
