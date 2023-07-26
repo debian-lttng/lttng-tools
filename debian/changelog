@@ -1,3 +1,11 @@
+ltt-control (2.13.10-1~ubuntu22.04.1) jammy; urgency=medium
+
+  * [52e2522] New upstream version 2.13.10
+  * [808231b] Enable PIE on armel
+  * [c1a4ce4] Enable tests on release architectures
+
+ -- Michael Jeanson <mjeanson@debian.org>  Wed, 26 Jul 2023 11:02:36 -0400
+
 ltt-control (2.13.9-1~ubuntu22.04.1) jammy; urgency=medium
 
   * [861d46f] New upstream version 2.13.9
