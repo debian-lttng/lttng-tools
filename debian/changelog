@@ -1,3 +1,9 @@
+ltt-control (2.13.10-1~ubuntu22.04.2) jammy; urgency=medium
+
+  * [1454b33] Revert "Enable tests on release architectures"
+
+ -- Michael Jeanson <mjeanson@debian.org>  Thu, 03 Aug 2023 15:38:20 -0400
+
 ltt-control (2.13.10-1~ubuntu22.04.1) jammy; urgency=medium
 
   * [52e2522] New upstream version 2.13.10
