@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # Copyright (C) 2017 Francis Deslauriers <francis.deslauriers@efficios.com>
 #
@@ -24,14 +24,25 @@ def addr2line(executable, addr):
     # Expand inlined functions
     cmd += ['--addresses', addr]
 
-    addr2line_output = subprocess.getoutput(' '.join(cmd))
+    status = subprocess.run(cmd, stdout=subprocess.PIPE, check=True)
 
-    # Omit the last 2 lines as the caller of main can not be determine
-    fcts = [addr2line_output.split()[-2]]
+    addr2line_output = status.stdout.decode("utf-8").splitlines()
+    # addr2line's output is made of 3-tuples:
+    #   - address
+    #   - function name
+    #   - source location
+    if len(addr2line_output) % 3 != 0:
+        raise Exception('Unexpected addr2line output:\n\t{}'.format('\n\t'.join(addr2line_output)))
 
-    fcts = [ f for f in fcts if '??' not in f]
+    function_names = []
+    for address_line_number in range(0, len(addr2line_output), 3):
+        function_name = addr2line_output[address_line_number + 1]
 
-    return fcts
+        # Filter-out unresolved functions
+        if "??" not in function_name:
+            function_names.append(addr2line_output[address_line_number + 1])
+
+    return function_names
 
 def extract_user_func_names(executable, raw_callstack):
     """
