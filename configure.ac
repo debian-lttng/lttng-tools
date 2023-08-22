@@ -1,6 +1,6 @@
 dnl SPDX-License-Identifier: GPL-2.0-only
 AC_PREREQ([2.64])
-AC_INIT([lttng-tools],[2.13.10],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
+AC_INIT([lttng-tools],[2.13.11],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
 
 AC_CONFIG_HEADERS([include/config.h])
 AC_CONFIG_AUX_DIR([config])
@@ -1158,6 +1158,7 @@ AC_CONFIG_FILES([
 	tests/regression/tools/mi/Makefile
 	tests/regression/tools/wildcard/Makefile
 	tests/regression/tools/channel/Makefile
+	tests/regression/tools/client/Makefile
 	tests/regression/tools/crash/Makefile
 	tests/regression/tools/regen-metadata/Makefile
 	tests/regression/tools/regen-statedump/Makefile
