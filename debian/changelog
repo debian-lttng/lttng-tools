@@ -1,3 +1,10 @@
+ltt-control (2.13.11-1) unstable; urgency=medium
+
+  * [3dc55f5] Enable tests on release architectures
+  * [4b2035a] New upstream version 2.13.11
+
+ -- Michael Jeanson <mjeanson@debian.org>  Tue, 22 Aug 2023 14:54:07 -0400
+
 ltt-control (2.13.10-1) unstable; urgency=medium
 
   * [52e2522] New upstream version 2.13.10
