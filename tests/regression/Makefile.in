@@ -794,9 +794,10 @@ TESTS = tools/base-path/test_ust tools/channel/test_channel \
 	tools/trigger/test_list_triggers_cli \
 	tools/trigger/test_remove_trigger_cli \
 	tools/trigger/name/test_trigger_name_backwards_compat \
-	tools/trigger/hidden/test_hidden_trigger $(am__append_2) \
-	$(am__append_3) $(am__append_4) $(am__append_5) \
-	$(am__append_6) $(am__append_7)
+	tools/trigger/hidden/test_hidden_trigger \
+	tools/client/test_bug1373_events_differ_only_by_loglevel \
+	$(am__append_2) $(am__append_3) $(am__append_4) \
+	$(am__append_5) $(am__append_6) $(am__append_7)
 all: all-recursive
 
 .SUFFIXES:
@@ -1423,6 +1424,13 @@ tools/trigger/name/test_trigger_name_backwards_compat.log: tools/trigger/name/te
 tools/trigger/hidden/test_hidden_trigger.log: tools/trigger/hidden/test_hidden_trigger
 	@p='tools/trigger/hidden/test_hidden_trigger'; \
 	b='tools/trigger/hidden/test_hidden_trigger'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+tools/client/test_bug1373_events_differ_only_by_loglevel.log: tools/client/test_bug1373_events_differ_only_by_loglevel
+	@p='tools/client/test_bug1373_events_differ_only_by_loglevel'; \
+	b='tools/client/test_bug1373_events_differ_only_by_loglevel'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
