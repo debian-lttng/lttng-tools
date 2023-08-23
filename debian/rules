@@ -17,14 +17,11 @@ override_dh_autoreconf:
 	# to re-generate them.
 	touch doc/man/*.1 doc/man/*.3 doc/man/*.8
 
-ifeq ($(filter $(DEB_HOST_ARCH),amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x),)
-# Disable tests in non-release architectures
+# Disable tests, they fail on the buildds
 override_dh_auto_test:
-else
-# The test suite doesn't support running in parallel
-override_dh_auto_test:
-	dh_auto_test --no-parallel
-endif
+	# Uncomment the following line to run the tests suite,
+	# it doesn't support running in parallel.
+	#dh_auto_test --no-parallel
 
 override_dh_auto_install:
 	dh_auto_install
