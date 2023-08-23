@@ -1,3 +1,9 @@
+ltt-control (2.13.11-2) unstable; urgency=medium
+
+  * [361df0f] Disable test suite, it fails on the buildds
+
+ -- Michael Jeanson <mjeanson@debian.org>  Wed, 23 Aug 2023 14:12:33 -0400
+
 ltt-control (2.13.11-1) unstable; urgency=medium
 
   * [3dc55f5] Enable tests on release architectures
